@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && prisma migrate deploy && tsx prisma/bootstrap.ts && next build",
+    "build": "prisma generate && node prisma/prepare.mjs; next build",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
