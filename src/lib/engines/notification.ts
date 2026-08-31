@@ -81,6 +81,18 @@ export type NotificationEvent =
       from: string;
       to: string;
       sessionsStillLive: number;
+    }
+  // --- Discovery & classification -------------------------------------------
+  | {
+      kind: "discovery.scan_failed";
+      sourceName: string;
+      stage: string;
+      partial: boolean;
+    }
+  | {
+      kind: "discovery.merge_incomplete";
+      fieldPath: string;
+      remaining: number;
     };
 
 interface Fanout {
@@ -177,6 +189,24 @@ function fanout(event: NotificationEvent): Fanout {
         title: `Access revocation failed — ${event.systemName}`,
         body: `${event.userName} may still have access to ${event.systemName}: the revocation returned ${event.failureCode}. Their access cannot be reported as removed.`,
         severity: "critical",
+      };
+
+    case "discovery.scan_failed":
+      return {
+        roles: ["dpo"],
+        title: `Scan ${event.partial ? "incomplete" : "failed"} — ${event.sourceName}`,
+        body: event.partial
+          ? `${event.sourceName} was only partly read (stopped at ${event.stage}), so the data map for it is incomplete.`
+          : `${event.sourceName} could not be scanned (failed at ${event.stage}). Requests scoped against it will have incomplete coverage.`,
+        severity: event.partial ? "warning" : "critical",
+      };
+
+    case "discovery.merge_incomplete":
+      return {
+        roles: ["dpo"],
+        title: "Merge not fully propagated",
+        body: `${event.fieldPath} was merged, but ${event.remaining} system(s) have not confirmed. Until they do, references there still point at both records.`,
+        severity: "warning",
       };
 
     case "access.revocation_state_changed":

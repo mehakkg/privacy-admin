@@ -138,6 +138,7 @@ model ConnectedSystem {
   locations  DataLocation[]
   executions ExecutionRecord[]
   accounts   SystemAccount[]
+  mergeSteps MergeStep[]
 }
 
 /// A Data Processor engaged under contract. DPDP s.8(2): the Data Fiduciary
@@ -416,6 +417,8 @@ model PurposeTag {
   status     String
   approvedBy String
   approvedAt DateTime
+
+  classifiedFields ClassifiedField[]
 }
 
 model NoticeVersion {
@@ -699,10 +702,151 @@ model ClassifiedField {
   reviewedByActorId String?
   reviewedAt        DateTime?
 
-  source DiscoverySource @relation(fields: [sourceId], references: [id])
+  // -- Inventory attributes (Screen 3) -------------------------------------
+  /// identity | contact | kyc | financial | transaction | marketing | behavioural | support
+  category String?
+  /// high | medium | low — sensitivity tier, distinct from detector confidence.
+  sensitivityTier String @default("medium")
+  /// FK to the DPO-approved taxonomy. Null is DISPLAYED as a flag, not as an
+  /// empty cell: an untagged field is the signal that a purpose case is still
+  /// unresolved, and a blank cell reads as "nothing to do here".
+  purposeTagId String?
+  /// customer | employee | vendor | minor
+  dataSubjectType String?
+  lastVerified    DateTime?
+  /// synced | pending | failed | not_configured
+  catalogSyncStatus String @default("not_configured")
+
+  /// True when this scan classified the field differently from the last one.
+  /// Drift on an already-trusted field is a different problem from a field
+  /// nobody has classified yet, and gets its own treatment.
+  driftFlag        Boolean @default(false)
+  previousType     String?
+
+  source     DiscoverySource @relation(fields: [sourceId], references: [id])
+  purposeTag PurposeTag?     @relation(fields: [purposeTagId], references: [id])
+
+  triageItems   TriageItem[]
+  rotCandidate  ROTCandidate?
+  duplicatesAsA DuplicatePair[] @relation("DuplicateFieldA")
+  duplicatesAsB DuplicatePair[] @relation("DuplicateFieldB")
 
   @@index([sourceId])
   @@index([confidence])
+  @@index([category])
+  @@index([purposeTagId])
+}
+
+/// Anything awaiting an Admin decision.
+///
+/// `type` is what keeps the queue tabbed rather than a single feed. Merging a
+/// low-confidence classification, a new-PII alert and a ROT candidate into one
+/// undifferentiated list is how a queue becomes something nobody opens.
+model TriageItem {
+  id String @id @default(cuid())
+
+  /// low_confidence | new_pii | rot | duplicate | quarantine
+  type String
+  /// The record this item is about — a ClassifiedField for most types.
+  fieldId String?
+  /// For duplicate items, the pair being resolved.
+  duplicatePairId String?
+
+  /// high | medium | low
+  priority String @default("medium")
+  /// open | resolved | dismissed | escalated
+  status   String @default("open")
+
+  /// Set when the same underlying record also qualifies for another tab. The
+  /// row appears ONCE, in its primary category, with a cross-reference — never
+  /// duplicated across tabs.
+  crossRefType String?
+
+  note       String?
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+  resolvedByActorId String?
+
+  field         ClassifiedField? @relation(fields: [fieldId], references: [id])
+  duplicatePair DuplicatePair?   @relation(fields: [duplicatePairId], references: [id])
+
+  @@index([type, status])
+  @@index([createdAt])
+}
+
+/// A candidate duplicate pair.
+///
+/// `keep_both` is a first-class resolution, not a fallback. Two legitimately
+/// different records that merely look similar are a realistic match failure,
+/// and merging them is not reversible in any useful sense — so the UI must not
+/// make merge the path of least resistance.
+model DuplicatePair {
+  id        String @id @default(cuid())
+  fieldAId  String
+  fieldBId  String
+
+  /// 0-100.
+  similarityScore Int
+  /// unresolved | merge | keep_both | keep_one
+  resolution      String  @default("unresolved")
+  /// When resolution is keep_one, which one survives.
+  keptFieldId     String?
+
+  resolvedAt        DateTime?
+  resolvedByActorId String?
+  createdAt         DateTime @default(now())
+
+  fieldA ClassifiedField @relation("DuplicateFieldA", fields: [fieldAId], references: [id])
+  fieldB ClassifiedField @relation("DuplicateFieldB", fields: [fieldBId], references: [id])
+
+  triageItems TriageItem[]
+  mergeSteps  MergeStep[]
+
+  @@index([resolution])
+}
+
+/// Per-system confirmation that a merge actually landed.
+///
+/// A merge touches references in every connected system, and those confirm
+/// separately. Same three-state discipline as erasure and revocation: the merge
+/// is not "done" because the primary store returned success.
+model MergeStep {
+  id              String @id @default(cuid())
+  duplicatePairId String
+  systemId        String
+
+  /// pending | partial | verified | failed
+  status        String @default("pending")
+  referencesUpdated Int @default(0)
+  confirmedAt   DateTime?
+  failureCode   String?
+  failureDetail String?
+
+  duplicatePair DuplicatePair   @relation(fields: [duplicatePairId], references: [id])
+  system        ConnectedSystem @relation(fields: [systemId], references: [id])
+
+  @@index([duplicatePairId])
+}
+
+/// Redundant, obsolete or trivial data.
+model ROTCandidate {
+  id      String @id @default(cuid())
+  fieldId String @unique
+
+  /// 0-100. Low score plus old last-accessed is the case for removal.
+  businessValueScore Int
+  lastAccessed       DateTime?
+  reason             String
+
+  /// unresolved | quarantine | delete | retain
+  resolution        String  @default("unresolved")
+  resolutionReason  String?
+  resolvedAt        DateTime?
+  resolvedByActorId String?
+
+  field ClassifiedField @relation(fields: [fieldId], references: [id])
+
+  @@index([resolution])
 }
 
 model DiscoverySource {
@@ -732,7 +876,56 @@ model DiscoverySource {
   classificationSummary     String?
   scanFailureDetail         String?
 
-  fields ClassifiedField[]
+  // -- Scan configuration (Screen 4, Scan Config tab) ----------------------
+  // Read-only until dpoApprovedForScanning: scope approval is the DPO's, and a
+  // schedule Admin can set on an unapproved source is a scan Admin can run on
+  // one.
+  /// on_demand | daily | weekly | monthly
+  scanSchedule String @default("on_demand")
+  /// shallow | standard | deep
+  scanDepth    String @default("standard")
+  /// Off-peak window as "HH:MM-HH:MM". Surfaced prominently rather than hidden
+  /// behind an "advanced" section, because the sources that most need it are
+  /// the large legacy ones where a daytime deep scan is genuinely disruptive.
+  offPeakWindow String?
+  /// Which business unit or legal entity this source belongs to. A filter
+  /// dimension on the inventory, never a separate inventory.
+  entityId String?
+
+  fields    ClassifiedField[]
+  scanRuns  ScanRun[]
+}
+
+/// One scan execution. Kept as history rather than overwriting the source's
+/// status, so a failure survives the run that produced it — a failure that
+/// disappears when the run ends cannot be investigated afterwards.
+model ScanRun {
+  id       String @id @default(cuid())
+  sourceId String
+
+  /// running | completed | partial | failed
+  status      String
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  /// Per-stage progress for the Live Progress tab: JSON array of
+  /// { stage, state, detail }. Real stages, not a spinner.
+  stagesJson String @default("[]")
+
+  fieldsFound    Int @default(0)
+  fieldsNew      Int @default(0)
+  fieldsChanged  Int @default(0)
+  fieldsRemoved  Int @default(0)
+
+  /// Which stage broke, and the three-part detail Admin needs to act.
+  failureStage  String?
+  failureReason String?
+  failureAction String?
+
+  source DiscoverySource @relation(fields: [sourceId], references: [id])
+
+  @@index([sourceId])
+  @@index([status])
 }
 
 model DataFlowNode {

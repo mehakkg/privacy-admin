@@ -61,6 +61,11 @@ async function main() {
     "SystemAccount",
     "InternalUser",
     "RBACRole",
+    "TriageItem",
+    "MergeStep",
+    "DuplicatePair",
+    "ROTCandidate",
+    "ScanRun",
     "ClassifiedField",
     "DiscoverySource",
     "NotificationRoute",
@@ -75,9 +80,22 @@ async function main() {
     "Entity",
     "Actor",
   ];
-  await prisma.$executeRawUnsafe(
-    `TRUNCATE TABLE ${tables.map((t) => `"${t}"`).join(", ")} RESTART IDENTITY CASCADE`,
-  );
+
+  // Postgres in deployment, SQLite when running locally without a hosted
+  // database. TRUNCATE ... CASCADE does not exist in SQLite, so pick the reset
+  // that the connected engine actually supports rather than assuming one.
+  const isSqlite = (process.env.DATABASE_URL ?? "").startsWith("file:");
+  if (isSqlite) {
+    await prisma.$executeRawUnsafe("PRAGMA foreign_keys = OFF");
+    for (const table of tables) {
+      await prisma.$executeRawUnsafe(`DELETE FROM "${table}"`);
+    }
+    await prisma.$executeRawUnsafe("PRAGMA foreign_keys = ON");
+  } else {
+    await prisma.$executeRawUnsafe(
+      `TRUNCATE TABLE ${tables.map((t) => `"${t}"`).join(", ")} RESTART IDENTITY CASCADE`,
+    );
+  }
 
   // -- Actors ---------------------------------------------------------------
   const admin = await prisma.actor.create({
@@ -516,12 +534,12 @@ async function main() {
   // -- Governance-owned objects (seeded only; read-only to Admin) -----------
   await prisma.purposeTag.createMany({
     data: [
-      { name: "Account servicing", description: "Operating and servicing the customer's accounts.", status: "approved", approvedBy: dpo.name, approvedAt: daysAgo(200) },
-      { name: "Regulatory compliance", description: "Meeting KYC, AML and reporting obligations.", status: "approved", approvedBy: dpo.name, approvedAt: daysAgo(200) },
-      { name: "Fraud prevention", description: "Detecting and preventing fraudulent transactions.", status: "approved", approvedBy: dpo.name, approvedAt: daysAgo(200) },
-      { name: "Marketing communication", description: "Sending offers where consent has been given.", status: "approved", approvedBy: dpo.name, approvedAt: daysAgo(150) },
-      { name: "Service improvement", description: "Analysing usage to improve the service.", status: "approved", approvedBy: dpo.name, approvedAt: daysAgo(150) },
-      { name: "Grievance redressal", description: "Handling complaints and rights requests.", status: "approved", approvedBy: dpo.name, approvedAt: daysAgo(200) },
+      { id: "pt_servicing", name: "Account servicing", description: "Operating and servicing the customer's accounts.", status: "approved", approvedBy: dpo.name, approvedAt: daysAgo(200) },
+      { id: "pt_regulatory", name: "Regulatory compliance", description: "Meeting KYC, AML and reporting obligations.", status: "approved", approvedBy: dpo.name, approvedAt: daysAgo(200) },
+      { id: "pt_fraud", name: "Fraud prevention", description: "Detecting and preventing fraudulent transactions.", status: "approved", approvedBy: dpo.name, approvedAt: daysAgo(200) },
+      { id: "pt_marketing", name: "Marketing communication", description: "Sending offers where consent has been given.", status: "approved", approvedBy: dpo.name, approvedAt: daysAgo(150) },
+      { id: "pt_service", name: "Service improvement", description: "Analysing usage to improve the service.", status: "approved", approvedBy: dpo.name, approvedAt: daysAgo(150) },
+      { id: "pt_grievance", name: "Grievance redressal", description: "Handling complaints and rights requests.", status: "approved", approvedBy: dpo.name, approvedAt: daysAgo(200) },
     ],
   });
 
@@ -922,6 +940,350 @@ async function main() {
   // Anjali left 210 days ago; this token is still valid.
   await session(anjaliCrm.id, "refresh_token", "rt_5c19ab33", 230, 220, 400);
   await session(svcWarehouse.id, "api_token", "tok_e08b4416", 900, 400, 1000);
+
+  // -- Onboarding state -----------------------------------------------------
+  // An org past the mandatory gate, with two technical steps deferred.
+  //
+  // This is the middle case and the most realistic one: escalation routing is
+  // set, so the route guard lets the console load, while the deferred steps stay
+  // visible on the setup strip. Seeding a fresh org instead would send every
+  // page straight to the wizard, and seeding a fully-finished one would hide the
+  // deferral behaviour entirely.
+  // =========================================================================
+  // Data Discovery & Classification
+  //
+  // Sources cover every coverage state, because "never scanned" and "stale" are
+  // different problems needing different follow-up and the Overview has to show
+  // them apart.
+  // =========================================================================
+
+  const srcCore = await prisma.discoverySource.create({
+    data: {
+      id: "src_core",
+      name: "Core Banking DB",
+      kind: "database",
+      connectionState: "connected",
+      dpoApprovedForScanning: true,
+      scanStatus: "scanned",
+      lastScanned: daysAgo(3),
+      scanSchedule: "weekly",
+      scanDepth: "standard",
+      entityId: "retail",
+    },
+  });
+  const srcCrm = await prisma.discoverySource.create({
+    data: {
+      id: "src_crm",
+      name: "Salesforce CRM",
+      kind: "saas",
+      connectionState: "connected",
+      dpoApprovedForScanning: true,
+      scanStatus: "scanned",
+      // Past the 30-day staleness threshold: a maintenance gap.
+      lastScanned: daysAgo(52),
+      scanSchedule: "monthly",
+      scanDepth: "standard",
+      entityId: "retail",
+    },
+  });
+  const srcShare = await prisma.discoverySource.create({
+    data: {
+      id: "src_share",
+      name: "Finance File Share",
+      kind: "file_share",
+      connectionState: "connected",
+      dpoApprovedForScanning: true,
+      scanStatus: "partial",
+      lastScanned: daysAgo(9),
+      scanSchedule: "monthly",
+      scanDepth: "shallow",
+      offPeakWindow: "22:00-05:00",
+      entityId: "corporate",
+    },
+  });
+  // Approved but never run: a SETUP gap, shown distinctly from stale.
+  const srcWarehouse = await prisma.discoverySource.create({
+    data: {
+      id: "src_warehouse",
+      name: "Data Warehouse (Snowflake)",
+      kind: "database",
+      connectionState: "connected",
+      dpoApprovedForScanning: true,
+      scanStatus: "pending",
+      lastScanned: null,
+      scanSchedule: "on_demand",
+      scanDepth: "standard",
+      entityId: "corporate",
+    },
+  });
+  // Connected, but scope not approved: the governance boundary, visible here
+  // and everywhere else this source appears.
+  await prisma.discoverySource.create({
+    data: {
+      id: "src_legacy",
+      name: "Legacy Loan Archive",
+      kind: "other",
+      connectionState: "connected",
+      dpoApprovedForScanning: false,
+      requiresManualVerification: true,
+      scanStatus: "pending",
+      entityId: "retail",
+    },
+  });
+  const srcMkt = await prisma.discoverySource.create({
+    data: {
+      id: "src_mkt",
+      name: "Marketing Automation",
+      kind: "saas",
+      connectionState: "failed",
+      failureCode: "ERR_AUTH_EXPIRED",
+      failureDetail:
+        "The stored API credentials were rejected. The integration token expired on 2026-08-21.",
+      connectionHint: "Issue a new API token in the vendor console and update it under Integrations.",
+      dpoApprovedForScanning: true,
+      scanStatus: "failed",
+      lastScanned: daysAgo(21),
+      scanSchedule: "weekly",
+      scanDepth: "standard",
+      entityId: "retail",
+    },
+  });
+
+  // -- Scan history ---------------------------------------------------------
+  const stages = (upTo: string | null, failed = false) => {
+    const all = ["connect", "enumerate", "sample", "classify", "reconcile"];
+    const idx = upTo ? all.indexOf(upTo) : all.length;
+    return JSON.stringify(
+      all.map((stage, i) => ({
+        stage,
+        state: i < idx ? "done" : i === idx ? (failed ? "failed" : "done") : "pending",
+      })),
+    );
+  };
+
+  await prisma.scanRun.createMany({
+    data: [
+      { sourceId: srcCore.id, status: "completed", startedAt: daysAgo(31), completedAt: daysAgo(31), stagesJson: stages(null), fieldsFound: 108 },
+      { sourceId: srcCore.id, status: "completed", startedAt: daysAgo(17), completedAt: daysAgo(17), stagesJson: stages(null), fieldsFound: 112 },
+      { sourceId: srcCore.id, status: "completed", startedAt: daysAgo(3), completedAt: daysAgo(3), stagesJson: stages(null), fieldsFound: 119, fieldsNew: 7 },
+      { sourceId: srcCrm.id, status: "completed", startedAt: daysAgo(52), completedAt: daysAgo(52), stagesJson: stages(null), fieldsFound: 64 },
+      {
+        sourceId: srcShare.id,
+        status: "partial",
+        startedAt: daysAgo(9),
+        completedAt: daysAgo(9),
+        stagesJson: stages("enumerate"),
+        fieldsFound: 41,
+        failureStage: "enumerate",
+        failureReason:
+          "Enumeration timed out after 45 minutes with roughly a third of the share still unread. What was read has been classified.",
+        failureAction:
+          "Set an off-peak window in Scan Config and re-run, or reduce scan depth to shallow for a first pass.",
+      },
+      {
+        sourceId: srcMkt.id,
+        status: "failed",
+        startedAt: daysAgo(21),
+        completedAt: daysAgo(21),
+        stagesJson: stages("connect", true),
+        fieldsFound: 0,
+        failureStage: "connect",
+        failureReason:
+          "The stored API credentials were rejected. The integration token expired on 2026-08-21.",
+        failureAction:
+          "Issue a new API token in the vendor console, update it under Integrations, then re-run the scan.",
+      },
+    ],
+  });
+
+  // -- Classified fields ----------------------------------------------------
+  const field = (
+    id: string,
+    sourceId: string,
+    fieldPath: string,
+    detectedType: string,
+    confidence: string,
+    maskedSample: string,
+    extra: Record<string, unknown> = {},
+  ) => ({
+    id,
+    sourceId,
+    fieldPath,
+    detectedType,
+    confidence,
+    maskedSample,
+    ...extra,
+  });
+
+  await prisma.classifiedField.createMany({
+    data: [
+      // Settled inventory rows.
+      field("cf_pan", srcCore.id, "customer.pan", "PAN", "high", "ABC***234F", {
+        reviewState: "approved", category: "kyc", sensitivityTier: "high",
+        purposeTagId: "pt_regulatory", dataSubjectType: "customer",
+        lastVerified: daysAgo(3), catalogSyncStatus: "synced",
+      }),
+      field("cf_email", srcCore.id, "customer.email", "Email", "high", "m****@example.in", {
+        reviewState: "approved", category: "contact", sensitivityTier: "medium",
+        purposeTagId: "pt_servicing", dataSubjectType: "customer",
+        lastVerified: daysAgo(3), catalogSyncStatus: "synced",
+      }),
+      field("cf_balance", srcCore.id, "account.balance", "Currency", "high", "₹**,***", {
+        reviewState: "approved", category: "financial", sensitivityTier: "high",
+        purposeTagId: "pt_servicing", dataSubjectType: "customer",
+        lastVerified: daysAgo(3), catalogSyncStatus: "synced",
+      }),
+      // No purpose tag: flagged in the inventory, not left blank.
+      field("cf_dob", srcCore.id, "customer.dob", "Date of birth", "high", "19**-**-14", {
+        reviewState: "approved", category: "identity", sensitivityTier: "high",
+        dataSubjectType: "customer", lastVerified: daysAgo(3),
+        catalogSyncStatus: "pending",
+      }),
+      field("cf_phone_crm", srcCrm.id, "contact.mobile", "Phone", "high", "+91 98*** **34", {
+        reviewState: "approved", category: "contact", sensitivityTier: "medium",
+        purposeTagId: "pt_servicing", dataSubjectType: "customer",
+        lastVerified: daysAgo(52), catalogSyncStatus: "synced",
+      }),
+      // DRIFT: previously classified as a free-text note, now reads as a PAN.
+      // Different problem from a never-classified field, and flagged as such.
+      field("cf_drift", srcCrm.id, "contact.notes", "PAN", "needs_review", "…ABC***234F…", {
+        category: "kyc", sensitivityTier: "high", dataSubjectType: "customer",
+        driftFlag: true, previousType: "Free text",
+        catalogSyncStatus: "not_configured",
+      }),
+      // Needs review.
+      field("cf_ref", srcCrm.id, "contact.external_ref", "Customer ID", "needs_review", "CUST-4****0", {
+        category: "identity", sensitivityTier: "low", dataSubjectType: "customer",
+      }),
+      field("cf_notes2", srcShare.id, "payroll_2024.xlsx:col_G", "Aadhaar", "needs_review", "XXXX XXXX 4412", {
+        category: "kyc", sensitivityTier: "high", dataSubjectType: "employee",
+      }),
+      field("cf_salary", srcShare.id, "payroll_2024.xlsx:col_D", "Currency", "high", "₹**,***", {
+        reviewState: "approved", category: "financial", sensitivityTier: "high",
+        purposeTagId: "pt_servicing", dataSubjectType: "employee",
+        lastVerified: daysAgo(9), catalogSyncStatus: "failed",
+      }),
+      // Duplicate candidates.
+      field("cf_dup_a", srcCore.id, "customer.mobile_no", "Phone", "high", "+91 98*** **34", {
+        reviewState: "approved", category: "contact", sensitivityTier: "medium",
+        purposeTagId: "pt_servicing", dataSubjectType: "customer",
+        lastVerified: daysAgo(3), catalogSyncStatus: "synced",
+      }),
+      field("cf_dup_b", srcCrm.id, "contact.phone_primary", "Phone", "high", "+91 98*** **34", {
+        reviewState: "approved", category: "contact", sensitivityTier: "medium",
+        purposeTagId: "pt_servicing", dataSubjectType: "customer",
+        lastVerified: daysAgo(52), catalogSyncStatus: "synced",
+      }),
+      // ROT candidates.
+      field("cf_rot_old", srcShare.id, "archive_2019/leads_export.csv", "Email", "high", "j****@example.in", {
+        reviewState: "approved", category: "marketing", sensitivityTier: "medium",
+        dataSubjectType: "customer", lastVerified: daysAgo(9),
+        catalogSyncStatus: "not_configured",
+      }),
+      field("cf_rot_tmp", srcShare.id, "tmp/export_backup_copy.csv", "Email", "high", "a****@example.in", {
+        reviewState: "approved", category: "marketing", sensitivityTier: "low",
+        dataSubjectType: "customer", lastVerified: daysAgo(9),
+        catalogSyncStatus: "not_configured",
+      }),
+      // New PII found on the most recent scan.
+      field("cf_newpii", srcCore.id, "support.ticket_body", "Aadhaar", "needs_review", "XXXX XXXX 9013", {
+        category: "kyc", sensitivityTier: "high", dataSubjectType: "customer",
+      }),
+      // Quarantined.
+      field("cf_quar", srcShare.id, "unsecured/customer_dump.csv", "PAN", "high", "ABC***234F", {
+        reviewState: "approved", category: "kyc", sensitivityTier: "high",
+        dataSubjectType: "customer", lastVerified: daysAgo(9),
+        catalogSyncStatus: "not_configured",
+      }),
+    ],
+  });
+
+  // -- Duplicates and ROT ---------------------------------------------------
+  const dupPair = await prisma.duplicatePair.create({
+    data: {
+      id: "dup_phone",
+      fieldAId: "cf_dup_a",
+      fieldBId: "cf_dup_b",
+      similarityScore: 96,
+      createdAt: daysAgo(3),
+    },
+  });
+  // A deliberately weaker match: the case where "keep both" is the right answer
+  // and merging would quietly destroy a real distinction.
+  const dupWeak = await prisma.duplicatePair.create({
+    data: {
+      id: "dup_weak",
+      fieldAId: "cf_email",
+      fieldBId: "cf_rot_old",
+      similarityScore: 71,
+      createdAt: daysAgo(3),
+    },
+  });
+
+  await prisma.rOTCandidate.createMany({
+    data: [
+      {
+        id: "rot_2019",
+        fieldId: "cf_rot_old",
+        businessValueScore: 8,
+        lastAccessed: daysAgo(1400),
+        reason: "Marketing export from 2019; no access in nearly four years.",
+      },
+      {
+        id: "rot_tmp",
+        fieldId: "cf_rot_tmp",
+        businessValueScore: 3,
+        lastAccessed: daysAgo(700),
+        reason: "Backup copy of a file that already exists elsewhere on the share.",
+      },
+    ],
+  });
+
+  // -- Triage items ---------------------------------------------------------
+  // One row per underlying record, in its primary category. The phone field is
+  // both low-confidence-adjacent and half of a duplicate pair; it appears once,
+  // under Duplicates, with a cross-reference rather than in both tabs.
+  await prisma.triageItem.createMany({
+    data: [
+      { id: "tr_drift", type: "low_confidence", fieldId: "cf_drift", priority: "high", createdAt: daysAgo(3), note: "Reclassified from free text to PAN since the last scan." },
+      { id: "tr_ref", type: "low_confidence", fieldId: "cf_ref", priority: "low", createdAt: daysAgo(52) },
+      { id: "tr_aadhaar_share", type: "low_confidence", fieldId: "cf_notes2", priority: "high", createdAt: daysAgo(9) },
+      { id: "tr_newpii", type: "new_pii", fieldId: "cf_newpii", priority: "high", createdAt: daysAgo(3), note: "Aadhaar numbers found in free-text support tickets." },
+      { id: "tr_newpii2", type: "new_pii", fieldId: "cf_notes2", priority: "medium", createdAt: daysAgo(9), crossRefType: "low_confidence" },
+      { id: "tr_rot1", type: "rot", fieldId: "cf_rot_old", priority: "medium", createdAt: daysAgo(9) },
+      { id: "tr_rot2", type: "rot", fieldId: "cf_rot_tmp", priority: "low", createdAt: daysAgo(9) },
+      { id: "tr_dup1", type: "duplicate", duplicatePairId: dupPair.id, priority: "medium", createdAt: daysAgo(3) },
+      { id: "tr_dup2", type: "duplicate", duplicatePairId: dupWeak.id, priority: "low", createdAt: daysAgo(3) },
+      { id: "tr_quar", type: "quarantine", fieldId: "cf_quar", priority: "high", createdAt: daysAgo(9), note: "PAN data found in an unsecured share directory." },
+    ],
+  });
+
+  // Upsert, not create: the app lazily creates this singleton on first read, so
+  // a running server can recreate the row between the reset and this write.
+  const onboarding = {
+    currentStep: 7,
+    startedAt: daysAgo(40),
+    // Step 3 is `done` because scan history exists: leaving it skipped would
+    // put "nothing has been scanned" on the dashboard next to six completed
+    // scan runs. Only notification routing stays deferred, so the setup strip
+    // still demonstrates a live deferral without contradicting the data.
+    stepStatusJson: JSON.stringify({
+      "1": "done",
+      "2": "done",
+      "3": "done",
+      "4": "done",
+      "5": "done",
+      "6": "skipped",
+    }),
+    escalationContactActorId: dpo.id,
+    backupContactActorId: admin.id,
+    retentionCategoriesAcknowledged: true,
+  };
+  await prisma.onboardingState.upsert({
+    where: { id: "singleton" },
+    create: { id: "singleton", ...onboarding },
+    update: onboarding,
+  });
 
   const counts = {
     actors: await prisma.actor.count(),

@@ -407,8 +407,77 @@ CREATE TABLE "ClassifiedField" (
     "highConfidenceOverride" BOOLEAN NOT NULL DEFAULT false,
     "reviewedByActorId" TEXT,
     "reviewedAt" TIMESTAMP(3),
+    "category" TEXT,
+    "sensitivityTier" TEXT NOT NULL DEFAULT 'medium',
+    "purposeTagId" TEXT,
+    "dataSubjectType" TEXT,
+    "lastVerified" TIMESTAMP(3),
+    "catalogSyncStatus" TEXT NOT NULL DEFAULT 'not_configured',
+    "driftFlag" BOOLEAN NOT NULL DEFAULT false,
+    "previousType" TEXT,
 
     CONSTRAINT "ClassifiedField_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "TriageItem" (
+    "id" TEXT NOT NULL,
+    "type" TEXT NOT NULL,
+    "fieldId" TEXT,
+    "duplicatePairId" TEXT,
+    "priority" TEXT NOT NULL DEFAULT 'medium',
+    "status" TEXT NOT NULL DEFAULT 'open',
+    "crossRefType" TEXT,
+    "note" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "resolvedAt" TIMESTAMP(3),
+    "resolvedByActorId" TEXT,
+
+    CONSTRAINT "TriageItem_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "DuplicatePair" (
+    "id" TEXT NOT NULL,
+    "fieldAId" TEXT NOT NULL,
+    "fieldBId" TEXT NOT NULL,
+    "similarityScore" INTEGER NOT NULL,
+    "resolution" TEXT NOT NULL DEFAULT 'unresolved',
+    "keptFieldId" TEXT,
+    "resolvedAt" TIMESTAMP(3),
+    "resolvedByActorId" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "DuplicatePair_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "MergeStep" (
+    "id" TEXT NOT NULL,
+    "duplicatePairId" TEXT NOT NULL,
+    "systemId" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "referencesUpdated" INTEGER NOT NULL DEFAULT 0,
+    "confirmedAt" TIMESTAMP(3),
+    "failureCode" TEXT,
+    "failureDetail" TEXT,
+
+    CONSTRAINT "MergeStep_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ROTCandidate" (
+    "id" TEXT NOT NULL,
+    "fieldId" TEXT NOT NULL,
+    "businessValueScore" INTEGER NOT NULL,
+    "lastAccessed" TIMESTAMP(3),
+    "reason" TEXT NOT NULL,
+    "resolution" TEXT NOT NULL DEFAULT 'unresolved',
+    "resolutionReason" TEXT,
+    "resolvedAt" TIMESTAMP(3),
+    "resolvedByActorId" TEXT,
+
+    CONSTRAINT "ROTCandidate_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -427,8 +496,31 @@ CREATE TABLE "DiscoverySource" (
     "estimatedDurationMinutes" INTEGER,
     "classificationSummary" TEXT,
     "scanFailureDetail" TEXT,
+    "scanSchedule" TEXT NOT NULL DEFAULT 'on_demand',
+    "scanDepth" TEXT NOT NULL DEFAULT 'standard',
+    "offPeakWindow" TEXT,
+    "entityId" TEXT,
 
     CONSTRAINT "DiscoverySource_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ScanRun" (
+    "id" TEXT NOT NULL,
+    "sourceId" TEXT NOT NULL,
+    "status" TEXT NOT NULL,
+    "startedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "completedAt" TIMESTAMP(3),
+    "stagesJson" TEXT NOT NULL DEFAULT '[]',
+    "fieldsFound" INTEGER NOT NULL DEFAULT 0,
+    "fieldsNew" INTEGER NOT NULL DEFAULT 0,
+    "fieldsChanged" INTEGER NOT NULL DEFAULT 0,
+    "fieldsRemoved" INTEGER NOT NULL DEFAULT 0,
+    "failureStage" TEXT,
+    "failureReason" TEXT,
+    "failureAction" TEXT,
+
+    CONSTRAINT "ScanRun_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -585,7 +677,37 @@ CREATE INDEX "ClassifiedField_sourceId_idx" ON "ClassifiedField"("sourceId");
 CREATE INDEX "ClassifiedField_confidence_idx" ON "ClassifiedField"("confidence");
 
 -- CreateIndex
+CREATE INDEX "ClassifiedField_category_idx" ON "ClassifiedField"("category");
+
+-- CreateIndex
+CREATE INDEX "ClassifiedField_purposeTagId_idx" ON "ClassifiedField"("purposeTagId");
+
+-- CreateIndex
+CREATE INDEX "TriageItem_type_status_idx" ON "TriageItem"("type", "status");
+
+-- CreateIndex
+CREATE INDEX "TriageItem_createdAt_idx" ON "TriageItem"("createdAt");
+
+-- CreateIndex
+CREATE INDEX "DuplicatePair_resolution_idx" ON "DuplicatePair"("resolution");
+
+-- CreateIndex
+CREATE INDEX "MergeStep_duplicatePairId_idx" ON "MergeStep"("duplicatePairId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ROTCandidate_fieldId_key" ON "ROTCandidate"("fieldId");
+
+-- CreateIndex
+CREATE INDEX "ROTCandidate_resolution_idx" ON "ROTCandidate"("resolution");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "DiscoverySource_name_key" ON "DiscoverySource"("name");
+
+-- CreateIndex
+CREATE INDEX "ScanRun_sourceId_idx" ON "ScanRun"("sourceId");
+
+-- CreateIndex
+CREATE INDEX "ScanRun_status_idx" ON "ScanRun"("status");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "RBACRole_name_key" ON "RBACRole"("name");
@@ -679,6 +801,33 @@ ALTER TABLE "OnboardingState" ADD CONSTRAINT "OnboardingState_backupContactActor
 
 -- AddForeignKey
 ALTER TABLE "ClassifiedField" ADD CONSTRAINT "ClassifiedField_sourceId_fkey" FOREIGN KEY ("sourceId") REFERENCES "DiscoverySource"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ClassifiedField" ADD CONSTRAINT "ClassifiedField_purposeTagId_fkey" FOREIGN KEY ("purposeTagId") REFERENCES "PurposeTag"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "TriageItem" ADD CONSTRAINT "TriageItem_fieldId_fkey" FOREIGN KEY ("fieldId") REFERENCES "ClassifiedField"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "TriageItem" ADD CONSTRAINT "TriageItem_duplicatePairId_fkey" FOREIGN KEY ("duplicatePairId") REFERENCES "DuplicatePair"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DuplicatePair" ADD CONSTRAINT "DuplicatePair_fieldAId_fkey" FOREIGN KEY ("fieldAId") REFERENCES "ClassifiedField"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DuplicatePair" ADD CONSTRAINT "DuplicatePair_fieldBId_fkey" FOREIGN KEY ("fieldBId") REFERENCES "ClassifiedField"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "MergeStep" ADD CONSTRAINT "MergeStep_duplicatePairId_fkey" FOREIGN KEY ("duplicatePairId") REFERENCES "DuplicatePair"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "MergeStep" ADD CONSTRAINT "MergeStep_systemId_fkey" FOREIGN KEY ("systemId") REFERENCES "ConnectedSystem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ROTCandidate" ADD CONSTRAINT "ROTCandidate_fieldId_fkey" FOREIGN KEY ("fieldId") REFERENCES "ClassifiedField"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ScanRun" ADD CONSTRAINT "ScanRun_sourceId_fkey" FOREIGN KEY ("sourceId") REFERENCES "DiscoverySource"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "DataFlowConnection" ADD CONSTRAINT "DataFlowConnection_fromNodeId_fkey" FOREIGN KEY ("fromNodeId") REFERENCES "DataFlowNode"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
