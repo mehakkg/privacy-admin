@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local SQLite artefacts from the pre-Postgres phase
+*.db
+*.db-journal

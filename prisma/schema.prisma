@@ -1,0 +1,790 @@
+// DPDP Privacy Admin — data model
+//
+// Runs on Postgres (hosted, via Vercel). The model was authored Postgres-shaped
+// from the start and previously ran on SQLite for local development, which is
+// why list columns are JSON strings named `...Json` (encoded and decoded via
+// src/lib/codec/json.ts) and enums are plain String columns constrained by TS
+// unions in src/lib/domain.ts rather than native Postgres types.
+//
+// Those choices are now merely conservative rather than necessary; they are left
+// as they are because changing them would be a data migration with no user-facing
+// benefit.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Actors and principals
+// ---------------------------------------------------------------------------
+
+/// A human or service account. `role` gates what the guards will permit.
+model Actor {
+  id    String @id @default(cuid())
+  name  String
+  email String @unique
+  /// admin | dpo | ciso | grievance_officer | system
+  role  String
+
+  confirmedExecutions ExecutionRecord[]          @relation("ExecutionConfirmedBy")
+  reviewedExceptions  RetentionException[]       @relation("ExceptionReviewedBy")
+  ruledEscalations    Escalation[]               @relation("EscalationRuledBy")
+  checkedItems        VerificationChecklistItem[]
+  auditEntries        AuditLogEntry[]
+  notifications       Notification[]
+
+  onboardingEscalationFor OnboardingState[] @relation("OnboardingEscalationContact")
+  onboardingBackupFor     OnboardingState[] @relation("OnboardingBackupContact")
+}
+
+/// A Data Principal under the DPDP Act. Identifiers are separate rows so the
+/// same human reached through several identifiers can be resolved to one
+/// person, and so a conflict between candidate matches can be surfaced.
+model DataPrincipal {
+  id          String   @id @default(cuid())
+  displayName String
+  createdAt   DateTime @default(now())
+
+  identifiers PrincipalIdentifier[]
+  requests    DataPrincipalRequest[]
+  locations   DataLocation[]
+  exceptions  RetentionException[]
+}
+
+model PrincipalIdentifier {
+  id          String  @id @default(cuid())
+  principalId String
+  /// email | phone | pan | customer_id | account_no
+  kind        String
+  value       String
+  verified    Boolean @default(false)
+  /// Which system asserted this identifier (free text; systems may be gone).
+  assertedBy  String?
+
+  principal DataPrincipal @relation(fields: [principalId], references: [id])
+
+  @@index([kind, value])
+}
+
+// ---------------------------------------------------------------------------
+// Requests
+// ---------------------------------------------------------------------------
+
+model DataPrincipalRequest {
+  id            String @id @default(cuid())
+  referenceCode String @unique
+  /// access | correction | erasure | nomination
+  type          String
+  /// received | identity_review | retention_review | executing | awaiting_confirmation | closed | rejected
+  status        String
+
+  principalId String?
+  /// The identifier as the Data Principal supplied it, before resolution.
+  rawIdentifier     String
+  rawIdentifierKind String
+
+  receivedAt DateTime
+  /// Statutory fulfilment deadline, computed by the SLA engine.
+  slaDeadline DateTime
+  /// DPDP Rules 2025 Rule 8: notice at least 48h before erasure.
+  preNoticeDueAt  DateTime?
+  preNoticeSentAt DateTime?
+
+  /// portal | grievance_officer | dpb | branch | email
+  escalationSource      String
+  linkedGrievanceCaseId String?
+
+  /// Set when more than one DataPrincipal plausibly matches rawIdentifier.
+  requiresIdentityReview Boolean @default(false)
+  identityNote           String?
+
+  notes String?
+
+  principal     DataPrincipal?       @relation(fields: [principalId], references: [id])
+  executions    ExecutionRecord[]
+  exceptions    RetentionException[]
+  escalations   Escalation[]
+  notifications Notification[]
+
+  @@index([status])
+  @@index([slaDeadline])
+}
+
+// ---------------------------------------------------------------------------
+// Where the data lives
+// ---------------------------------------------------------------------------
+
+model ConnectedSystem {
+  id   String @id @default(cuid())
+  name String @unique
+  /// database | saas | archive | backup | crm
+  kind String
+
+  /// false means execution cannot be dispatched; routes to manual verification.
+  hasApi Boolean
+  /// healthy | degraded | down | manual_only
+  connectionStatus String
+  /// api | manual | delayed
+  executionMode String
+  /// For executionMode = delayed (e.g. backup rotation window), in days.
+  delayDays Int?
+  ownerTeam String
+
+  locations  DataLocation[]
+  executions ExecutionRecord[]
+  accounts   SystemAccount[]
+}
+
+/// A Data Processor engaged under contract. DPDP s.8(2): the Data Fiduciary
+/// remains responsible, so instructions must stay inside the DPA's scope.
+model DataProcessor {
+  id    String @id @default(cuid())
+  name  String @unique
+  dpaId String @unique
+  /// JSON string[] of data categories the DPA actually covers.
+  dpaScopeJson String
+  /// email | portal | sftp
+  contactChannel String
+  dpaExpiresAt   DateTime?
+
+  /// draft | active
+  ///
+  /// `draft` means the DPA is still being finalised. DPDP s.8(2) requires a
+  /// valid contract before a Processor may process on the Fiduciary's behalf,
+  /// so a draft processor is a HARD BLOCK on dispatch, not a warning — see
+  /// guards/processorGate.ts.
+  dpaStatus String @default("active")
+  /// Optional at registration; JSON string[] of disclosed sub-processors.
+  subProcessorsJson String @default("[]")
+
+  locations  DataLocation[]
+  executions ExecutionRecord[]
+}
+
+/// Discovered location of a principal's data. Exactly one of systemId or
+/// processorId is set. `discoveredAt` and `stale` are what make coverage
+/// completeness derivable instead of assumed.
+model DataLocation {
+  id          String  @id @default(cuid())
+  principalId String
+  systemId    String?
+  processorId String?
+
+  /// JSON string[] of data categories present here.
+  dataCategoriesJson String
+  recordCount        Int
+
+  discoveredAt DateTime
+  /// scan | catalog_import | questionnaire | manual
+  discoverySource String
+  /// true means this location's inventory is out of date; blocks "verified".
+  stale Boolean @default(false)
+
+  principal DataPrincipal    @relation(fields: [principalId], references: [id])
+  system    ConnectedSystem? @relation(fields: [systemId], references: [id])
+  processor DataProcessor?   @relation(fields: [processorId], references: [id])
+
+  @@index([principalId])
+}
+
+// ---------------------------------------------------------------------------
+// Execution
+// ---------------------------------------------------------------------------
+
+/// One unit of work against one system or one processor.
+///
+/// NOTE: there is deliberately no boolean "done" column anywhere in this
+/// schema. Request-level completion is DERIVED from these rows by
+/// src/lib/engines/completion.ts and is always three-state.
+model ExecutionRecord {
+  id        String @id @default(cuid())
+  requestId String
+
+  systemId    String?
+  processorId String?
+
+  /// api | manual | delayed | processor_instruction
+  mode String
+  /// pending | partial | verified | failed
+  status String
+
+  /// JSON string[] of field paths withheld under a retention exception.
+  /// A non-empty value means this was a partial, field-level deletion.
+  excludedFieldsJson String @default("[]")
+
+  /// For delayed execution (backup rotation).
+  scheduledFor DateTime?
+  dispatchedAt DateTime?
+  /// Processor instructions: when the instruction was acknowledged as received.
+  deliveredAt        DateTime?
+  confirmedAt        DateTime?
+  confirmedByActorId String?
+
+  /// api_ack | manual_attestation | processor_confirmation
+  verificationMethod String?
+
+  /// Diagnostics are stored in full and shown to Admin. The role responsible
+  /// for fixing the failure needs to see why it failed.
+  failureCode        String?
+  failureDetail      String?
+  failureRawResponse String?
+  attempt            Int     @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  request     DataPrincipalRequest       @relation(fields: [requestId], references: [id])
+  system      ConnectedSystem?           @relation(fields: [systemId], references: [id])
+  processor   DataProcessor?             @relation(fields: [processorId], references: [id])
+  confirmedBy Actor?                     @relation("ExecutionConfirmedBy", fields: [confirmedByActorId], references: [id])
+  checklist   VerificationChecklistItem[]
+
+  @@index([requestId])
+  @@index([status])
+}
+
+/// Checklist backing the Manual Verification Panel for non-API systems.
+model VerificationChecklistItem {
+  id                String    @id @default(cuid())
+  executionRecordId String
+  label             String
+  ordinal           Int
+  checked           Boolean   @default(false)
+  checkedAt         DateTime?
+  checkedByActorId  String?
+  note              String?
+
+  executionRecord ExecutionRecord @relation(fields: [executionRecordId], references: [id])
+  checkedBy       Actor?          @relation(fields: [checkedByActorId], references: [id])
+
+  @@index([executionRecordId])
+}
+
+// ---------------------------------------------------------------------------
+// Retention and escalation
+// ---------------------------------------------------------------------------
+
+/// A statutory obligation to KEEP data, which overrides an erasure request for
+/// the fields it covers (DPDP s.8(7) proviso). Scoped to field paths so
+/// deletion can be partial rather than all-or-nothing.
+model RetentionException {
+  id          String  @id @default(cuid())
+  principalId String
+  requestId   String?
+
+  dataCategory String
+  /// JSON string[] of field paths protected by this obligation.
+  fieldPathsJson String
+  legalBasis     String
+  /// Human-readable citation, e.g. "PMLA 2002 s.12 r/w PML Rules r.3".
+  statuteRef      String
+  expiryCondition String
+  expiresAt       DateTime?
+
+  /// unreviewed | acknowledged | override_requested | overridden | upheld
+  /// Execution is blocked while ANY exception for the principal is unreviewed.
+  reviewStatus String  @default("unreviewed")
+  autoFlagged  Boolean @default(true)
+
+  reviewedByActorId String?
+  reviewedAt        DateTime?
+
+  principal   DataPrincipal         @relation(fields: [principalId], references: [id])
+  request     DataPrincipalRequest? @relation(fields: [requestId], references: [id])
+  reviewedBy  Actor?                @relation("ExceptionReviewedBy", fields: [reviewedByActorId], references: [id])
+  escalations Escalation[]
+
+  @@index([principalId])
+  @@index([reviewStatus])
+}
+
+/// Admin cannot resolve a legal or policy conflict alone. Overriding a
+/// retention exception requires an Escalation carrying a DPO ruling; the guards
+/// refuse to let an admin-role actor write `ruling`.
+model Escalation {
+  id                   String  @id @default(cuid())
+  requestId            String?
+  retentionExceptionId String?
+
+  /// admin | dpo | ciso | grievance_officer
+  sourceRole String
+  targetRole String
+  reason     String
+  /// JSON snapshot of the state at escalation time.
+  contextJson String
+  /// JSON string[] of audit-entry ids and execution ids attached as evidence.
+  attachedEvidenceJson String @default("[]")
+
+  /// open | ruled | withdrawn
+  status String @default("open")
+  /// approve_override | uphold_retention | partial_override
+  ruling          String?
+  rulingRationale String?
+  ruledByActorId  String?
+  ruledAt         DateTime?
+
+  createdAt DateTime @default(now())
+
+  request   DataPrincipalRequest? @relation(fields: [requestId], references: [id])
+  exception RetentionException?   @relation(fields: [retentionExceptionId], references: [id])
+  ruledBy   Actor?                @relation("EscalationRuledBy", fields: [ruledByActorId], references: [id])
+
+  @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// Audit and notification (written by engines only)
+// ---------------------------------------------------------------------------
+
+/// Append-only, hash-chained. There is no update or delete path for this model
+/// anywhere in the codebase.
+///
+/// `targetId` is a plain String, NOT a foreign key. Erasing the underlying
+/// personal data must never erase the record that it was erased.
+model AuditLogEntry {
+  /// `seq` is the primary key: for an append-only chained log the sequence
+  /// number IS the natural identity, and SQLite only allows autoincrement on
+  /// the id column. Portable to Postgres (serial).
+  seq       Int      @id @default(autoincrement())
+  id        String   @unique @default(cuid())
+  timestamp DateTime @default(now())
+
+  actorId    String?
+  actorLabel String
+  actorRole  String
+
+  action     String
+  targetType String
+  targetId   String
+  requestId  String?
+
+  payloadJson String
+  evidenceRef String?
+
+  /// sha256 over the canonicalised entry, chained to the previous entry.
+  payloadHash String
+  prevHash    String
+
+  actor Actor? @relation(fields: [actorId], references: [id])
+
+  @@index([requestId])
+  @@index([targetType, targetId])
+  @@index([action])
+}
+
+/// Cross-persona notification. Written by the notification engine as a
+/// consequence of a state change, never by a screen. There is no "notify"
+/// action anywhere in the Admin UI.
+model Notification {
+  id            String @id @default(cuid())
+  targetRole    String
+  targetActorId String?
+  triggerEvent  String
+  title         String
+  body          String
+  requestId     String?
+  /// info | warning | critical
+  severity  String    @default("info")
+  createdAt DateTime  @default(now())
+  readAt    DateTime?
+
+  targetActor Actor?                @relation(fields: [targetActorId], references: [id])
+  request     DataPrincipalRequest? @relation(fields: [requestId], references: [id])
+
+  @@index([targetRole])
+}
+
+// ---------------------------------------------------------------------------
+// Governance-owned objects — READ-ONLY to Admin.
+//
+// These are created and approved in the DPO / CISO modules, which do not exist
+// in this build. They are populated by the seed only: no create, update or
+// delete function is written for them anywhere in src/. Read-only is enforced
+// by the absence of mutation code, not by a disabled button.
+// ---------------------------------------------------------------------------
+
+model PurposeTag {
+  id          String @id @default(cuid())
+  name        String @unique
+  description String
+  /// draft | approved | retired
+  status     String
+  approvedBy String
+  approvedAt DateTime
+}
+
+model NoticeVersion {
+  id      String @id @default(cuid())
+  version String @unique
+  title   String
+  content String
+  /// JSON string[] of region codes.
+  publishedRegionsJson String
+  /// JSON string[] of Eighth Schedule language codes (DPDP s.5(3)).
+  languagesJson String
+  status        String
+  approvedBy    String
+  approvedAt    DateTime
+}
+
+model CookieCategory {
+  id          String @id @default(cuid())
+  name        String @unique
+  description String
+  /// on | off — default consent state; strictly necessary is the only `on`.
+  defaultState String
+  approvedBy   String
+  approvedAt   DateTime
+}
+
+model ProtectionRule {
+  id           String @id @default(cuid())
+  dataCategory String
+  /// mask | encrypt | dlp
+  ruleType   String
+  scope      String
+  definition String
+  approvedBy String
+  approvedAt DateTime
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 2 — Access Lifecycle & Identity Hygiene
+//
+// Internal staff access to the systems that hold personal data. Distinct from
+// DataPrincipal: these are the people processing the data, not the people the
+// data is about. Over-broad or lingering access is itself a DPDP exposure —
+// s.8(4) requires reasonable security safeguards — so this is Admin's technical
+// work, executed against a baseline the CISO approved.
+// ---------------------------------------------------------------------------
+
+/// A member of staff or a service identity that holds accounts on systems.
+model InternalUser {
+  id         String    @id @default(cuid())
+  fullName   String
+  email      String    @unique
+  department String
+  /// active | on_notice | offboarded
+  employmentStatus String
+  joinedAt   DateTime
+  leftAt     DateTime?
+  /// Set when HR flags an offboarding; drives the deprovisioning queue.
+  offboardingDueAt DateTime?
+
+  accounts SystemAccount[]
+}
+
+/// One account belonging to one InternalUser on one ConnectedSystem.
+model SystemAccount {
+  id       String @id @default(cuid())
+  userId   String
+  systemId String
+
+  username String
+  /// active | disabled | revoked | orphaned
+  status   String
+  createdAt    DateTime
+  lastActiveAt DateTime?
+
+  user   InternalUser    @relation(fields: [userId], references: [id])
+  system ConnectedSystem @relation(fields: [systemId], references: [id])
+
+  grants      AccessGrant[]
+  sessions    ActiveSession[]
+  revocations RevocationRecord[]
+  disposition AccountDisposition?
+
+  @@unique([systemId, username])
+  @@index([userId])
+  @@index([status])
+}
+
+/// A role held on an account, plus the data scope it reaches. Scope is what
+/// makes least privilege checkable rather than aspirational: a grant that
+/// reaches data categories the role template does not need is over-broad.
+model AccessGrant {
+  id        String @id @default(cuid())
+  accountId String
+  roleId    String
+
+  /// JSON string[] of data categories this grant can actually reach.
+  scopeCategoriesJson String
+  grantedAt      DateTime
+  grantedByActorId String?
+  expiresAt      DateTime?
+  revokedAt      DateTime?
+
+  account SystemAccount @relation(fields: [accountId], references: [id])
+  role    RBACRole      @relation(fields: [roleId], references: [id])
+
+  @@index([accountId])
+}
+
+/// A live session or issued token. Revoking a grant does not end a session that
+/// is already running, which is exactly how access survives deprovisioning.
+model ActiveSession {
+  id        String @id @default(cuid())
+  accountId String
+
+  /// session | api_token | refresh_token
+  kind      String
+  tokenRef  String
+  startedAt DateTime
+  lastSeenAt DateTime
+  expiresAt  DateTime?
+  terminatedAt DateTime?
+  terminatedByActorId String?
+
+  account SystemAccount @relation(fields: [accountId], references: [id])
+
+  @@index([accountId])
+}
+
+/// Per-system record of a revocation attempt.
+///
+/// Deliberately mirrors ExecutionRecord: revoking access across N systems is
+/// the same three-state problem as erasing data across N systems, and gets the
+/// same treatment. There is no boolean "revoked" column.
+model RevocationRecord {
+  id        String @id @default(cuid())
+  accountId String
+  /// Groups the per-account records raised by one deprovisioning action.
+  batchId   String
+
+  /// pending | partial | verified | failed
+  status String
+  /// api | manual
+  mode   String
+
+  grantsRevoked   Int @default(0)
+  sessionsKilled  Int @default(0)
+  /// Sessions still live after the attempt — the usual reason a revocation is
+  /// only partial.
+  sessionsRemaining Int @default(0)
+
+  dispatchedAt DateTime?
+  confirmedAt  DateTime?
+  confirmedByActorId String?
+  verificationMethod String?
+
+  failureCode        String?
+  failureDetail      String?
+  failureRawResponse String?
+  attempt            Int @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  account SystemAccount @relation(fields: [accountId], references: [id])
+
+  @@index([batchId])
+  @@index([status])
+}
+
+/// The outcome of investigating a dormant or orphaned account. Justification is
+/// mandatory — "disabled it because it looked unused" is not a record anyone can
+/// rely on later.
+model AccountDisposition {
+  id        String @id @default(cuid())
+  accountId String @unique
+
+  /// retain | disable | revoke | transfer_owner
+  disposition   String
+  justification String
+  decidedByActorId String?
+  decidedAt     DateTime @default(now())
+
+  account SystemAccount @relation(fields: [accountId], references: [id])
+}
+
+// ---------------------------------------------------------------------------
+// Declared now so migrations stay stable for scenarios 3-10.
+// No screens are built against these in this pass.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// First-run onboarding
+//
+// Structure: a reordered linear wizard with ONE mandatory, non-skippable first
+// step. Screen 1 configures escalation routing and surfaces the statutory
+// retention categories — the two things that, left unconfigured, would let a
+// deletion run with nowhere to escalate and no retention check. Everything
+// after it is deferrable, because deferring it is visible and recoverable.
+// ---------------------------------------------------------------------------
+
+/// Single-tenant, so a single row. `id` defaults to "singleton" and the code
+/// always upserts on that key: onboarding state is a property of the
+/// installation, not of a user, and two Admins should not each get their own
+/// half-finished wizard.
+model OnboardingState {
+  id String @id @default("singleton")
+
+  currentStep Int       @default(1)
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  /// JSON map of step number to "done" | "skipped". Skipped steps resurface on
+  /// the dashboard until resolved, so deferral stays visible.
+  stepStatusJson String @default("{}")
+
+  // -- Screen 1: escalation and retention defaults ------------------------
+  escalationContactActorId String?
+  backupContactActorId     String?
+  /// Entity this routing applies to, for multi-entity orgs. Null = primary.
+  scopedEntityId String?
+
+  /// Set only when the Governance Portal could not be reached and Admin
+  /// explicitly acknowledged proceeding without it. Audit-logged.
+  governanceUnavailableAcknowledged Boolean @default(false)
+  /// True when Admin confirmed having seen the statutory categories — including
+  /// the case where the list was empty, which is a risk, not a pass.
+  retentionCategoriesAcknowledged Boolean @default(false)
+
+  escalationContact Actor? @relation("OnboardingEscalationContact", fields: [escalationContactActorId], references: [id])
+  backupContact     Actor? @relation("OnboardingBackupContact", fields: [backupContactActorId], references: [id])
+}
+
+/// Statutory retention categories, DPO-defined. Governance-owned: rendered with
+/// the policy-lock treatment and never editable from Admin.
+model RetentionCategory {
+  id              String @id @default(cuid())
+  name            String @unique
+  retentionPeriod String
+  statuteRef      String
+  description     String @default("")
+  approvedBy      String
+  approvedAt      DateTime
+}
+
+/// Event-type notification routing, configured in Screen 6 and consumed by the
+/// notification engine.
+model NotificationRoute {
+  id            String @id @default(cuid())
+  eventType     String @unique
+  recipientRole String
+  /// in_app | email | sms
+  channel       String
+  /// Custom event types have no sensible default, so they must be assigned
+  /// explicitly rather than left silently unrouted.
+  isCustom      Boolean   @default(false)
+  configuredAt  DateTime?
+}
+
+/// One field surfaced by a discovery scan, awaiting classification review.
+model ClassifiedField {
+  id       String @id @default(cuid())
+  sourceId String
+
+  fieldPath    String
+  detectedType String
+  /// high | needs_review
+  confidence   String
+  /// Sample value, already masked. The real value is never stored here.
+  maskedSample String
+
+  /// pending | approved | overridden
+  reviewState    String  @default("pending")
+  overriddenType String?
+  overrideReason String?
+  /// True when Admin overrode a field the system marked HIGH confidence. Logged
+  /// distinctly from an ordinary needs-review override, because it is evidence
+  /// the detector is wrong about that pattern, not just that this row was.
+  highConfidenceOverride Boolean @default(false)
+
+  reviewedByActorId String?
+  reviewedAt        DateTime?
+
+  source DiscoverySource @relation(fields: [sourceId], references: [id])
+
+  @@index([sourceId])
+  @@index([confidence])
+}
+
+model DiscoverySource {
+  id   String @id @default(cuid())
+  name String @unique
+  /// database | cloud_storage | saas | file_share | other
+  kind String @default("database")
+
+  /// untested | connected | connected_no_data | failed
+  connectionState String  @default("untested")
+  connectionHint  String?
+  failureCode     String?
+  failureDetail   String?
+
+  /// Discovery SCOPE approval belongs to the DPO, not Admin. A source Admin can
+  /// connect is not automatically a source Admin may scan.
+  dpoApprovedForScanning Boolean @default(false)
+
+  /// Set for "other / custom" sources, which usually cannot be verified
+  /// automatically and get routed to manual verification later.
+  requiresManualVerification Boolean @default(false)
+
+  /// pending | running | scanned | partial | failed
+  scanStatus                String    @default("pending")
+  lastScanned               DateTime?
+  estimatedDurationMinutes  Int?
+  classificationSummary     String?
+  scanFailureDetail         String?
+
+  fields ClassifiedField[]
+}
+
+model DataFlowNode {
+  id       String               @id @default(cuid())
+  label    String
+  kind     String
+  outgoing DataFlowConnection[] @relation("FlowFrom")
+  incoming DataFlowConnection[] @relation("FlowTo")
+}
+
+model DataFlowConnection {
+  id                 String @id @default(cuid())
+  fromNodeId         String
+  toNodeId           String
+  dataCategoriesJson String
+
+  from DataFlowNode @relation("FlowFrom", fields: [fromNodeId], references: [id])
+  to   DataFlowNode @relation("FlowTo", fields: [toNodeId], references: [id])
+}
+
+model Entity {
+  id                String  @id @default(cuid())
+  name              String
+  kind              String
+  hierarchyParentId String?
+}
+
+/// A role Admin can grant and edit.
+///
+/// `baselineSnapshotJson` is the CISO-approved definition of what this role is
+/// permitted to reach. `permissionsJson` is what it currently grants. When the
+/// two diverge, that is DRIFT: Admin can edit the role within the baseline, but
+/// widening it beyond the baseline is a governance change, not a technical one,
+/// and the guards route it to an escalation.
+model RBACRole {
+  id          String @id @default(cuid())
+  name        String @unique
+  description String @default("")
+  systemId    String?
+
+  /// JSON string[] of permissions currently granted by this role.
+  permissionsJson String
+  /// JSON string[] — the CISO-approved ceiling. Read-only to Admin.
+  baselineSnapshotJson String
+  /// JSON string[] of data categories the baseline says this role may reach.
+  baselineCategoriesJson String @default("[]")
+
+  /// True for the least-privilege starting points offered by the Provisioning
+  /// Panel.
+  isTemplate       Boolean @default(false)
+  baselineApprovedBy String @default("A. Khan")
+  baselineApprovedAt DateTime @default(now())
+
+  grants AccessGrant[]
+}
