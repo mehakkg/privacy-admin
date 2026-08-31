@@ -258,6 +258,18 @@ export type OnboardingSlug = (typeof ONBOARDING_STEPS)[number]["slug"];
  * Why a skipped step matters. Shown on the summary and on the dashboard strip:
  * "skipped" alone tells Admin nothing about what it costs them.
  */
+/**
+ * The one-line form, shown by default. The fuller SKIP_CONSEQUENCE text sits
+ * behind an expand — a paragraph per skipped item, rendered for every item at
+ * once, buries the list it is meant to explain.
+ */
+export const SKIP_CONSEQUENCE_SHORT: Record<number, string> = {
+  2: "Scans cannot run; the data map stays empty.",
+  3: "Nothing scanned, so request scoping is incomplete.",
+  5: "Processor instructions cannot be dispatched.",
+  6: "Alerts fall back to defaults.",
+};
+
 export const SKIP_CONSEQUENCE: Record<number, string> = {
   2: "No discovery scans can run until at least one source is connected, so the data map stays empty and rights requests cannot be scoped.",
   3: "Nothing has been scanned, so classification and the data-location map for every request will be incomplete.",

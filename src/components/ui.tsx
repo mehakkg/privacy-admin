@@ -186,11 +186,22 @@ export function Card({
 export function PageHead({
   crumbs,
   title,
+  titleTip,
   subtitle,
   actions,
 }: {
   crumbs?: { label: string; href?: string }[];
   title: string;
+  /**
+   * Framing copy — what this page is for, whose decision it implements — as a
+   * tooltip beside the title rather than a standing sentence. It is read once
+   * and then re-read never, but a permanent subtitle pushes the table down on
+   * every single load.
+   *
+   * `subtitle` is still available for pages where the line genuinely changes
+   * with the data (a status summary, a live count).
+   */
+  titleTip?: ReactNode;
   subtitle?: ReactNode;
   actions?: ReactNode;
 }) {
@@ -207,7 +218,14 @@ export function PageHead({
             ))}
           </div>
         )}
-        <h1 className="page-title">{title}</h1>
+        <h1 className="page-title">
+          {title}
+          {titleTip && (
+            <span style={{ marginLeft: 8 }}>
+              <InfoTip text={titleTip} align="left" />
+            </span>
+          )}
+        </h1>
         {subtitle && <p className="page-subtitle">{subtitle}</p>}
       </div>
       {actions && <div className="page-head-actions">{actions}</div>}
@@ -298,4 +316,57 @@ export function formatDate(d: Date | null | undefined): string {
 export function formatDateTime(d: Date | null | undefined): string {
   if (!d) return "—";
   return `${d.toISOString().slice(0, 10)} ${d.toISOString().slice(11, 16)} UTC`;
+}
+
+/**
+ * Hover-gated explanation.
+ *
+ * The density rule: anything that explains why a field matters, what a status
+ * means, or what happens if something is skipped goes behind this rather than
+ * standing permanently inline. A sentence read once but rendered on every load
+ * costs every subsequent scan.
+ *
+ * CSS-only, so it works in server components with no client boundary. Not used
+ * for error states — "what failed / why / what to do next" is functional
+ * guidance Admin acts on, and hiding it behind a hover would be a regression.
+ */
+export function InfoTip({
+  text,
+  align = "center",
+  children,
+}: {
+  text: ReactNode;
+  align?: "center" | "left";
+  children?: ReactNode;
+}) {
+  return (
+    <span className={`tip${align === "left" ? " tip-left" : ""}`}>
+      {children ?? <i className="tip-mark">i</i>}
+      <span className="tip-body" role="tooltip">
+        {text}
+      </span>
+    </span>
+  );
+}
+
+/**
+ * A short badge whose fuller meaning is available on hover — the table-cell
+ * form of the same rule. `label` must stay scannable at a glance; anything
+ * longer belongs in `detail`.
+ */
+export function BadgeWithDetail({
+  label,
+  detail,
+  tone = "gray",
+}: {
+  label: string;
+  detail: ReactNode;
+  tone?: PillTone;
+}) {
+  return (
+    <span className="sub-badge">
+      <Pill tone={tone}>{label}</Pill>
+      <InfoTip text={detail} align="left" />
+    </span>
+  );
 }

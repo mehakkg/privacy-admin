@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { Card, Notice, PageHead, Pill, formatDateTime } from "@/components/ui";
 import { FinishButton } from "@/components/onboardingForms";
 import { getOnboarding, stepStatus } from "@/lib/engines/onboarding";
-import { ONBOARDING_STEPS, SKIP_CONSEQUENCE } from "@/lib/domain";
+import { ONBOARDING_STEPS, SKIP_CONSEQUENCE, SKIP_CONSEQUENCE_SHORT } from "@/lib/domain";
 
 export const dynamic = "force-dynamic";
 
@@ -186,9 +186,12 @@ export default async function SummaryStep() {
                       {stepStatus(state, s.n) === "skipped" ? "Skipped" : "Not started"}
                     </Pill>
                   </div>
-                  <p className="cell-sub" style={{ margin: "3px 0 0 20px" }}>
-                    {SKIP_CONSEQUENCE[s.n] ?? "Still to be configured."}
-                  </p>
+                  <details className="why">
+                    <summary>
+                      {SKIP_CONSEQUENCE_SHORT[s.n] ?? "Still to be configured."}
+                    </summary>
+                    <p>{SKIP_CONSEQUENCE[s.n] ?? "Still to be configured."}</p>
+                  </details>
                   <div style={{ margin: "5px 0 0 20px" }}>
                     <Link href={`/onboarding/${s.slug}`} className="btn xs">
                       Do it now

@@ -3,6 +3,7 @@
 import { useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { InfoTip } from "@/components/ui";
 import {
   addProcessorAction,
   approveFieldAction,
@@ -182,11 +183,13 @@ export function GateForm({
     <div>
       <div className="grid-2">
         <div>
-          <div className="section-label">Escalation contact</div>
-          <p className="cell-sub" style={{ margin: "0 0 10px" }}>
-            This is who retention conflicts and policy exceptions route to.
-            Admin cannot rule on them, so they have to reach someone who can.
-          </p>
+          <div className="section-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            Escalation contact
+            <InfoTip
+              align="left"
+              text="Who retention conflicts and policy exceptions route to. Admin cannot rule on them, so they have to reach someone who can."
+            />
+          </div>
 
           {noDpoAssigned ? (
             <div className="notice warn" style={{ marginBottom: 12 }}>

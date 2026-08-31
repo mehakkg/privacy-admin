@@ -7,6 +7,7 @@ import {
   CompletionPill,
   Notice,
   PageHead,
+  BadgeWithDetail,
   Pill,
   Stat,
   formatDate,
@@ -84,7 +85,7 @@ export default async function RequestQueuePage({
     <Shell active="/requests" title="Requests">
       <PageHead
         title="Data Principal Rights Requests"
-        subtitle="Execution queue for access, correction and erasure requests. Admin implements the decision; it does not make it."
+        titleTip="Execution queue for access, correction and erasure requests. Admin implements the decision; it does not make it."
         actions={<TickButton />}
       />
 
@@ -185,10 +186,13 @@ export default async function RequestQueuePage({
                   <div className="cell-stack">
                     <span>{REQUEST_STATUS_LABEL[request.status as RequestStatus]}</span>
                     {!posture.clear && (
-                      <span className="cell-sub" style={{ color: "var(--yellow)" }}>
-                        {posture.unreviewedCount} retention obligation
-                        {posture.unreviewedCount === 1 ? "" : "s"} unreviewed
-                      </span>
+                      <BadgeWithDetail
+                        tone="yellow"
+                        label={`${posture.unreviewedCount} unreviewed`}
+                        detail={`${posture.unreviewedCount} legal-retention obligation${
+                          posture.unreviewedCount === 1 ? "" : "s"
+                        } must be reviewed before any deletion action on this request. Open Scope & Retention to review them.`}
+                      />
                     )}
                   </div>
                 </td>
