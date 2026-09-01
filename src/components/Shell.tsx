@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { Bell } from "lucide-react";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/session";
 import { countUnread } from "@/lib/engines/notification";
@@ -137,6 +138,23 @@ function navGroups(openRequests: number): NavGroup[] {
   ];
 }
 
+/**
+ * "R. Iyer" -> "RI", "P. Deshmukh" -> "PD". Takes the first letter of each
+ * word, so an initialled first name contributes its initial rather than a
+ * stray full stop.
+ */
+function initialsOf(name: string): string {
+  return (
+    name
+      .split(/\s+/)
+      .map((part) => part.replace(/[^A-Za-z]/g, "").charAt(0))
+      .filter(Boolean)
+      .slice(0, 2)
+      .join("")
+      .toUpperCase() || "?"
+  );
+}
+
 export async function Shell({
   active,
   title,
@@ -179,20 +197,30 @@ export async function Shell({
         <header className="topbar">
           <span className="topbar-title">{title}</span>
           <span className="topbar-spacer" />
-          <Link href="/notifications" className="btn sm ghost">
-            Notifications
+          <Link
+            href="/notifications"
+            className="icon-btn"
+            aria-label={
+              unread > 0 ? `Notifications, ${unread} unread` : "Notifications"
+            }
+            title={unread > 0 ? `${unread} unread` : "Notifications"}
+          >
+            <Bell size={16} strokeWidth={1.9} />
             {unread > 0 && (
-              <span className="pill red" style={{ marginLeft: 4 }}>
-                <span className="dot" />
-                {unread}
-              </span>
+              <span className="icon-badge">{unread > 9 ? "9+" : unread}</span>
             )}
           </Link>
           <ThemeToggle />
           <RoleSwitcher current={session.role} />
-          <span className="cell-sub">
-            {session.actor.label} · {ROLE_LABEL[session.role]}
-          </span>
+          <div className="profile">
+            <span className="avatar" aria-hidden>
+              {initialsOf(session.actor.label)}
+            </span>
+            <span className="profile-meta">
+              <span className="profile-name">{session.actor.label}</span>
+              <span className="profile-role">{ROLE_LABEL[session.role]}</span>
+            </span>
+          </div>
         </header>
         <main className="main-body">{children}</main>
       </div>

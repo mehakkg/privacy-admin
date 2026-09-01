@@ -6,14 +6,21 @@
  * Design tokens ported from the xecurify IdP console prototype
  * (../src/styles/base.css) so the Privacy product reads as part of the same
  * family: dense 13.5px tables, subtle light-background status pills, a 216px
- * sidebar, and the miniOrange brand orange as the single accent.
+ * sidebar, and a single blue accent (#2563EB) as the only brand colour.
  */
 :root {
-  /* Brand */
-  --orange: #f4612b;
-  --orange-600: #e0521d;
-  --orange-50: #fff1ea;
-  --orange-100: #ffe2d2;
+  /* Brand accent — the single primary. Named `--accent` rather than by its
+     colour so the next change of mind is a value edit, not a rename. */
+  --accent: #2563eb;
+  --accent-600: #1d4ed8;
+  --accent-50: #eff6ff;
+  --accent-100: #dbeafe;
+
+  /* A genuine orange, kept ONLY for the `orange` pill tone (drift, erasure).
+     It is a status hue, not the brand: folding it into the accent would make
+     "Drift" and "Erasure" indistinguishable from every primary control. */
+  --orange: #c2410c;
+  --orange-bg: #ffedd5;
 
   /* Surfaces */
   --bg: #ffffff;
@@ -21,7 +28,7 @@
   --bg-sidebar: #ffffff;
   --bg-hover: #f7f8f9;
   --bg-row-hover: #fafafa;
-  --bg-selected: #fff7f1;
+  --bg-selected: #eff6ff;
   --bg-muted: #f5f6f7;
 
   /* Borders */
@@ -43,8 +50,8 @@
   --red-bg: #fdecec;
   --yellow: #b27a00;
   --yellow-bg: #fff4d9;
-  --blue: #2f6bd6;
-  --blue-bg: #e7efff;
+  --blue: #0369a1;
+  --blue-bg: #e0f2fe;
   --purple: #6b48d6;
   --purple-bg: #efeaff;
   --gray-bg: #eef0f3;
@@ -71,7 +78,7 @@
   --green-border: #c9e9d5;
   --red-border: #f5cfcf;
   --yellow-border: #f2e0b0;
-  --blue-border: #cfe0fb;
+  --blue-border: #bae6fd;
   --purple-border: #ddd3fa;
 
   --code-bg: #1a1d21;
@@ -101,32 +108,37 @@
  *    close to unreadable at 11.5px.
  */
 :root[data-theme="dark"] {
-  /* Brand — lifted slightly so the orange holds against navy. */
-  --orange: #ff7a45;
-  --orange-600: #ff9268;
-  --orange-50: #2a1710;
-  --orange-100: #3a2117;
+  /* Accent lifted one step: #2563eb is the right weight on white but sits too
+     close to the canvas on a navy base. */
+  --accent: #3b82f6;
+  --accent-600: #60a5fa;
+  --accent-50: #17233d;
+  --accent-100: #1e3a5f;
 
-  /* Surfaces */
-  --bg: #141c2e;
-  --bg-page: #0e1524;
-  --bg-sidebar: #0d1421;
-  --bg-hover: #1b2438;
-  --bg-row-hover: #172032;
-  --bg-selected: #24190f;
-  --bg-muted: #1a2337;
+  --orange: #fb923c;
+  --orange-bg: #38220f;
+
+  /* Surfaces — built on the #0F172A base, so the canvas IS the base and cards
+     lift off it rather than the reverse. */
+  --bg: #1e293b;
+  --bg-page: #0f172a;
+  --bg-sidebar: #0f172a;
+  --bg-hover: #263449;
+  --bg-row-hover: #223047;
+  --bg-selected: #17233d;
+  --bg-muted: #1c2740;
 
   /* Borders */
-  --border: #26304a;
-  --border-soft: #1e2740;
-  --border-strong: #33405f;
+  --border: #334155;
+  --border-soft: #253044;
+  --border-strong: #475569;
 
   /* Text */
-  --text: #e8edf5;
-  --text-2: #b6c0d4;
-  --text-3: #8c99b3;
-  --text-4: #6b7794;
-  --text-link: #7aa7f5;
+  --text: #f1f5f9;
+  --text-2: #cbd5e1;
+  --text-3: #94a3b8;
+  --text-4: #64748b;
+  --text-link: #60a5fa;
 
   /* Status — saturated foreground on a deep fill of the same family. */
   --green: #4ade80;
@@ -135,8 +147,8 @@
   --red-bg: #331616;
   --yellow: #fbbf24;
   --yellow-bg: #33280d;
-  --blue: #60a5fa;
-  --blue-bg: #14243f;
+  --blue: #38bdf8;
+  --blue-bg: #082f49;
   --purple: #a78bfa;
   --purple-bg: #221a3d;
   --gray-bg: #1f2941;
@@ -145,16 +157,16 @@
   --green-border: #1d5136;
   --red-border: #5c2626;
   --yellow-border: #5a4413;
-  --blue-border: #21406b;
+  --blue-border: #0c4a6e;
   --purple-border: #3a2d63;
 
   /* The code block is already dark in light mode; give it separation from the
      navy surface rather than leaving it nearly the same colour. */
-  --code-bg: #080d17;
-  --code-text: #d7dfec;
+  --code-bg: #0a1020;
+  --code-text: #cbd5e1;
 
-  --scrollbar: #33405f;
-  --scrollbar-hover: #44547a;
+  --scrollbar: #334155;
+  --scrollbar-hover: #475569;
 
   /* Shadows carry no light on a dark canvas — deepen them instead of tinting. */
   --shadow-popover: 0 10px 30px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
@@ -239,7 +251,7 @@ textarea {
   width: 26px;
   height: 26px;
   border-radius: var(--radius);
-  background: var(--orange);
+  background: var(--accent);
   color: var(--on-accent);
   display: grid;
   place-items: center;
@@ -332,7 +344,7 @@ textarea {
   color: var(--text-3);
 }
 .sidebar-item.active .sidebar-item-main svg {
-  color: var(--orange-600);
+  color: var(--accent-600);
 }
 .sidebar-chevron {
   display: grid;
@@ -354,8 +366,8 @@ textarea {
   color: var(--text);
 }
 .sidebar-item.active {
-  background: var(--orange-50);
-  color: var(--orange-600);
+  background: var(--accent-50);
+  color: var(--accent-600);
   font-weight: 500;
 }
 .sidebar-item.disabled {
@@ -394,8 +406,8 @@ textarea {
   color: var(--text);
 }
 .sidebar-subitem.active {
-  color: var(--orange-600);
-  background: var(--orange-50);
+  color: var(--accent-600);
+  background: var(--accent-50);
   font-weight: 500;
 }
 .sidebar-subitem.disabled {
@@ -423,8 +435,8 @@ textarea {
   color: var(--text);
 }
 .sidebar-item.rail-item.active {
-  background: var(--orange-50);
-  color: var(--orange-600);
+  background: var(--accent-50);
+  color: var(--accent-600);
 }
 .rail-badge {
   position: absolute;
@@ -434,7 +446,7 @@ textarea {
   height: 14px;
   padding: 0 3px;
   border-radius: 999px;
-  background: var(--orange);
+  background: var(--accent);
   color: var(--on-accent);
   font-size: 9.5px;
   font-weight: 600;
@@ -618,7 +630,7 @@ table.dtable {
   font-weight: 500;
 }
 .dtable a.row-link:hover {
-  color: var(--orange-600);
+  color: var(--accent-600);
 }
 
 .cell-stack {
@@ -664,7 +676,7 @@ table.dtable {
 .pill.blue { background: var(--blue-bg); color: var(--blue); }
 .pill.purple { background: var(--purple-bg); color: var(--purple); }
 .pill.gray { background: var(--gray-bg); color: var(--gray-text); }
-.pill.orange { background: var(--orange-50); color: var(--orange-600); }
+.pill.orange { background: var(--orange-bg); color: var(--orange); }
 
 /* ----------------------------------------------------------------- buttons */
 .btn {
@@ -691,13 +703,13 @@ table.dtable {
   cursor: not-allowed;
 }
 .btn.primary {
-  background: var(--orange);
-  border-color: var(--orange);
+  background: var(--accent);
+  border-color: var(--accent);
   color: var(--on-accent);
 }
 .btn.primary:hover:not(:disabled) {
-  background: var(--orange-600);
-  border-color: var(--orange-600);
+  background: var(--accent-600);
+  border-color: var(--accent-600);
 }
 .btn.danger {
   color: var(--red);
@@ -823,11 +835,11 @@ table.dtable {
   color: var(--text);
 }
 .step.active {
-  color: var(--orange-600);
-  border-bottom-color: var(--orange);
+  color: var(--accent-600);
+  border-bottom-color: var(--accent);
 }
 .step.active .step-sub {
-  color: var(--orange-600);
+  color: var(--accent-600);
   opacity: 0.75;
 }
 .step.done .step-label::after {
@@ -938,8 +950,8 @@ select.input {
 textarea.input:focus,
 input.input:focus,
 select.input:focus {
-  outline: 2px solid var(--orange-100);
-  border-color: var(--orange);
+  outline: 2px solid var(--accent-100);
+  border-color: var(--accent);
 }
 
 @media print {
@@ -1020,9 +1032,9 @@ select.input:focus {
   border-right: none;
 }
 .wiz-rail-step.current {
-  background: var(--orange-50);
-  color: var(--orange-600);
-  box-shadow: inset 0 -2px 0 var(--orange);
+  background: var(--accent-50);
+  color: var(--accent-600);
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 .wiz-rail-step.locked {
   color: var(--text-4);
@@ -1074,8 +1086,8 @@ select.input:focus {
   background: var(--bg-hover);
 }
 .tile.on {
-  border-color: var(--orange);
-  background: var(--orange-50);
+  border-color: var(--accent);
+  background: var(--accent-50);
 }
 .tile-title {
   font-weight: 500;
@@ -1223,4 +1235,83 @@ select.input:focus {
   color: var(--text-3);
   line-height: 1.5;
   max-width: 620px;
+}
+
+/* ------------------------------------------------------------ header icons
+   Icon-only controls in the top bar. Labelled for screen readers and
+   tooltipped for sighted users, so dropping the visible word costs nothing. */
+.icon-btn {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-3);
+  text-decoration: none;
+  flex-shrink: 0;
+}
+.icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* The count sits ON the bell rather than beside it, so an unread state reads
+   at a glance instead of widening the header as the number grows. */
+.icon-badge {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--red);
+  color: var(--on-accent);
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--bg);
+}
+
+/* ---------------------------------------------------------------- profile */
+.profile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 12px;
+  margin-left: 4px;
+  border-left: 1px solid var(--border-soft);
+  flex-shrink: 0;
+}
+.avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent-50);
+  color: var(--accent-600);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+.profile-meta {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.profile-name {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text);
+}
+.profile-role {
+  font-size: 10.5px;
+  color: var(--text-4);
 }
