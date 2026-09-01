@@ -60,6 +60,7 @@ async function main() {
     "AccessGrant",
     "SystemAccount",
     "InternalUser",
+    "ProvisioningRequest",
     "RBACRole",
     "TriageItem",
     "MergeStep",
@@ -888,6 +889,79 @@ async function main() {
       baselineCategoriesJson: list([]),
       baselineApprovedBy: "A. Khan",
       baselineApprovedAt: daysAgo(180),
+      lastReviewedAt: daysAgo(120),
+    },
+  });
+
+  // Least-privilege templates the Provisioning screen grants from. "Standard
+  // Analyst" is the one Arjun Mehta's HR-sync request maps to: Core Banking
+  // (read), Finance File Share (read), no access to the Legacy Loan Archive.
+  const roleAnalyst = await prisma.rBACRole.create({
+    data: {
+      id: "role_analyst",
+      name: "Standard Analyst",
+      description: "Reads Core Banking and the Finance File Share. No archive access.",
+      isTemplate: true,
+      permissionsJson: list(["read:core_banking", "read:finance_share"]),
+      baselineSnapshotJson: list(["read:core_banking", "read:finance_share"]),
+      baselineCategoriesJson: list(["identity", "contact", "financial"]),
+      baselineApprovedBy: "A. Khan",
+      baselineApprovedAt: daysAgo(200),
+      lastReviewedAt: daysAgo(30),
+    },
+  });
+
+  await prisma.rBACRole.create({
+    data: {
+      id: "role_ops_ro",
+      name: "Ops — Read Only",
+      description: "Read-only operational visibility across core systems.",
+      isTemplate: true,
+      permissionsJson: list(["read:core_banking", "read:ops_dashboards"]),
+      baselineSnapshotJson: list(["read:core_banking", "read:ops_dashboards"]),
+      baselineCategoriesJson: list(["identity", "financial"]),
+      baselineApprovedBy: "A. Khan",
+      baselineApprovedAt: daysAgo(200),
+      lastReviewedAt: daysAgo(45),
+    },
+  });
+
+  // The RBAC drift example: baseline of 12 permissions, current holds 15. The
+  // three additions include write:dpa_records — a sensitive write, added six
+  // weeks ago with no record of why. That single sensitive addition is what
+  // pushes this from "minor" to "significant" drift.
+  const complianceBaseline = [
+    "read:consent_records",
+    "read:notices",
+    "read:purposes",
+    "read:cookie_categories",
+    "read:processing_activities",
+    "read:dpa_records",
+    "read:grievances",
+    "read:audit_log",
+    "read:data_inventory",
+    "read:retention_schedule",
+    "read:breach_register",
+    "export:compliance_report",
+  ];
+  await prisma.rBACRole.create({
+    data: {
+      id: "role_compliance",
+      name: "Compliance Reviewer",
+      description: "Reviews compliance evidence across the platform.",
+      permissionsJson: list([
+        ...complianceBaseline,
+        "read:pipeline_metadata",
+        "read:support_tickets",
+        "write:dpa_records",
+      ]),
+      baselineSnapshotJson: list(complianceBaseline),
+      baselineCategoriesJson: list(["identity", "contact", "kyc", "financial"]),
+      baselineApprovedBy: "A. Khan",
+      baselineApprovedAt: daysAgo(200),
+      // Never re-reviewed since the drift crept in — which is how it went
+      // unnoticed for six weeks.
+      lastReviewedAt: daysAgo(200),
     },
   });
 
@@ -1028,11 +1102,142 @@ async function main() {
   // These two survive the warehouse revocation, making it partial.
   await session(priyaWarehouse.id, "api_token", "tok_7f3a91c4", 120, 3, 240);
   await session(priyaWarehouse.id, "refresh_token", "rt_2b88ce10", 60, 3, 90);
+
+  // A revocation that was dispatched but did not fully take: the Data Warehouse
+  // (degraded) removed the roles but its session store did not respond, so two
+  // tokens remain valid. This is the residual-access state the Verification tab
+  // exists to surface — "Access still active" 20 minutes after the revoke was
+  // triggered, resolvable by a retry or, if the vendor is at fault, an escalation.
+  await prisma.revocationRecord.create({
+    data: {
+      accountId: priyaWarehouse.id,
+      batchId: "batch_seed_resid",
+      status: "partial",
+      mode: "api",
+      grantsRevoked: 1,
+      sessionsKilled: 0,
+      sessionsRemaining: 2,
+      dispatchedAt: new Date(NOW.getTime() - 20 * 60 * 1000),
+      confirmedAt: null,
+      failureDetail:
+        "Roles were removed, but the session store did not respond, so existing " +
+        "tokens remain valid until they expire.",
+      attempt: 1,
+    },
+  });
   await session(priyaCore.id, "session", "sess_a41f0092", 1, 1, 1);
   await session(vikramWarehouse.id, "api_token", "tok_9d2e77b1", 200, 1, 300);
   // Anjali left 210 days ago; this token is still valid.
   await session(anjaliCrm.id, "refresh_token", "rt_5c19ab33", 230, 220, 400);
   await session(svcWarehouse.id, "api_token", "tok_e08b4416", 900, 400, 1000);
+
+  // -- Provisioning request queue -------------------------------------------
+  // Access requests awaiting a grant. A request is not a grant: it sits here
+  // until Admin applies a least-privilege template and executes it. The queue
+  // shows the full three-state spread — pending, granted, and a failed one with
+  // a retryable per-system error.
+  const provReq = async (
+    id: string,
+    requesterName: string,
+    requesterDept: string,
+    source: string,
+    roleId: string,
+    roleRequested: string,
+    status: string,
+    requestedDaysAgo: number,
+    systems: { system: string; level: string; status: string; outcome?: string; reason?: string | null }[],
+    broadenedJustification: string | null = null,
+  ) =>
+    prisma.provisioningRequest.create({
+      data: {
+        id,
+        requesterName,
+        requesterDept,
+        source,
+        roleId,
+        roleRequested,
+        status,
+        requestedAt: daysAgo(requestedDaysAgo),
+        systemsJson: JSON.stringify(systems),
+        broadenedJustification,
+        executedAt: status === "pending" ? null : daysAgo(requestedDaysAgo),
+      },
+    });
+
+  // Arjun Mehta — new hire, HR-sync triggered, Standard Analyst template.
+  // Core Banking (read) + Finance File Share (read); no Legacy Loan Archive.
+  await provReq(
+    "pr_arjun",
+    "Arjun Mehta",
+    "Retail Analytics",
+    "hr_sync",
+    roleAnalyst.id,
+    "Standard Analyst",
+    "pending",
+    1,
+    [
+      { system: "Core Banking DB", level: "read", status: "pending", outcome: "ok" },
+      { system: "Finance File Share", level: "read", status: "pending", outcome: "ok" },
+    ],
+  );
+
+  // Priya Iyer — manual request needing read/write on Core Banking, beyond the
+  // Standard Analyst template. Broadened, so a justification is on record.
+  await provReq(
+    "pr_priya_iyer",
+    "Priya Iyer",
+    "Finance Operations",
+    "manual",
+    roleAnalyst.id,
+    "Standard Analyst",
+    "pending",
+    2,
+    [
+      { system: "Core Banking DB", level: "read/write", status: "pending", outcome: "ok" },
+      { system: "Finance File Share", level: "read", status: "pending", outcome: "ok" },
+    ],
+    "Handles reconciliation exceptions requiring write access to correct transaction records.",
+  );
+
+  // Rohan Gupta — HR-sync, Ops — Read Only, already granted cleanly.
+  await provReq(
+    "pr_rohan",
+    "Rohan Gupta",
+    "Operations",
+    "hr_sync",
+    "role_ops_ro",
+    "Ops — Read Only",
+    "granted",
+    6,
+    [
+      { system: "Core Banking DB", level: "read", status: "granted", outcome: "ok" },
+      { system: "Ops Dashboards", level: "read", status: "granted", outcome: "ok" },
+    ],
+  );
+
+  // Neha Kulkarni — manual, Standard Analyst, one system failed to grant: the
+  // target account does not exist in the Finance File Share yet. Retryable on
+  // its own, independent of the Core Banking grant that already succeeded.
+  await provReq(
+    "pr_neha",
+    "Neha Kulkarni",
+    "Retail Lending",
+    "manual",
+    roleAnalyst.id,
+    "Standard Analyst",
+    "failed",
+    3,
+    [
+      { system: "Core Banking DB", level: "read", status: "granted", outcome: "ok" },
+      {
+        system: "Finance File Share",
+        level: "read",
+        status: "failed",
+        outcome: "fail",
+        reason: "target account does not exist in this system",
+      },
+    ],
+  );
 
   // -- Onboarding state -----------------------------------------------------
   // An org past the mandatory gate, with two technical steps deferred.

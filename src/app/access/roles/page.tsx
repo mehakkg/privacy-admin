@@ -1,78 +1,84 @@
-import Link from "next/link";
 import { db } from "@/lib/db";
 import {
   Card,
-  FieldChips,
-  GovernanceBanner,
   Notice,
   PageHead,
   Pill,
   Stat,
-  formatDate,
   formatDateTime,
 } from "@/components/ui";
-import { RoleEditor } from "@/components/accessActions";
+import { CompactFilterBar } from "@/components/CompactFilterBar";
+import { RbacMatrix, type RoleRow } from "@/components/rbacMatrix";
 import { analyseRole } from "@/lib/guards/baselineGate";
-import { decodeList, decodeObject } from "@/lib/codec/json";
+import { decodeObject } from "@/lib/codec/json";
 import { ROLE_LABEL, type ActorRole } from "@/lib/domain";
 
 export const dynamic = "force-dynamic";
 
 /**
- * SCREEN 6 (Scenario 2) — RBAC Matrix Viewer, with drift detection
- * SCREEN 7 (inline)      — Role Editor
+ * SCREEN 4 (Scenario 2) — RBAC Matrix, with drift detection
  *
- * Drift is the gap between what a role grants now and the baseline the CISO
- * approved. Only unapproved WIDENING counts: a role narrower than its baseline
- * is not a security problem, and flagging it would train people to ignore the
- * flag.
+ * Drift is found, not waited for: the drift-status column compares each role's
+ * current permissions against the CISO-approved baseline the moment the table
+ * loads. No drift (teal) / minor (amber) / significant (red) — significant when
+ * a sensitive permission was added, or the delta is large.
  *
- * The asymmetry in the editor is the enforcement of criteria 5 and 6 in this
- * scenario. Narrowing a role is technical work Admin owns. Widening it past the
- * baseline is a governance decision, refused by the server and routed to the
- * CISO as an escalation.
+ * The Role Editor is a side-by-side of baseline (read-only) vs current
+ * (editable). Narrowing a role is Admin's to do; widening it past the baseline
+ * is the CISO's decision, raised as an escalation.
  */
 export default async function RolesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ role?: string }>;
+  searchParams: Promise<{ q?: string; drift?: string }>;
 }) {
   const params = await searchParams;
+  const term = (params.q ?? "").trim().toLowerCase();
 
   const [roles, grants, escalations] = await Promise.all([
     db.rBACRole.findMany({ orderBy: { name: "asc" } }),
-    db.accessGrant.findMany({
-      where: { revokedAt: null },
-      include: { account: { include: { user: true, system: true } } },
-    }),
+    db.accessGrant.findMany({ where: { revokedAt: null } }),
     db.escalation.findMany({
       where: { targetRole: "ciso" },
       orderBy: { createdAt: "desc" },
-      take: 10,
+      take: 8,
     }),
   ]);
 
-  const analyses = roles.map(analyseRole);
-  const drifted = analyses.filter((a) => a.hasDrift);
-  const selected =
-    analyses.find((a) => a.roleId === params.role) ?? drifted[0] ?? analyses[0] ?? null;
+  const holdersByRole = new Map<string, number>();
+  for (const g of grants) holdersByRole.set(g.roleId, (holdersByRole.get(g.roleId) ?? 0) + 1);
 
-  const holdersByRole = new Map<string, typeof grants>();
-  for (const g of grants) {
-    const list = holdersByRole.get(g.roleId) ?? [];
-    list.push(g);
-    holdersByRole.set(g.roleId, list);
-  }
+  let rows: RoleRow[] = roles.map((role) => {
+    const a = analyseRole(role);
+    return {
+      id: a.roleId,
+      name: a.roleName,
+      description: a.description,
+      current: a.current,
+      baseline: a.baseline,
+      excess: a.excess,
+      sensitiveExcess: a.sensitiveExcess,
+      missing: a.missing,
+      severity: a.severity,
+      baselineCount: a.baselineCount,
+      currentCount: a.currentCount,
+      baselineApprovedBy: a.baselineApprovedBy,
+      baselineApprovedAt: a.baselineApprovedAt,
+      lastReviewedAt: a.lastReviewedAt,
+      holders: holdersByRole.get(a.roleId) ?? 0,
+    };
+  });
 
-  const allPermissions = [
-    ...new Set(analyses.flatMap((a) => [...a.current, ...a.baseline])),
-  ].sort();
+  const drifted = rows.filter((r) => r.severity !== "none");
+
+  if (params.drift) rows = rows.filter((r) => r.severity === params.drift);
+  if (term) rows = rows.filter((r) => r.name.toLowerCase().includes(term));
 
   return (
     <div className="stack">
       <PageHead
         title="RBAC matrix"
-        subtitle="What each role grants now, against the baseline the CISO approved. Drift is unapproved widening — a role that grants less than its baseline is fine."
+        titleTip="Each role's current permissions compared against the CISO-approved baseline. Drift is unapproved widening; it is detected automatically the moment this loads."
       />
 
       <div className="stat-row">
@@ -82,8 +88,12 @@ export default async function RolesPage({
           value={drifted.length}
           tone={drifted.length ? "red" : undefined}
         />
+        <Stat
+          label="Significant"
+          value={drifted.filter((r) => r.severity === "significant").length}
+          tone={drifted.some((r) => r.severity === "significant") ? "red" : undefined}
+        />
         <Stat label="Live grants" value={grants.length} />
-        <Stat label="Distinct permissions" value={allPermissions.length} />
       </div>
 
       {drifted.length > 0 && (
@@ -97,177 +107,39 @@ export default async function RolesPage({
         >
           <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
             {drifted.map((d) => (
-              <li key={d.roleId} style={{ marginBottom: 3 }}>
-                <strong>{d.roleName}</strong> holds{" "}
-                <strong>{d.excess.join(", ")}</strong>, which{" "}
-                {d.baselineApprovedBy} did not approve.{" "}
-                {(holdersByRole.get(d.roleId) ?? []).length} account
-                {(holdersByRole.get(d.roleId) ?? []).length === 1 ? "" : "s"} hold
-                this role right now.
+              <li key={d.id} style={{ marginBottom: 3 }}>
+                <strong>{d.name}</strong> holds <strong>{d.excess.join(", ")}</strong>,
+                which {d.baselineApprovedBy} did not approve.{" "}
+                {d.sensitiveExcess.length > 0 && (
+                  <span style={{ color: "var(--red)" }}>
+                    Includes a sensitive write/export permission.{" "}
+                  </span>
+                )}
+                {d.holders} account{d.holders === 1 ? "" : "s"} hold this role now.
               </li>
             ))}
           </ul>
         </Notice>
       )}
 
-      <Card title="Role / permission matrix">
-        <div className="table-wrap" style={{ overflowX: "auto" }}>
-          <table className="dtable">
-            <thead>
-              <tr>
-                <th>Role</th>
-                <th>Holders</th>
-                {allPermissions.map((p) => (
-                  <th key={p} className="mono" style={{ fontSize: 10.5 }}>
-                    {p}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {analyses.map((a) => (
-                <tr key={a.roleId}>
-                  <td>
-                    <div className="cell-stack">
-                      <Link
-                        href={`/access/roles?role=${a.roleId}`}
-                        className="row-link"
-                      >
-                        {a.roleName}
-                      </Link>
-                      {a.hasDrift && <Pill tone="red">Drift</Pill>}
-                    </div>
-                  </td>
-                  <td className="mono">{(holdersByRole.get(a.roleId) ?? []).length}</td>
-                  {allPermissions.map((p) => {
-                    const granted = a.current.includes(p);
-                    const inBaseline = a.baseline.includes(p);
-                    return (
-                      <td key={p} style={{ textAlign: "center" }}>
-                        {granted && inBaseline && (
-                          <span title="Granted, within baseline" style={{ color: "var(--green)" }}>
-                            ●
-                          </span>
-                        )}
-                        {granted && !inBaseline && (
-                          <span
-                            title="Granted but NOT in the approved baseline — drift"
-                            style={{ color: "var(--red)", fontWeight: 700 }}
-                          >
-                            ▲
-                          </span>
-                        )}
-                        {!granted && inBaseline && (
-                          <span
-                            title="Allowed by baseline but not granted — narrower than approved"
-                            style={{ color: "var(--text-4)" }}
-                          >
-                            ○
-                          </span>
-                        )}
-                        {!granted && !inBaseline && (
-                          <span style={{ color: "var(--border)" }}>·</span>
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="cell-sub" style={{ marginTop: 10, marginBottom: 0 }}>
-          <span style={{ color: "var(--green)" }}>●</span> granted, within baseline
-          {" · "}
-          <span style={{ color: "var(--red)", fontWeight: 700 }}>▲</span> granted,
-          not in baseline (drift)
-          {" · "}
-          <span style={{ color: "var(--text-4)" }}>○</span> allowed but not granted
-        </p>
-      </Card>
+      <CompactFilterBar
+        basePath="/access/roles"
+        searchKey="q"
+        searchPlaceholder="Search roles…"
+        facets={[
+          {
+            key: "drift",
+            label: "Drift",
+            options: [
+              { value: "none", label: "No drift" },
+              { value: "minor", label: "Minor drift" },
+              { value: "significant", label: "Significant drift" },
+            ],
+          },
+        ]}
+      />
 
-      {selected && (
-        <Card
-          title={
-            <span className="row">
-              Role editor — {selected.roleName}
-              {selected.hasDrift && <Pill tone="red">Drift</Pill>}
-            </span>
-          }
-        >
-          <GovernanceBanner owner={ROLE_LABEL.ciso} object="The role baseline" />
-
-          <div style={{ margin: "14px 0" }}>
-            <div className="section-label">Approved baseline</div>
-            <FieldChips fields={selected.baseline} />
-            <p className="cell-sub" style={{ margin: "4px 0 0" }}>
-              Approved by {selected.baselineApprovedBy} on{" "}
-              {formatDate(selected.baselineApprovedAt)}. Admin cannot change this.
-            </p>
-          </div>
-
-          {selected.excess.length > 0 && (
-            <Notice tone="danger" title="Granting more than was approved">
-              <FieldChips fields={selected.excess} />
-              These can be removed here. They cannot be re-added — putting them
-              back would widen the role beyond the baseline, which is the CISO&apos;s
-              decision, not Admin&apos;s.
-            </Notice>
-          )}
-
-          {selected.missing.length > 0 && (
-            <div style={{ marginTop: 12 }}>
-              <Notice tone="info" title="Narrower than the baseline allows">
-                <FieldChips fields={selected.missing} />
-                Permitted but not granted. That is fine — least privilege means
-                granting less than the ceiling, not up to it.
-              </Notice>
-            </div>
-          )}
-
-          <div style={{ marginTop: 16 }}>
-            <RoleEditor
-              roleId={selected.roleId}
-              roleName={selected.roleName}
-              current={selected.current}
-              baseline={selected.baseline}
-              excess={selected.excess}
-            />
-          </div>
-
-          <div style={{ marginTop: 18 }}>
-            <div className="section-label">Who holds this role</div>
-            {(holdersByRole.get(selected.roleId) ?? []).length === 0 ? (
-              <span className="muted">Nobody currently.</span>
-            ) : (
-              <div className="table-wrap">
-                <table className="dtable">
-                  <thead>
-                    <tr>
-                      <th>Person</th>
-                      <th>System</th>
-                      <th>Scope</th>
-                      <th>Granted</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(holdersByRole.get(selected.roleId) ?? []).map((g) => (
-                      <tr key={g.id}>
-                        <td className="cell-primary">{g.account.user.fullName}</td>
-                        <td>{g.account.system.name}</td>
-                        <td>
-                          <FieldChips fields={decodeList(g.scopeCategoriesJson)} />
-                        </td>
-                        <td className="cell-sub">{formatDate(g.grantedAt)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </Card>
-      )}
+      <RbacMatrix rows={rows} />
 
       {escalations.length > 0 && (
         <Card title="Baseline change requests to the CISO">
@@ -276,19 +148,14 @@ export default async function RolesPage({
             return (
               <div
                 key={e.id}
-                style={{
-                  borderTop: "1px solid var(--border-soft)",
-                  paddingTop: 12,
-                  marginTop: 12,
-                }}
+                style={{ borderTop: "1px solid var(--border-soft)", paddingTop: 12, marginTop: 12 }}
               >
                 <div className="row" style={{ marginBottom: 6 }}>
                   <Pill tone={e.status === "ruled" ? "green" : "purple"}>
                     {e.status === "ruled" ? "Ruled" : "Awaiting the CISO"}
                   </Pill>
                   <span className="cell-sub">
-                    Raised by {ROLE_LABEL[e.sourceRole as ActorRole]} ·{" "}
-                    {formatDateTime(e.createdAt)}
+                    Raised by {ROLE_LABEL[e.sourceRole as ActorRole]} · {formatDateTime(e.createdAt)}
                   </span>
                 </div>
                 <p style={{ margin: "0 0 8px" }}>{e.reason}</p>

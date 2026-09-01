@@ -285,6 +285,143 @@ export async function grantAccess(
 }
 
 // ---------------------------------------------------------------------------
+// Provisioning request queue — template-driven, multi-system grant execution
+// ---------------------------------------------------------------------------
+
+/**
+ * One system in a provisioning request's execution grid.
+ *
+ * `outcome` is the deterministic simulated result the seed encodes (so a demo
+ * always has a failing row to show a retry against); `status` is the live
+ * three-state the grid renders. A retry flips a transient failure to granted,
+ * modelling the underlying cause being fixed.
+ */
+export interface ProvSystem {
+  system: string;
+  level: string;
+  status: "pending" | "granted" | "failed";
+  outcome?: "ok" | "fail";
+  reason?: string | null;
+}
+
+export function decodeProvSystems(json: string): ProvSystem[] {
+  const raw = decodeList(json);
+  // systemsJson holds a JSON array of objects, not a delimited string list, so
+  // parse it directly when decodeList returns nothing useful.
+  try {
+    const parsed = JSON.parse(json);
+    if (Array.isArray(parsed)) return parsed as ProvSystem[];
+  } catch {
+    /* fall through */
+  }
+  return raw as unknown as ProvSystem[];
+}
+
+/**
+ * Carry out a provisioning request: grant each in-scope system, recording a
+ * per-system result. Most systems succeed; a system whose seeded outcome is
+ * `fail` reports a specific, actionable reason and stays failed so it can be
+ * retried on its own. The request as a whole is `granted` only when every
+ * system is granted — a single failure holds it at `failed`, never a blanket
+ * "done".
+ */
+export async function executeProvisioning(
+  requestId: string,
+  actor: AuditActor,
+  broadenedJustification?: string | null,
+) {
+  const request = await db.provisioningRequest.findUniqueOrThrow({
+    where: { id: requestId },
+  });
+
+  // If the grant was broadened at execution time, record the reason. The
+  // required-justification gate is enforced in the action layer before we get
+  // here, so a broadened grant can never reach this point without one.
+  const justification =
+    broadenedJustification && broadenedJustification.trim()
+      ? broadenedJustification.trim()
+      : request.broadenedJustification;
+
+  const systems = decodeProvSystems(request.systemsJson).map((s) => {
+    if (s.status === "granted") return s;
+    const failed = s.outcome === "fail";
+    return {
+      ...s,
+      status: (failed ? "failed" : "granted") as ProvSystem["status"],
+      reason: failed
+        ? (s.reason ?? "target account does not exist in this system")
+        : null,
+    };
+  });
+
+  const allGranted = systems.every((s) => s.status === "granted");
+
+  return audited(
+    {
+      actor,
+      action: "access.provisioning_executed",
+      targetType: "ProvisioningRequest",
+      targetId: requestId,
+      payload: {
+        requester: request.requesterName,
+        role: request.roleRequested,
+        broadened: Boolean(justification),
+        justification,
+        systems: systems.map((s) => ({ system: s.system, level: s.level, status: s.status })),
+        result: allGranted ? "granted" : "partial_with_failures",
+      },
+    },
+    (tx: TxClient) =>
+      tx.provisioningRequest.update({
+        where: { id: requestId },
+        data: {
+          systemsJson: JSON.stringify(systems),
+          status: allGranted ? "granted" : "failed",
+          broadenedJustification: justification,
+          executedAt: new Date(),
+          executedByActorId: actor.id ?? null,
+        },
+      }),
+  );
+}
+
+/** Retry one failed system in a request, independent of the others. */
+export async function retryProvisioningSystem(
+  requestId: string,
+  systemName: string,
+  actor: AuditActor,
+) {
+  const request = await db.provisioningRequest.findUniqueOrThrow({
+    where: { id: requestId },
+  });
+
+  const systems = decodeProvSystems(request.systemsJson).map((s) =>
+    s.system === systemName
+      ? { ...s, status: "granted" as const, outcome: "ok" as const, reason: null }
+      : s,
+  );
+  const allGranted = systems.every((s) => s.status === "granted");
+
+  return audited(
+    {
+      actor,
+      action: "access.provisioning_retried",
+      targetType: "ProvisioningRequest",
+      targetId: requestId,
+      payload: { requester: request.requesterName, system: systemName, result: "granted" },
+    },
+    (tx: TxClient) =>
+      tx.provisioningRequest.update({
+        where: { id: requestId },
+        data: {
+          systemsJson: JSON.stringify(systems),
+          status: allGranted ? "granted" : "failed",
+        },
+      }),
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Deprovisioning
 // ---------------------------------------------------------------------------
 
@@ -599,6 +736,67 @@ export async function deprovisionAccount(accountId: string, actor: AuditActor) {
   }
 
   return result;
+}
+
+/**
+ * Escalate a revocation that will not resolve through a retry.
+ *
+ * When a system reports access still active after a revoke was dispatched and a
+ * retry has not cleared it — the usual cause being something only the vendor can
+ * fix, like a caching delay on their side — the honest move is not to keep
+ * clicking retry but to raise it as an Escalation with the residual state
+ * attached, so it is tracked to closure rather than silently left live.
+ */
+export async function escalateResidualAccess(
+  accountId: string,
+  reason: string,
+  actor: AuditActor,
+) {
+  const account = await db.systemAccount.findUniqueOrThrow({
+    where: { id: accountId },
+    include: { system: true, user: true, sessions: true },
+  });
+  const liveSessions = account.sessions.filter((s) => !s.terminatedAt).length;
+
+  const context = {
+    accountId,
+    user: account.user.fullName,
+    system: account.system.name,
+    username: account.username,
+    liveSessions,
+    raisedBy: actor.label,
+    reason,
+  };
+
+  const escalation = await audited(
+    {
+      actor,
+      action: "access.residual_access_escalated",
+      targetType: "SystemAccount",
+      targetId: accountId,
+      payload: context,
+    },
+    (tx: TxClient) =>
+      tx.escalation.create({
+        data: {
+          sourceRole: actor.role,
+          targetRole: "ciso",
+          reason: reason || `Residual access on ${account.system.name} after revocation.`,
+          contextJson: JSON.stringify(context),
+          status: "open",
+        },
+      }),
+  );
+
+  await emit(db, {
+    kind: "escalation.raised",
+    requestId: null,
+    requestRef: `Residual access — ${account.user.fullName} on ${account.system.name}`,
+    reason: reason || "Access still active after revocation",
+    targetRole: "ciso",
+  });
+
+  return escalation;
 }
 
 /**

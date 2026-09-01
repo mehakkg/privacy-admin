@@ -1230,6 +1230,48 @@ model RBACRole {
   isTemplate       Boolean @default(false)
   baselineApprovedBy String @default("A. Khan")
   baselineApprovedAt DateTime @default(now())
+  /// When Admin last saved / reviewed this role. Drives the RBAC matrix's
+  /// "Last reviewed" column; updated automatically on every role save.
+  lastReviewedAt   DateTime?
 
   grants AccessGrant[]
+  provisioningRequests ProvisioningRequest[]
+}
+
+/// A pending or completed request to grant access, before any grant exists.
+///
+/// This is the queue the Provisioning screen works from. A grant is not created
+/// the moment a request arrives — it is created when Admin applies a
+/// least-privilege template (and, for the exception path, records a
+/// justification for broadening beyond it) and executes the multi-system grant.
+/// Per-system execution state lives in `systemsJson`, giving the same
+/// three-state (pending / granted / failed) shape as Request execution.
+model ProvisioningRequest {
+  id            String @id @default(cuid())
+  requesterName String
+  requesterDept String @default("")
+  /// hr_sync | manual
+  source        String
+  /// pending | granted | failed
+  status        String @default("pending")
+  requestedAt   DateTime @default(now())
+
+  /// The role the requester asked for (matched to a least-privilege template).
+  roleId        String?
+  roleRequested String
+
+  /// JSON: [{ system, level, status: pending|granted|failed, reason? }] — the
+  /// per-system execution grid, written as the grant is carried out.
+  systemsJson   String @default("[]")
+
+  /// Set only when the grant was broadened beyond the template default. Its
+  /// presence is what makes the exception visible after the fact.
+  broadenedJustification String?
+
+  executedAt    DateTime?
+  executedByActorId String?
+
+  role RBACRole? @relation(fields: [roleId], references: [id])
+
+  @@index([status])
 }

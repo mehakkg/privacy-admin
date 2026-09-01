@@ -39,6 +39,21 @@ export class BaselineViolationError extends Error {
   }
 }
 
+export type DriftSeverity = "none" | "minor" | "significant";
+
+/**
+ * A permission is "sensitive" when it can write, remove, move, or export
+ * personal data, or confers administrative reach. A single sensitive addition
+ * is significant drift on its own — it does not need to be part of a large
+ * delta to matter. A read-only widening is minor until it accumulates.
+ */
+const SENSITIVE_VERBS = ["write", "export", "delete", "remove", "admin", "manage", "grant", "impersonate"];
+
+export function isSensitivePermission(p: string): boolean {
+  const verb = p.split(":")[0]?.toLowerCase() ?? "";
+  return SENSITIVE_VERBS.includes(verb);
+}
+
 export interface RoleDrift {
   roleId: string;
   roleName: string;
@@ -47,11 +62,18 @@ export interface RoleDrift {
   baseline: string[];
   /** Granted now but NOT in the baseline — unapproved widening. */
   excess: string[];
+  /** The subset of `excess` that is a sensitive (write/export/admin) permission. */
+  sensitiveExcess: string[];
   /** In the baseline but not currently granted — narrower than approved, fine. */
   missing: string[];
   hasDrift: boolean;
+  /** none / minor / significant — drives the RBAC matrix's drift badge. */
+  severity: DriftSeverity;
+  baselineCount: number;
+  currentCount: number;
   baselineApprovedBy: string;
   baselineApprovedAt: Date;
+  lastReviewedAt: Date | null;
 }
 
 export function analyseRole(role: {
@@ -62,11 +84,22 @@ export function analyseRole(role: {
   baselineSnapshotJson: string;
   baselineApprovedBy: string;
   baselineApprovedAt: Date;
+  lastReviewedAt?: Date | null;
 }): RoleDrift {
   const current = decodeList(role.permissionsJson);
   const baseline = decodeList(role.baselineSnapshotJson);
   const excess = current.filter((p) => !baseline.includes(p));
   const missing = baseline.filter((p) => !current.includes(p));
+  const sensitiveExcess = excess.filter(isSensitivePermission);
+
+  // A sensitive addition, or a delta of three or more, reads as significant;
+  // one or two read-only additions read as minor.
+  const severity: DriftSeverity =
+    excess.length === 0
+      ? "none"
+      : sensitiveExcess.length > 0 || excess.length >= 3
+        ? "significant"
+        : "minor";
 
   return {
     roleId: role.id,
@@ -75,12 +108,17 @@ export function analyseRole(role: {
     current,
     baseline,
     excess,
+    sensitiveExcess,
     missing,
     // Only unapproved WIDENING counts as drift worth flagging. A role narrower
     // than its baseline is not a security problem.
     hasDrift: excess.length > 0,
+    severity,
+    baselineCount: baseline.length,
+    currentCount: current.length,
     baselineApprovedBy: role.baselineApprovedBy,
     baselineApprovedAt: role.baselineApprovedAt,
+    lastReviewedAt: role.lastReviewedAt ?? null,
   };
 }
 
@@ -130,7 +168,7 @@ export async function updateRolePermissions(
     (tx: TxClient) =>
       tx.rBACRole.update({
         where: { id: roleId },
-        data: { permissionsJson: encodeList(nextPermissions) },
+        data: { permissionsJson: encodeList(nextPermissions), lastReviewedAt: new Date() },
       }),
   );
 }
@@ -161,7 +199,42 @@ export async function correctDrift(roleId: string, actor: AuditActor) {
     (tx: TxClient) =>
       tx.rBACRole.update({
         where: { id: roleId },
-        data: { permissionsJson: encodeList(corrected) },
+        data: { permissionsJson: encodeList(corrected), lastReviewedAt: new Date() },
+      }),
+  );
+}
+
+/**
+ * Reset a role's permissions back to its exact baseline, in one action.
+ *
+ * The fast path to undo all drift when the current set has both drifted
+ * additions and narrowed-away permissions — it restores the CISO-approved set
+ * verbatim. Always permitted: the result is, by construction, the baseline, so
+ * it can never widen the role beyond what was approved.
+ */
+export async function resetRoleToBaseline(roleId: string, actor: AuditActor) {
+  const role = await db.rBACRole.findUniqueOrThrow({ where: { id: roleId } });
+  const baseline = decodeList(role.baselineSnapshotJson);
+  const previous = decodeList(role.permissionsJson);
+
+  return audited(
+    {
+      actor,
+      action: "rbac.role_reset_to_baseline",
+      targetType: "RBACRole",
+      targetId: roleId,
+      payload: {
+        role: role.name,
+        previous,
+        baseline,
+        removed: previous.filter((p) => !baseline.includes(p)),
+        restored: baseline.filter((p) => !previous.includes(p)),
+      },
+    },
+    (tx: TxClient) =>
+      tx.rBACRole.update({
+        where: { id: roleId },
+        data: { permissionsJson: encodeList(baseline), lastReviewedAt: new Date() },
       }),
   );
 }

@@ -9,6 +9,7 @@ import {
   formatDateTime,
 } from "@/components/ui";
 import { computeRevocationCompletion } from "@/lib/engines/access";
+import { ResidualAccessActions } from "@/components/accessActions";
 
 
 /**
@@ -94,30 +95,56 @@ export async function RevocationVerification() {
                   <th>Sessions killed</th>
                   <th>Still live</th>
                   <th>Confirmed</th>
+                  <th>Residual access</th>
                 </tr>
               </thead>
               <tbody>
-                {completion.targets.map((t) => (
-                  <tr key={t.accountId}>
-                    <td className="cell-primary">{t.systemName}</td>
-                    <td className="mono">{t.username}</td>
-                    <td>
-                      <ExecutionPill status={t.status} />
-                    </td>
-                    <td className="mono">{t.grantsRevoked}</td>
-                    <td className="mono">{t.sessionsKilled}</td>
-                    <td
-                      className="mono"
-                      style={{
-                        color: t.sessionsRemaining ? "var(--red)" : undefined,
-                        fontWeight: t.sessionsRemaining ? 600 : 400,
-                      }}
-                    >
-                      {t.sessionsRemaining}
-                    </td>
-                    <td className="cell-sub">{formatDateTime(t.confirmedAt)}</td>
-                  </tr>
-                ))}
+                {completion.targets.map((t) => {
+                  // A revoke was attempted but access is not gone: sessions still
+                  // live, a partial, or an outright failure. This is the state the
+                  // whole verification tab exists to make visible.
+                  const residual =
+                    t.attempt > 0 &&
+                    t.status !== "verified" &&
+                    (t.sessionsRemaining > 0 || t.status === "failed" || t.status === "partial");
+                  return (
+                    <tr key={t.accountId}>
+                      <td className="cell-primary">{t.systemName}</td>
+                      <td className="mono">{t.username}</td>
+                      <td>
+                        <ExecutionPill status={t.status} />
+                      </td>
+                      <td className="mono">{t.grantsRevoked}</td>
+                      <td className="mono">{t.sessionsKilled}</td>
+                      <td
+                        className="mono"
+                        style={{
+                          color: t.sessionsRemaining ? "var(--red)" : undefined,
+                          fontWeight: t.sessionsRemaining ? 600 : 400,
+                        }}
+                      >
+                        {t.sessionsRemaining}
+                      </td>
+                      <td className="cell-sub">{formatDateTime(t.confirmedAt)}</td>
+                      <td>
+                        {residual ? (
+                          <div className="stack" style={{ gap: 6 }}>
+                            <span style={{ color: "var(--red)", fontWeight: 600 }}>
+                              ⚠ Access still active
+                            </span>
+                            <ResidualAccessActions accountId={t.accountId} recordId={t.recordId} />
+                          </div>
+                        ) : t.status === "verified" ? (
+                          <span className="cell-sub" style={{ color: "var(--green)" }}>
+                            Cleared
+                          </span>
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

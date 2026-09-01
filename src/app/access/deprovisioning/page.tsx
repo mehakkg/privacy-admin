@@ -9,7 +9,7 @@ import {
   Stat,
   formatDate,
 } from "@/components/ui";
-import { DeprovisionButton } from "@/components/accessActions";
+import { DeprovisionButton, TerminateSessionButton } from "@/components/accessActions";
 import { RevocationVerification } from "@/components/RevocationVerification";
 import { computeRevocationCompletion } from "@/lib/engines/access";
 import {
@@ -211,12 +211,21 @@ export default async function DeprovisioningPage({
                         {live.length === 0 ? (
                           <span className="muted">None</span>
                         ) : (
-                          <div className="cell-stack">
-                            {live.map((s) => (
-                              <span key={s.id} className="cell-sub mono">
-                                {SESSION_KIND_LABEL[s.kind as SessionKind]} · {s.tokenRef}
-                              </span>
-                            ))}
+                          <div className="cell-stack" style={{ gap: 6 }}>
+                            {live.map((s) => {
+                              const isSession = s.kind === "session";
+                              return (
+                                <span key={s.id} className="row" style={{ gap: 8, justifyContent: "space-between" }}>
+                                  <span className="cell-sub mono">
+                                    {SESSION_KIND_LABEL[s.kind as SessionKind]} · {s.tokenRef}
+                                  </span>
+                                  <TerminateSessionButton
+                                    sessionId={s.id}
+                                    label={isSession ? "Force logout" : "Revoke token"}
+                                  />
+                                </span>
+                              );
+                            })}
                           </div>
                         )}
                       </td>

@@ -5,14 +5,18 @@ import { getSession } from "@/lib/session";
 import {
   deprovisionAccount,
   deprovisionUser,
+  escalateResidualAccess,
+  executeProvisioning,
   grantAccess,
   recordDisposition,
+  retryProvisioningSystem,
   retryRevocation,
   terminateSession,
 } from "@/lib/engines/access";
 import {
   correctDrift,
   requestBaselineChange,
+  resetRoleToBaseline,
   updateRolePermissions,
 } from "@/lib/guards/baselineGate";
 import type { Disposition } from "@/lib/domain";
@@ -55,6 +59,26 @@ export async function grantAccessAction(
   );
 }
 
+export async function executeProvisioningAction(
+  requestId: string,
+  broadenedJustification?: string | null,
+): Promise<ActionResult> {
+  const { actor } = await getSession();
+  return run("/access/provisioning", () =>
+    executeProvisioning(requestId, actor, broadenedJustification),
+  );
+}
+
+export async function retryProvisioningSystemAction(
+  requestId: string,
+  systemName: string,
+): Promise<ActionResult> {
+  const { actor } = await getSession();
+  return run("/access/provisioning", () =>
+    retryProvisioningSystem(requestId, systemName, actor),
+  );
+}
+
 export async function deprovisionUserAction(userId: string): Promise<ActionResult> {
   const { actor } = await getSession();
   return run(`/access/users/${userId}`, () => deprovisionUser(userId, actor));
@@ -90,6 +114,47 @@ export async function recordDispositionAction(
   );
 }
 
+/**
+ * Bulk disposition. One justification applies to the whole batch and is written
+ * identically onto every included account's audit entry — the required-reason
+ * rule is not relaxed just because the action is bulk. A batch of one is still
+ * a batch; anything without a reason is refused, as it is singly.
+ */
+export async function bulkDispositionAction(
+  accountIds: string[],
+  disposition: Disposition,
+  justification: string,
+): Promise<ActionResult> {
+  const { actor } = await getSession();
+  if (!justification.trim()) {
+    return {
+      ok: false,
+      error:
+        "A justification is required for the batch. It is written onto every " +
+        "included account's audit entry — a bulk action is not an exemption from a reason.",
+      errorKind: "MissingJustificationError",
+    };
+  }
+  if (accountIds.length === 0) {
+    return { ok: false, error: "No accounts selected.", errorKind: "ValidationError" };
+  }
+  return run("/access/dormant", async () => {
+    for (const id of accountIds) {
+      await recordDisposition(id, disposition, justification, actor);
+    }
+  });
+}
+
+export async function escalateResidualAccessAction(
+  accountId: string,
+  reason: string,
+): Promise<ActionResult> {
+  const { actor } = await getSession();
+  return run("/access/deprovisioning", () =>
+    escalateResidualAccess(accountId, reason, actor),
+  );
+}
+
 export async function updateRoleAction(
   roleId: string,
   permissions: string[],
@@ -101,6 +166,11 @@ export async function updateRoleAction(
 export async function correctDriftAction(roleId: string): Promise<ActionResult> {
   const { actor } = await getSession();
   return run("/access/roles", () => correctDrift(roleId, actor));
+}
+
+export async function resetRoleToBaselineAction(roleId: string): Promise<ActionResult> {
+  const { actor } = await getSession();
+  return run("/access/roles", () => resetRoleToBaseline(roleId, actor));
 }
 
 export async function requestBaselineChangeAction(

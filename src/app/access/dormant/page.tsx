@@ -1,17 +1,9 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
-import {
-  Card,
-  FieldChips,
-  Notice,
-  PageHead,
-  Pill,
-  Stat,
-  formatDate,
-} from "@/components/ui";
-import { DispositionForm, RevokeAccountButton } from "@/components/accessActions";
+import { Card, Notice, PageHead, Stat } from "@/components/ui";
+import { DispositionForm } from "@/components/accessActions";
+import { DormantTable } from "@/components/dormantTable";
 import { findDormantAccounts } from "@/lib/engines/access";
-import { DISPOSITION_LABEL, type Disposition } from "@/lib/domain";
 
 export const dynamic = "force-dynamic";
 
@@ -102,100 +94,22 @@ export default async function DormantPage({
       )}
 
       <Card title="Dormant accounts">
-        <div className="table-wrap">
-          <table className="dtable">
-            <thead>
-              <tr>
-                <th>Account</th>
-                <th>System</th>
-                <th>Last active</th>
-                <th>Reaches</th>
-                <th>Live sessions</th>
-                <th>Disposition</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {dormant.map((d) => (
-                <tr
-                  key={d.accountId}
-                  style={
-                    selected?.accountId === d.accountId
-                      ? { background: "var(--bg-selected)" }
-                      : undefined
-                  }
-                >
-                  <td>
-                    <div className="cell-stack">
-                      <span className="cell-primary">{d.userName}</span>
-                      <span className="cell-sub mono">{d.username}</span>
-                      {d.orphaned && <Pill tone="red">Orphaned</Pill>}
-                    </div>
-                  </td>
-                  <td>{d.systemName}</td>
-                  <td>
-                    <div className="cell-stack">
-                      <span>{formatDate(d.lastActiveAt)}</span>
-                      <span className="cell-sub">
-                        {d.daysDormant === null
-                          ? "never used"
-                          : `${d.daysDormant} days ago`}
-                      </span>
-                    </div>
-                  </td>
-                  <td>
-                    {d.reachableCategories.length ? (
-                      <FieldChips fields={d.reachableCategories} />
-                    ) : (
-                      <span className="muted">No live grants</span>
-                    )}
-                  </td>
-                  <td
-                    className="mono"
-                    style={{
-                      color: d.liveSessions ? "var(--red)" : undefined,
-                      fontWeight: d.liveSessions ? 600 : 400,
-                    }}
-                  >
-                    {d.liveSessions}
-                  </td>
-                  <td>
-                    {d.disposition ? (
-                      <div className="cell-stack">
-                        <Pill tone="green">
-                          {DISPOSITION_LABEL[d.disposition.disposition as Disposition]}
-                        </Pill>
-                        <span className="cell-sub">{d.disposition.justification}</span>
-                      </div>
-                    ) : (
-                      <Pill tone="yellow">Not decided</Pill>
-                    )}
-                  </td>
-                  <td>
-                    <div className="row" style={{ gap: 6 }}>
-                      <Link
-                        href={`/access/dormant?days=${threshold}&account=${d.accountId}`}
-                        className="btn sm ghost"
-                      >
-                        Investigate
-                      </Link>
-                      <RevokeAccountButton accountId={d.accountId} />
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {dormant.length === 0 && (
-                <tr>
-                  <td colSpan={7}>
-                    <div className="empty">
-                      No account has been dormant for more than {threshold} days.
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        <DormantTable
+          rows={dormant.map((d) => ({
+            accountId: d.accountId,
+            userName: d.userName,
+            username: d.username,
+            systemName: d.systemName,
+            lastActiveAt: d.lastActiveAt,
+            daysDormant: d.daysDormant,
+            orphaned: d.orphaned,
+            liveSessions: d.liveSessions,
+            reachableCategories: d.reachableCategories,
+            disposition: d.disposition,
+          }))}
+          threshold={threshold}
+          selectedAccount={selected?.accountId ?? null}
+        />
       </Card>
 
       {selected && (

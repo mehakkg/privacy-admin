@@ -6,6 +6,7 @@ import {
   correctDriftAction,
   deprovisionAccountAction,
   deprovisionUserAction,
+  escalateResidualAccessAction,
   grantAccessAction,
   recordDispositionAction,
   requestBaselineChangeAction,
@@ -197,17 +198,89 @@ export function DeprovisionButton({ userId, accounts }: { userId: string; accoun
   );
 }
 
-export function TerminateSessionButton({ sessionId }: { sessionId: string }) {
+export function TerminateSessionButton({
+  sessionId,
+  label = "Terminate",
+}: {
+  sessionId: string;
+  label?: string;
+}) {
   const { pending, result, run } = useAction();
   return (
-    <div>
+    <span>
       <Btn
         pending={pending}
-        variant="danger sm"
+        variant="danger xs"
         onClick={() => run(() => terminateSessionAction(sessionId))}
       >
-        Terminate
+        {label}
       </Btn>
+      <ActionError result={result} />
+    </span>
+  );
+}
+
+/**
+ * Residual-access resolution, shown against a system that still reports active
+ * access after a revoke. A retry is the first move; when the cause is something
+ * only the vendor can clear (a caching delay on their side), escalating raises
+ * an Escalation Object so it is tracked to closure rather than left live.
+ */
+export function ResidualAccessActions({
+  accountId,
+  recordId,
+}: {
+  accountId: string;
+  recordId: string | null;
+}) {
+  const { pending, result, run } = useAction();
+  const [escalating, setEscalating] = useState(false);
+  const [reason, setReason] = useState("");
+
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <div className="row" style={{ gap: 6 }}>
+        <Btn
+          pending={pending}
+          variant="sm"
+          onClick={() =>
+            run(() =>
+              recordId
+                ? retryRevocationAction(recordId)
+                : deprovisionAccountAction(accountId),
+            )
+          }
+        >
+          Re-attempt revocation
+        </Btn>
+        <button className="btn ghost sm" onClick={() => setEscalating((v) => !v)}>
+          Escalate
+        </button>
+      </div>
+      {escalating && (
+        <div className="stack" style={{ gap: 6 }}>
+          <input
+            className="input sm"
+            placeholder="Why can't a retry resolve this? (e.g. vendor caching delay)"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+          />
+          <div className="row" style={{ gap: 6 }}>
+            <Btn
+              pending={pending}
+              variant="primary sm"
+              onClick={() =>
+                run(() => escalateResidualAccessAction(accountId, reason))
+              }
+            >
+              Raise escalation
+            </Btn>
+            <button className="btn ghost sm" onClick={() => setEscalating(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
       <ActionError result={result} />
     </div>
   );

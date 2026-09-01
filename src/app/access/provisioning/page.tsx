@@ -1,217 +1,142 @@
 import { db } from "@/lib/db";
+import { Card, Notice, PageHead, Pill, Stat } from "@/components/ui";
+import { CompactFilterBar } from "@/components/CompactFilterBar";
 import {
-  Card,
-  FieldChips,
-  Notice,
-  PageHead,
-  Pill,
-  Stat,
-  formatDate,
-} from "@/components/ui";
-import { GrantForm } from "@/components/accessActions";
-import { analyseGrant } from "@/lib/engines/access";
-import { decodeList } from "@/lib/codec/json";
-import { EMPLOYMENT_STATUS_LABEL, type EmploymentStatus } from "@/lib/domain";
+  ProvisioningQueue,
+  type ProvRequestRow,
+  type ProvSystemRow,
+} from "@/components/provisioning";
+import { analyseGrant, decodeProvSystems } from "@/lib/engines/access";
 
 export const dynamic = "force-dynamic";
 
 /**
- * SCREEN 1 (Scenario 2) — Provisioning Panel
+ * SCREEN 1 (Scenario 2) — Provisioning
  *
- * Least-privilege role templates and scoped, multi-system grants.
- *
- * "Least privilege" is only meaningful if something checks it, so a grant
- * carries the data categories it can actually reach, and the server refuses a
- * scope wider than the role's CISO-approved baseline. Existing over-broad grants
- * are surfaced here rather than left for an annual review to find.
+ * The queue of access requests awaiting a grant. The default path always starts
+ * from a least-privilege template; broadening beyond it is the exception, and
+ * the exception is visibly flagged and requires a recorded reason. A grant is
+ * executed per-system with the same three-state (pending / granted / failed)
+ * language as Request execution, so a partial or failed grant is never
+ * collapsed into a single "done".
  */
 export default async function ProvisioningPage({
   searchParams,
 }: {
-  searchParams: Promise<{ account?: string }>;
+  searchParams: Promise<{ q?: string; status?: string; source?: string }>;
 }) {
   const params = await searchParams;
+  const term = (params.q ?? "").trim().toLowerCase();
 
-  const [accounts, roles] = await Promise.all([
-    db.systemAccount.findMany({
-      where: { status: { in: ["active", "disabled"] } },
-      include: {
-        user: true,
-        system: true,
-        grants: { where: { revokedAt: null }, include: { role: true } },
-      },
-      orderBy: { username: "asc" },
+  const [requests, grants] = await Promise.all([
+    db.provisioningRequest.findMany({ orderBy: { requestedAt: "desc" } }),
+    db.accessGrant.findMany({
+      where: { revokedAt: null },
+      include: { account: { include: { user: true, system: true } }, role: true },
     }),
-    db.rBACRole.findMany({ orderBy: [{ isTemplate: "desc" }, { name: "asc" }] }),
   ]);
 
-  const selected =
-    accounts.find((a) => a.id === params.account) ?? accounts[0] ?? null;
+  let rows: ProvRequestRow[] = requests.map((r) => ({
+    id: r.id,
+    requesterName: r.requesterName,
+    requesterDept: r.requesterDept,
+    source: r.source as ProvRequestRow["source"],
+    roleRequested: r.roleRequested,
+    status: r.status as ProvRequestRow["status"],
+    requestedAt: r.requestedAt,
+    systems: decodeProvSystems(r.systemsJson) as ProvSystemRow[],
+    broadenedJustification: r.broadenedJustification,
+  }));
 
-  const analyses = accounts.flatMap((account) =>
-    account.grants.map((grant) => ({
-      account,
-      grant,
-      analysis: analyseGrant(grant, grant.role),
-    })),
-  );
-  const overBroad = analyses.filter((a) => a.analysis.overBroad);
-  const expired = analyses.filter((a) => a.analysis.expired);
+  if (params.status) rows = rows.filter((r) => r.status === params.status);
+  if (params.source) rows = rows.filter((r) => r.source === params.source);
+  if (term) rows = rows.filter((r) => r.requesterName.toLowerCase().includes(term));
+
+  const pending = requests.filter((r) => r.status === "pending").length;
+  const failed = requests.filter((r) => r.status === "failed").length;
+
+  // Existing live grants that reach outside their role's baseline. These predate
+  // the point-of-grant refusal and are surfaced here rather than left for an
+  // annual review to find.
+  const overBroad = grants
+    .map((g) => ({ g, a: analyseGrant(g, g.role) }))
+    .filter((x) => x.a.overBroad);
 
   return (
     <div className="stack">
       <PageHead
         title="Provisioning"
-        subtitle="Grant scoped access from least-privilege role templates. A grant records the data categories it can actually reach, so over-broad access is visible rather than assumed away."
+        titleTip="Grant scoped access from least-privilege role templates. Broadening beyond the template is the exception, is flagged, and requires a recorded reason."
       />
 
       <div className="stat-row">
-        <Stat label="Active accounts" value={accounts.length} />
-        <Stat label="Live grants" value={analyses.length} />
+        <Stat label="Requests" value={requests.length} />
+        <Stat label="Pending" value={pending} tone={pending ? "yellow" : undefined} />
+        <Stat label="Failed grants" value={failed} tone={failed ? "red" : undefined} />
         <Stat
-          label="Over-broad grants"
+          label="Over-broad live grants"
           value={overBroad.length}
           tone={overBroad.length ? "red" : undefined}
         />
-        <Stat
-          label="Expired but not revoked"
-          value={expired.length}
-          tone={expired.length ? "yellow" : undefined}
-        />
       </div>
+
+      <CompactFilterBar
+        basePath="/access/provisioning"
+        searchKey="q"
+        searchPlaceholder="Search by requester…"
+        facets={[
+          {
+            key: "status",
+            label: "Status",
+            options: [
+              { value: "pending", label: "Pending" },
+              { value: "granted", label: "Granted" },
+              { value: "failed", label: "Failed" },
+            ],
+          },
+          {
+            key: "source",
+            label: "Source",
+            options: [
+              { value: "hr_sync", label: "HR sync" },
+              { value: "manual", label: "Manual request" },
+            ],
+          },
+        ]}
+      />
+
+      <ProvisioningQueue rows={rows} />
 
       {overBroad.length > 0 && (
         <Notice
           tone="danger"
-          title={`${overBroad.length} grant${overBroad.length === 1 ? "" : "s"} reach data outside the role's baseline`}
+          title={`${overBroad.length} live grant${overBroad.length === 1 ? "" : "s"} reach data outside the role's baseline`}
         >
           <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
-            {overBroad.map(({ account, analysis }) => (
-              <li key={analysis.grantId} style={{ marginBottom: 3 }}>
-                <strong>{account.user.fullName}</strong> on {account.system.name} holds{" "}
-                <em>{analysis.roleName}</em> reaching{" "}
-                <strong>{analysis.excessCategories.join(", ")}</strong>, which the
-                role&apos;s baseline does not cover.
+            {overBroad.map(({ g, a }) => (
+              <li key={g.id} style={{ marginBottom: 3 }}>
+                <strong>{g.account.user.fullName}</strong> on {g.account.system.name} holds{" "}
+                <em>{a.roleName}</em> reaching <strong>{a.excessCategories.join(", ")}</strong>,
+                which the role&apos;s baseline does not cover.
               </li>
             ))}
           </ul>
           <p style={{ margin: "8px 0 0" }}>
-            New grants like these are refused at the point of granting. These
-            predate that check and need narrowing.
+            New grants like these are refused at the point of granting. These predate
+            that check and need narrowing.
           </p>
         </Notice>
       )}
 
-      <div className="grid-2">
-        <Card title="Accounts">
-          <div className="table-wrap">
-            <table className="dtable">
-              <thead>
-                <tr>
-                  <th>Person</th>
-                  <th>System</th>
-                  <th>Grants</th>
-                </tr>
-              </thead>
-              <tbody>
-                {accounts.map((account) => (
-                  <tr
-                    key={account.id}
-                    style={
-                      selected?.id === account.id
-                        ? { background: "var(--bg-selected)" }
-                        : undefined
-                    }
-                  >
-                    <td>
-                      <a
-                        className="row-link"
-                        href={`/access/provisioning?account=${account.id}`}
-                      >
-                        {account.user.fullName}
-                      </a>
-                      <div className="cell-sub">
-                        {account.user.department} ·{" "}
-                        {EMPLOYMENT_STATUS_LABEL[
-                          account.user.employmentStatus as EmploymentStatus
-                        ]}
-                      </div>
-                    </td>
-                    <td>
-                      <div className="cell-stack">
-                        <span>{account.system.name}</span>
-                        <span className="cell-sub mono">{account.username}</span>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="cell-stack">
-                        {account.grants.map((g) => {
-                          const a = analyseGrant(g, g.role);
-                          return (
-                            <span key={g.id} className="row" style={{ gap: 5 }}>
-                              <span>{g.role.name}</span>
-                              {a.overBroad && <Pill tone="red">Over-broad</Pill>}
-                              {a.expired && <Pill tone="yellow">Expired</Pill>}
-                            </span>
-                          );
-                        })}
-                        {account.grants.length === 0 && (
-                          <span className="muted">No grants</span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-
-        {selected && (
-          <Card
-            title={`Grant access — ${selected.user.fullName} on ${selected.system.name}`}
-          >
-            <div style={{ marginBottom: 14 }}>
-              <div className="section-label">Current grants</div>
-              {selected.grants.length === 0 ? (
-                <span className="muted">None.</span>
-              ) : (
-                selected.grants.map((g) => {
-                  const a = analyseGrant(g, g.role);
-                  return (
-                    <div key={g.id} style={{ marginBottom: 8 }}>
-                      <div className="row">
-                        <strong>{g.role.name}</strong>
-                        {a.overBroad && <Pill tone="red">Over-broad</Pill>}
-                        <span className="cell-sub">
-                          granted {formatDate(g.grantedAt)}
-                          {g.expiresAt ? `, expires ${formatDate(g.expiresAt)}` : ", no expiry"}
-                        </span>
-                      </div>
-                      <FieldChips fields={a.scopeCategories} />
-                      {a.overBroad && (
-                        <p className="cell-sub" style={{ margin: "2px 0 0", color: "var(--red)" }}>
-                          Outside baseline: {a.excessCategories.join(", ")}
-                        </p>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            <GrantForm
-              accountId={selected.id}
-              roles={roles.map((r) => ({
-                id: r.id,
-                name: r.name,
-                description: r.description,
-                baselineCategories: decodeList(r.baselineCategoriesJson),
-              }))}
-            />
-          </Card>
-        )}
-      </div>
+      <Card title="Templates enforce least privilege by default">
+        <p className="cell-sub" style={{ margin: 0 }}>
+          Every request is granted from a named least-privilege template — the
+          product no longer leaves each grant as a manual, error-prone decision.
+          Broadening beyond a template is possible, but it is the exception:{" "}
+          <Pill tone="orange">Broadened</Pill> marks it in the queue and a reason is
+          recorded against the grant.
+        </p>
+      </Card>
     </div>
   );
 }

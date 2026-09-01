@@ -730,6 +730,21 @@ table.dtable {
   font-size: 12.5px;
 }
 
+.btn.xs {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+/* Bulk-action bar above a selectable table (dormant accounts). */
+.bulk-bar {
+  border: 1px solid var(--accent);
+  background: var(--bg-selected);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
 /* ------------------------------------------------------------------- cards */
 .card {
   border: 1px solid var(--border);
