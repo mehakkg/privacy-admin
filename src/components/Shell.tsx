@@ -6,6 +6,7 @@ import { countUnread } from "@/lib/engines/notification";
 import { requireOnboardingGate } from "@/lib/guards/onboardingGate";
 import { ROLE_LABEL } from "@/lib/domain";
 import { RoleSwitcher } from "@/components/RoleSwitcher";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { SidebarNav, type NavGroup } from "@/components/SidebarNav";
 
 /**
@@ -187,6 +188,7 @@ export async function Shell({
               </span>
             )}
           </Link>
+          <ThemeToggle />
           <RoleSwitcher current={session.role} />
           <span className="cell-sub">
             {session.actor.label} · {ROLE_LABEL[session.role]}

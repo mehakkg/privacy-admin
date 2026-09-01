@@ -130,7 +130,7 @@ export default async function ProcessorsPage({
                         className="field-chip"
                         style={{
                           background: "var(--red-bg)",
-                          borderColor: "#f3c4c4",
+                          borderColor: "var(--red-border)",
                           color: "var(--red)",
                         }}
                       >
