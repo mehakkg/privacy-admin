@@ -83,6 +83,11 @@ async function main() {
     "PurposeTag",
     "NoticeVersion",
     "CookieCategory",
+    "ProtectionRuleException",
+    "ProtectionRuleScope",
+    "EntityUserMapping",
+    "DataFlowConnection",
+    "DataFlowNode",
     "ProtectionRule",
     "DataFlowConnection",
     "DataFlowNode",
@@ -589,11 +594,89 @@ async function main() {
 
   await prisma.protectionRule.createMany({
     data: [
-      { dataCategory: "kyc", ruleType: "encrypt", scope: "At rest, all systems", definition: "AES-256 with HSM-held keys.", approvedBy: "A. Khan", approvedAt: daysAgo(180) },
-      { dataCategory: "financial", ruleType: "mask", scope: "All non-production environments", definition: "Account numbers masked to last four digits.", approvedBy: "A. Khan", approvedAt: daysAgo(180) },
-      { dataCategory: "identity", ruleType: "mask", scope: "Support console", definition: "PAN and Aadhaar reference masked in the agent view.", approvedBy: "A. Khan", approvedAt: daysAgo(90) },
-      { dataCategory: "kyc", ruleType: "dlp", scope: "Outbound email and file share", definition: "Block egress of KYC document scans.", approvedBy: "A. Khan", approvedAt: daysAgo(90) },
-      { dataCategory: "behavioural", ruleType: "dlp", scope: "Third-party transfers", definition: "Block transfer outside processors named in a current DPA.", approvedBy: "A. Khan", approvedAt: daysAgo(60) },
+      { id: "pr_pan", ruleName: "PAN masking — customer-facing views", dataCategory: "kyc", ruleType: "mask", strictness: "high", scope: "Customer-facing views", definition: "PAN masked to last four digits in every customer-facing view.", approvedBy: "A. Khan", approvedAt: daysAgo(90) },
+      { id: "pr_kyc_enc", ruleName: "KYC document encryption at rest", dataCategory: "kyc", ruleType: "encrypt", strictness: "high", scope: "At rest, all systems", definition: "AES-256 with HSM-held keys.", approvedBy: "A. Khan", approvedAt: daysAgo(180) },
+      { id: "pr_acct_mask", ruleName: "Account number masking — non-prod", dataCategory: "financial", ruleType: "mask", strictness: "medium", scope: "Non-production environments", definition: "Account numbers masked to last four in non-prod.", approvedBy: "A. Khan", approvedAt: daysAgo(180) },
+      { id: "pr_kyc_dlp", ruleName: "KYC egress block", dataCategory: "kyc", ruleType: "dlp", strictness: "high", scope: "Outbound email and file share", definition: "Block egress of KYC document scans.", approvedBy: "A. Khan", approvedAt: daysAgo(90) },
+      { id: "pr_beh_dlp", ruleName: "Behavioural transfer restriction", dataCategory: "behavioural", ruleType: "dlp", strictness: "medium", scope: "Third-party transfers", definition: "Block transfer outside processors named in a current DPA.", approvedBy: "A. Khan", approvedAt: daysAgo(60) },
+    ],
+  });
+
+  // Admin-editable scope (separate from the CISO-owned definition). PAN masking
+  // is applied to two systems and NOT yet to Northgate's — "needs scope".
+  await prisma.protectionRuleScope.createMany({
+    data: [
+      { ruleId: "pr_pan", systemsJson: JSON.stringify(["sys_core", "sys_legacy"]), updatedBy: "R. Iyer" },
+      { ruleId: "pr_kyc_enc", systemsJson: JSON.stringify(["sys_core", "sys_crm", "sys_backup"]), updatedBy: "R. Iyer" },
+      { ruleId: "pr_acct_mask", systemsJson: JSON.stringify([]), updatedBy: null },
+    ],
+  });
+  await prisma.protectionRuleException.create({
+    data: {
+      ruleId: "pr_pan",
+      process: "Internal reporting dashboard",
+      narrowedScope: "Last-4-digits display only, read-only analysts",
+      status: "approved",
+      approvedBy: "A. Khan",
+      approvedAt: daysAgo(20),
+    },
+  });
+
+  // -- Entities (multi-entity: parent NBFC + acquired subsidiary) ----------
+  await prisma.entity.create({
+    data: {
+      id: "ent_meridian",
+      name: "Meridian Financial Services",
+      kind: "legal_entity",
+      sdfStatus: "sdf",
+      sdfHistoryJson: JSON.stringify([
+        { status: "not_assessed", note: "Initial", at: daysAgo(400).toISOString() },
+        { status: "sdf", note: "Notified as Significant Data Fiduciary", at: new Date("2026-06-15").toISOString() },
+      ]),
+    },
+  });
+  await prisma.entity.create({
+    data: {
+      id: "ent_northgate",
+      name: "Northgate Lending",
+      kind: "business_unit",
+      hierarchyParentId: "ent_meridian",
+      sdfStatus: "not_assessed",
+      mergerPending: true,
+    },
+  });
+  await prisma.entityUserMapping.createMany({
+    data: [
+      { userName: "Ritu Nair", entityId: "ent_meridian", accessScope: "single" },
+      {
+        userName: "Priya Iyer",
+        entityId: "ent_meridian",
+        accessScope: "cross",
+        additionalEntitiesJson: JSON.stringify(["ent_northgate"]),
+        justification: "Shared compliance function across both entities during integration.",
+      },
+      { userName: "R. Iyer", entityId: "ent_meridian", accessScope: "single" },
+    ],
+  });
+
+  // -- Flow map nodes and edges (generated from the connected estate) ------
+  const flowNode = (id: string, label: string, nodeType: string, subtitle: string, refHref?: string) =>
+    prisma.dataFlowNode.create({ data: { id, label, nodeType, subtitle, refHref: refHref ?? null, entityId: "ent_meridian" } });
+
+  await flowNode("fn_core", "Core Banking DB", "source", "PostgreSQL · 6 schemas", "/discovery/sources/src_core");
+  await flowNode("fn_share", "Finance File Share", "system", "Internal system", "/discovery/sources/src_share");
+  await flowNode("fn_cloudsupport", "CloudSupport Ticketing", "processor", "DPA-2026-0143");
+  await flowNode("fn_portal", "Self-service portal", "touchpoint", "Data principal touchpoint");
+  await flowNode("fn_branch", "Branch (assisted)", "touchpoint", "Data principal touchpoint");
+
+  await prisma.dataFlowConnection.createMany({
+    data: [
+      { fromNodeId: "fn_portal", toNodeId: "fn_core", dataCategoriesJson: JSON.stringify(["identity", "contact"]), purposeTagId: "pt_servicing", status: "documented" },
+      { fromNodeId: "fn_branch", toNodeId: "fn_core", dataCategoriesJson: JSON.stringify(["identity", "kyc"]), purposeTagId: "pt_regulatory", status: "documented" },
+      { fromNodeId: "fn_core", toNodeId: "fn_share", dataCategoriesJson: JSON.stringify(["financial"]), purposeTagId: "pt_servicing", dpiaRef: "DPIA-2025-004", status: "documented" },
+      // The undisclosed transfer — detected via recent API activity, no purpose,
+      // no linked DPIA. This is the whole reason the flow map exists.
+      { fromNodeId: "fn_core", toNodeId: "fn_cloudsupport", dataCategoriesJson: JSON.stringify(["contact", "support"]), status: "undisclosed", processorId: "proc_analytics" },
     ],
   });
 

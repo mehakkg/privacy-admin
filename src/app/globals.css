@@ -1660,3 +1660,93 @@ button.profile:hover .profile-name {
   gap: 8px;
   flex-shrink: 0;
 }
+
+/* ----------------------------------------------------------- flow canvas */
+.flow-wrap {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--bg);
+}
+.flow-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-soft);
+  flex-wrap: wrap;
+}
+.flow-legend {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.flow-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.flow-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+.flow-legend-line {
+  width: 20px;
+  height: 0;
+  border-top: 2px dashed var(--red);
+}
+.flow-canvas-row {
+  display: flex;
+  align-items: stretch;
+}
+.flow-canvas {
+  flex: 1;
+  min-width: 0;
+  background:
+    radial-gradient(circle, var(--border-soft) 1px, transparent 1px) 0 0 / 22px 22px;
+  cursor: grab;
+  overflow: hidden;
+}
+.flow-canvas:active {
+  cursor: grabbing;
+}
+.flow-drawer {
+  width: 300px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  padding: 16px;
+  background: var(--bg);
+  max-height: 620px;
+  overflow-y: auto;
+}
+.flow-empty {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  min-height: 320px;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  padding: 40px;
+}
+
+/* Policy-locked table cell — quieter than the one column Admin owns. */
+.locked-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-3);
+  font-weight: 400;
+}
+.locked-cell svg {
+  color: var(--text-4);
+  flex-shrink: 0;
+}
+/* Cross-entity user mapping — the deliberate exception, visually distinct. */
+tr.cross-entity > td {
+  background: var(--yellow-bg);
+}

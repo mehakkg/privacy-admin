@@ -428,6 +428,7 @@ model PurposeTag {
   classifiedFields   ClassifiedField[]
   processingActivities ProcessingActivity[]
   consentRecords     ConsentRecord[]
+  dataFlowConnections DataFlowConnection[]
 }
 
 /// A record of processing activity, entered by hand for data no scanner can
@@ -632,9 +633,13 @@ model ConsentApiConfig {
 
 model ProtectionRule {
   id           String @id @default(cuid())
+  /// Human name, e.g. "PAN masking — customer-facing views". CISO-owned.
+  ruleName     String @default("")
   dataCategory String
   /// mask | encrypt | dlp
   ruleType   String
+  /// high | medium | low
+  strictness String @default("high")
   scope      String
   definition String
   approvedBy String
@@ -1113,29 +1118,91 @@ model ScanRun {
   @@index([status])
 }
 
+/// A node on the flow map. Generated from Sources, Integrations and Request
+/// channels — Admin does not draw these.
 model DataFlowNode {
-  id       String               @id @default(cuid())
-  label    String
-  kind     String
+  id    String @id @default(cuid())
+  label String
+  /// source | system | processor | touchpoint
+  nodeType String @default("system")
+  subtitle String?
+  refHref  String?
+  entityId String?
+
   outgoing DataFlowConnection[] @relation("FlowFrom")
   incoming DataFlowConnection[] @relation("FlowTo")
 }
 
+/// An edge. A connection with no purpose and no linked DPIA is `undisclosed` —
+/// the thing the flow map exists to surface — and renders as a red dashed edge.
 model DataFlowConnection {
   id                 String @id @default(cuid())
   fromNodeId         String
   toNodeId           String
-  dataCategoriesJson String
+  dataCategoriesJson String @default("[]")
 
-  from DataFlowNode @relation("FlowFrom", fields: [fromNodeId], references: [id])
-  to   DataFlowNode @relation("FlowTo", fields: [toNodeId], references: [id])
+  purposeTagId String?
+  dpiaRef      String?
+  processorId  String?
+  /// documented | undisclosed
+  status String @default("documented")
+  manual Boolean @default(false)
+
+  from       DataFlowNode @relation("FlowFrom", fields: [fromNodeId], references: [id])
+  to         DataFlowNode @relation("FlowTo", fields: [toNodeId], references: [id])
+  purposeTag PurposeTag?  @relation(fields: [purposeTagId], references: [id])
+
+  @@index([status])
 }
 
 model Entity {
   id                String  @id @default(cuid())
   name              String
+  /// legal_entity | business_unit
   kind              String
   hierarchyParentId String?
+
+  /// not_assessed | sdf | not_sdf
+  sdfStatus      String  @default("not_assessed")
+  sdfHistoryJson String  @default("[]")
+  mergerPending  Boolean @default(false)
+
+  userMappings EntityUserMapping[]
+}
+
+model EntityUserMapping {
+  id       String @id @default(cuid())
+  userName String
+  entityId String
+  /// single | cross
+  accessScope String @default("single")
+  additionalEntitiesJson String @default("[]")
+  justification          String?
+
+  entity Entity @relation(fields: [entityId], references: [id])
+
+  @@index([entityId])
+}
+
+model ProtectionRuleScope {
+  id     String @id @default(cuid())
+  ruleId String @unique
+  systemsJson String @default("[]")
+  updatedAt   DateTime @updatedAt
+  updatedBy   String?
+}
+
+model ProtectionRuleException {
+  id      String @id @default(cuid())
+  ruleId  String
+  process String
+  narrowedScope String
+  /// requested | approved
+  status     String   @default("approved")
+  approvedBy String?
+  approvedAt DateTime @default(now())
+
+  @@index([ruleId])
 }
 
 /// A role Admin can grant and edit.

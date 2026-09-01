@@ -63,12 +63,12 @@ function navGroups(openRequests: number): NavGroup[] {
     {
       key: "protection",
       label: "Data Flow & Protection Rules",
-      href: "/protection",
-      ready: false,
+      href: "/data-flow/map",
+      ready: true,
       children: [
-        { href: "/protection/flow", label: "Flow map", ready: false },
-        { href: "/protection/rules", label: "Protection rules", ready: false },
-        { href: "/protection/entities", label: "Entity configuration", ready: false },
+        { href: "/data-flow/map", label: "Flow map", ready: true },
+        { href: "/data-flow/protection-rules", label: "Protection rules", ready: true },
+        { href: "/data-flow/entities", label: "Entity configuration", ready: true },
       ],
     },
     {
