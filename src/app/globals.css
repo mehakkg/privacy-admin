@@ -1651,3 +1651,12 @@ button.profile:hover .profile-name {
   font-size: 12.5px;
   height: 22px;
 }
+
+/* Page CTAs pushed to the right of the search + filter row. */
+.filter-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}

@@ -115,11 +115,6 @@ export default async function InventoryPage({
         crumbs={[{ label: "Data Discovery", href: "/discovery" }, { label: "Inventory" }]}
         title="Data Inventory"
         titleTip="Every classified field across every connected source. This is the standing record a DPB inquiry would be answered from."
-        actions={
-          <Link href={`/api/discovery/export${params.source ? `?source=${params.source}` : ""}`} className="btn sm">
-            Export CSV
-          </Link>
-        }
       />
 
       <div className="stat-row" style={{ marginBottom: 16 }}>
@@ -184,6 +179,14 @@ export default async function InventoryPage({
           label: "Untagged only",
           tip: "An untagged field has no lawful purpose recorded for holding it. Untagged rows are flagged in the table rather than left blank, because a blank cell reads as nothing to do here.",
         }}
+        actions={
+          <Link
+            href={`/api/discovery/export${params.source ? `?source=${params.source}` : ""}`}
+            className="btn sm"
+          >
+            Export CSV
+          </Link>
+        }
       />
 
       <div className="row" style={{ marginBottom: 12 }}>

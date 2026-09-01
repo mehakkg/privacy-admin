@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronDown, Search, SlidersHorizontal, X } from "lucide-react";
 import { InfoTip } from "@/components/ui";
@@ -38,6 +38,7 @@ export function CompactFilterBar({
   searchKey = "q",
   searchPlaceholder = "Search…",
   toggle,
+  actions,
 }: {
   basePath: string;
   facets: Facet[];
@@ -46,6 +47,8 @@ export function CompactFilterBar({
   searchPlaceholder?: string;
   /** A single binary condition worth surfacing outside the facet set. */
   toggle?: { key: string; label: string; tip?: string };
+  /** Page CTAs, pushed to the right of the same row as search and filters. */
+  actions?: ReactNode;
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -261,6 +264,8 @@ export function CompactFilterBar({
           Clear all
         </button>
       )}
+
+      {actions && <div className="filter-actions">{actions}</div>}
     </div>
   );
 }

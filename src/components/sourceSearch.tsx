@@ -1,11 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Search, X } from "lucide-react";
 
 /** Search only — this list is short enough that facets would be scaffolding. */
-export function SourceSearch({ initial }: { initial: string }) {
+export function SourceSearch({
+  initial,
+  actions,
+}: {
+  initial: string;
+  actions?: ReactNode;
+}) {
   const router = useRouter();
   const [value, setValue] = useState(initial);
 
@@ -42,6 +48,7 @@ export function SourceSearch({ initial }: { initial: string }) {
           </button>
         )}
       </form>
+      {actions && <div className="filter-actions">{actions}</div>}
     </div>
   );
 }

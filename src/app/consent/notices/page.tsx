@@ -46,7 +46,6 @@ export default async function NoticesPage({
       <PageHead
         title="Notices"
         titleTip="Privacy notices Admin publishes. The approved substance is the DPO's; the implementation — regions, language variants, versioning — is Admin's."
-        actions={<NewNoticeButton />}
       />
 
       <div className="stat-row" style={{ marginBottom: 16 }}>
@@ -69,6 +68,7 @@ export default async function NoticesPage({
             ],
           },
         ]}
+        actions={<NewNoticeButton />}
       />
 
       <div className="table-wrap">

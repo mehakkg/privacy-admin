@@ -106,7 +106,6 @@ export default async function RequestQueuePage({
       <PageHead
         title="Data Principal Rights Requests"
         titleTip="Execution queue for access, correction and erasure requests. Admin implements the decision; it does not make it."
-        actions={<TickButton />}
       />
 
       <SetupStrip />
@@ -173,6 +172,7 @@ export default async function RequestQueuePage({
           label: "My assigned",
           tip: `Requests assigned to ${session.actor.label}. Assignment is set by the auto-assignment engine; until that exists it comes from the seed.`,
         }}
+        actions={<TickButton />}
       />
 
       <div className="table-wrap">

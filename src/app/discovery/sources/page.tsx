@@ -51,11 +51,6 @@ export default async function SourcesPage({
         crumbs={[{ label: "Data Discovery", href: "/discovery" }, { label: "Sources" }]}
         title="Sources"
         titleTip="Where personal data lives. Connecting a source only establishes that we can reach it — scanning it is a separate step, and needs DPO approval of the scope."
-        actions={
-          <Link href="/onboarding/sources" className="btn primary sm">
-            Add source
-          </Link>
-        }
       />
 
       <div className="stat-row" style={{ marginBottom: 16 }}>
@@ -72,7 +67,14 @@ export default async function SourcesPage({
         />
       </div>
 
-      <SourceSearch initial={q ?? ""} />
+      <SourceSearch
+        initial={q ?? ""}
+        actions={
+          <Link href="/onboarding/sources" className="btn primary sm">
+            Add source
+          </Link>
+        }
+      />
 
       <div className="table-wrap">
         <table className="dtable">
