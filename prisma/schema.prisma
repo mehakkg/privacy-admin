@@ -425,7 +425,34 @@ model PurposeTag {
   approvedBy String
   approvedAt DateTime
 
-  classifiedFields ClassifiedField[]
+  classifiedFields   ClassifiedField[]
+  processingActivities ProcessingActivity[]
+}
+
+/// A record of processing activity, entered by hand for data no scanner can
+/// reach. Activity / Purpose / Data elements / Subject type are columns of one
+/// record, not steps in a wizard — the earlier 4-step questionnaire was the
+/// wrong shape for structured tabular data.
+model ProcessingActivity {
+  id       String @id @default(cuid())
+  activity String
+
+  /// FK to the DPO-approved taxonomy — the same policy-locked source the
+  /// classification review uses. Never free text.
+  purposeTagId String?
+  /// customer | employee | vendor | minor
+  subjectType  String?
+  /// JSON string[] of data-element tags. A tag may match an inventory field
+  /// name or be free text that is flagged as not-yet-in-inventory.
+  dataElementsJson String @default("[]")
+
+  createdAt DateTime @default(now())
+  /// csv | manual — how the row first entered the table.
+  origin    String   @default("manual")
+
+  purposeTag PurposeTag? @relation(fields: [purposeTagId], references: [id])
+
+  @@index([purposeTagId])
 }
 
 model NoticeVersion {

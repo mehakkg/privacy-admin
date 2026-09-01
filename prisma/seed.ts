@@ -66,6 +66,7 @@ async function main() {
     "DuplicatePair",
     "ROTCandidate",
     "ScanRun",
+    "ProcessingActivity",
     "ClassifiedField",
     "DiscoverySource",
     "NotificationRoute",
@@ -1284,6 +1285,26 @@ async function main() {
     where: { id: "singleton" },
     create: { id: "singleton", ...onboarding },
     update: onboarding,
+  });
+
+  // -- Processing activities (hand-entered records) ------------------------
+  await prisma.processingActivity.createMany({
+    data: [
+      {
+        activity: "Pre-approved loan offers to existing customers",
+        purposeTagId: "pt_marketing",
+        subjectType: "customer",
+        dataElementsJson: JSON.stringify(["customer.email", "customer.mobile_no", "account.balance"]),
+        origin: "manual",
+      },
+      {
+        activity: "Branch staff attendance register",
+        purposeTagId: "pt_servicing",
+        subjectType: "employee",
+        dataElementsJson: JSON.stringify(["staff_name", "biometric_id"]),
+        origin: "csv",
+      },
+    ],
   });
 
   const counts = {

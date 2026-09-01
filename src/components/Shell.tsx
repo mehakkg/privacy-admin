@@ -38,7 +38,7 @@ function navGroups(openRequests: number): NavGroup[] {
       children: [
         { heading: "Add data" },
         { href: "/discovery/sources", label: "Sources", ready: true },
-        { href: "/discovery/import", label: "Bulk import", ready: true },
+        { href: "/discovery/import", label: "Add processing activity", ready: true },
         { heading: "Review & classify" },
         { href: "/discovery", label: "Overview", ready: true },
         { href: "/discovery/triage", label: "Triage queue", ready: true },

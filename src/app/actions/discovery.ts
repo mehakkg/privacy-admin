@@ -15,6 +15,7 @@ import {
   runScan,
   type BulkOutcome,
 } from "@/lib/engines/discovery";
+import { encodeList } from "@/lib/codec/json";
 import type { ActionResult } from "@/app/actions/requests";
 
 async function run(path: string, operation: () => Promise<unknown>): Promise<ActionResult> {
@@ -136,4 +137,101 @@ export async function resolveRotAction(
     };
   }
   return run("/discovery/rot", () => resolveRot(candidateId, resolution, reason, actor));
+}
+
+// ---------------------------------------------------------------------------
+// Processing activities (Screen 7 — the editable table)
+// ---------------------------------------------------------------------------
+export interface DraftActivity {
+  activity: string;
+  purposeTagId: string | null;
+  subjectType: string | null;
+  dataElements: string[];
+  origin: "manual" | "csv";
+}
+
+/**
+ * Commit unsaved rows in one go. Returns which rows saved and which did not,
+ * so a partway failure leaves the failed rows visibly unsaved rather than
+ * losing them or silently retrying.
+ *
+ * A row with no valid purpose is refused here, not just disabled in the UI:
+ * an activity in the record of processing with no lawful basis recorded is the
+ * exact gap this screen exists to close.
+ */
+export async function saveActivitiesAction(
+  drafts: DraftActivity[],
+): Promise<{ ok: boolean; savedIndexes: number[]; failed: { index: number; reason: string }[] }> {
+  const { actor } = await getSession();
+
+  // Only approved purposes are assignable — the taxonomy is policy-locked.
+  const approved = new Set(
+    (await db.purposeTag.findMany({ where: { status: "approved" }, select: { id: true } })).map(
+      (p) => p.id,
+    ),
+  );
+
+  const savedIndexes: number[] = [];
+  const failed: { index: number; reason: string }[] = [];
+
+  for (let i = 0; i < drafts.length; i++) {
+    const d = drafts[i];
+    if (!d.activity.trim()) {
+      failed.push({ index: i, reason: "Activity name is required." });
+      continue;
+    }
+    if (!d.purposeTagId || !approved.has(d.purposeTagId)) {
+      failed.push({ index: i, reason: "A DPO-approved purpose must be assigned before saving." });
+      continue;
+    }
+    try {
+      await audited(
+        {
+          actor,
+          action: "discovery.activity_recorded",
+          targetType: "ProcessingActivity",
+          targetId: d.activity,
+          payload: {
+            activity: d.activity,
+            purposeTagId: d.purposeTagId,
+            subjectType: d.subjectType,
+            dataElements: d.dataElements,
+            origin: d.origin,
+          },
+        },
+        (tx: TxClient) =>
+          tx.processingActivity.create({
+            data: {
+              activity: d.activity.trim(),
+              purposeTagId: d.purposeTagId,
+              subjectType: d.subjectType,
+              dataElementsJson: encodeList(d.dataElements),
+              origin: d.origin,
+            },
+          }),
+      );
+      savedIndexes.push(i);
+    } catch (error) {
+      failed.push({ index: i, reason: (error as Error).message });
+    }
+  }
+
+  revalidatePath("/discovery/import", "layout");
+  return { ok: failed.length === 0, savedIndexes, failed };
+}
+
+export async function deleteActivityAction(id: string): Promise<ActionResult> {
+  const { actor } = await getSession();
+  return run("/discovery/import", () =>
+    audited(
+      {
+        actor,
+        action: "discovery.activity_deleted",
+        targetType: "ProcessingActivity",
+        targetId: id,
+        payload: {},
+      },
+      (tx: TxClient) => tx.processingActivity.delete({ where: { id } }),
+    ),
+  );
 }

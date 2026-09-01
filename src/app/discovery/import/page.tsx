@@ -1,86 +1,59 @@
-import Link from "next/link";
+import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
-import { Card, InfoTip, Notice, PageHead } from "@/components/ui";
-import { ImportWizard, GuidedQuestionnaire } from "@/components/importWizard";
+import { PageHead } from "@/components/ui";
+import {
+  ProcessingActivitiesTable,
+  type SavedActivity,
+} from "@/components/ProcessingActivitiesTable";
+import { decodeList } from "@/lib/codec/json";
 
 export const dynamic = "force-dynamic";
 
 /**
- * SCREEN 7 — Bulk Import & Guided Mapping.
+ * SCREEN 7 — Processing Activities.
  *
- * Independent of scanning: this is how data that no scanner can reach gets into
- * the inventory. The questionnaire scopes an initiative before any system
- * exists; the CSV path covers an inventory someone already keeps in a
- * spreadsheet.
+ * One editable table replaces the old two-tile chooser and the 4-step
+ * questionnaire. Activity / Purpose / Data elements / Subject type are columns
+ * of one record, not sequential questions, and CSV import lands in the same
+ * unsaved-row state as a manually added row — the questionnaire-vs-CSV split
+ * was always two ways into one record.
  */
-export default async function ImportPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ mode?: string }>;
-}) {
-  const params = await searchParams;
-  const mode = params.mode;
+export default async function ProcessingActivitiesPage() {
+  const [activities, purposes, fields] = await Promise.all([
+    db.processingActivity.findMany({
+      include: { purposeTag: true },
+      orderBy: { createdAt: "desc" },
+    }),
+    db.purposeTag.findMany({ where: { status: "approved" }, orderBy: { name: "asc" } }),
+    db.classifiedField.findMany({ select: { fieldPath: true }, distinct: ["fieldPath"] }),
+  ]);
+
+  const saved: SavedActivity[] = activities.map((a) => ({
+    id: a.id,
+    activity: a.activity,
+    purposeTagId: a.purposeTagId,
+    purposeName: a.purposeTag?.name ?? null,
+    subjectType: a.subjectType,
+    dataElements: decodeList(a.dataElementsJson),
+    origin: a.origin,
+  }));
 
   return (
-    <Shell active="/discovery" title="Discovery / Import">
+    <Shell active="/discovery" title="Discovery / Processing activities">
       <PageHead
-        crumbs={[{ label: "Data Discovery", href: "/discovery" }, { label: "Import" }]}
-        title="Bulk import & guided mapping"
-        titleTip="For data a scanner cannot reach: a new initiative that has no system yet, or an inventory someone already maintains by hand."
+        crumbs={[
+          { label: "Data Discovery", href: "/discovery" },
+          { label: "Processing activities" },
+        ]}
+        title="Processing activities"
+        titleTip="For data no scanner can reach — a new initiative with no system yet, or an inventory kept by hand. Add rows or import a CSV; both land in the same table and commit together."
       />
 
-      {!mode && (
-        <div className="grid-2">
-          <Card title="Guided questionnaire">
-            <p className="cell-sub" style={{ marginTop: 0 }}>
-              Step-by-step prompts to scope a new activity before any system
-              exists.
-            </p>
-            <Link href="/discovery/import?mode=questionnaire" className="btn primary">
-              Start questionnaire
-            </Link>
-          </Card>
-
-          <Card title="Bulk CSV import">
-            <p className="cell-sub" style={{ marginTop: 0 }}>
-              Download the template, upload a filled sheet, map the columns, and
-              review before anything is committed.
-            </p>
-            <Link href="/discovery/import?mode=csv" className="btn primary">
-              Start import
-            </Link>
-          </Card>
-        </div>
-      )}
-
-      {mode === "questionnaire" && (
-        <Card
-          title={
-            <span className="row">
-              Guided questionnaire
-              <InfoTip
-                align="left"
-                text="Answers become inventory entries scoped to the activity, so a new initiative is on the record before it starts processing anything."
-              />
-            </span>
-          }
-        >
-          <GuidedQuestionnaire />
-        </Card>
-      )}
-
-      {mode === "csv" && (
-        <Card title="Bulk CSV import">
-          <Notice tone="info" title="Nothing is committed until you confirm">
-            The preview step shows exactly what will be created, including any
-            row that could not be mapped. Unmappable rows are never silently
-            dropped.
-          </Notice>
-          <div style={{ marginTop: 14 }}>
-            <ImportWizard />
-          </div>
-        </Card>
-      )}
+      <ProcessingActivitiesTable
+        saved={saved}
+        purposes={purposes.map((p) => ({ id: p.id, name: p.name }))}
+        inventoryFields={fields.map((f) => f.fieldPath)}
+      />
     </Shell>
   );
 }
