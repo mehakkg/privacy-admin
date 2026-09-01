@@ -171,8 +171,18 @@ export default async function ProcessorsPage({
               </p>
             )}
 
+            {processor.dpaStatus === "draft" && (
+              <div style={{ marginTop: 12 }}>
+                <Notice tone="danger" title="DPA draft — cannot dispatch">
+                  This processor&apos;s DPA is still draft, so no live instruction can
+                  be sent (DPDP s.8(2)). Add its DPA reference under Integrations →
+                  Data processors first.
+                </Notice>
+              </div>
+            )}
+
             <div style={{ marginTop: 14 }} className="row">
-              {!dispatched && (
+              {!dispatched && processor.dpaStatus !== "draft" && (
                 <InstructProcessorButton requestId={id} processorId={processor.id} />
               )}
               {dispatched && target?.status !== "verified" && target?.executionRecordId && (

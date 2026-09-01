@@ -53,6 +53,26 @@ export class DpaScopeError extends Error {
   }
 }
 
+/**
+ * A processor whose DPA is still draft cannot lawfully be instructed. DPDP
+ * s.8(2) requires the contract before a Processor may process on the
+ * Fiduciary's behalf, so this is a hard block at the point of dispatch — not a
+ * warning on the registry screen. Enforcing it here is what makes Integrations'
+ * Principle 2 real rather than communicated.
+ */
+export class DraftDpaError extends Error {
+  constructor(processorName: string, dpaId: string) {
+    super(
+      `Cannot instruct ${processorName}: its DPA (${dpaId}) is still draft. ` +
+        `DPDP s.8(2) permits a Processor to process personal data on the ` +
+        `Fiduciary's behalf only under a valid contract, so no deletion or access ` +
+        `instruction can be dispatched until the DPA is executed. Add the DPA ` +
+        `reference and mark it active first.`,
+    );
+    this.name = "DraftDpaError";
+  }
+}
+
 export class ChecklistIncompleteError extends Error {
   constructor(remaining: number) {
     super(
@@ -646,6 +666,10 @@ export async function dispatchProcessorInstruction(
   const processor = await db.dataProcessor.findUniqueOrThrow({
     where: { id: processorId },
   });
+
+  // Principle 2: a draft-DPA processor is a hard block on dispatch, checked
+  // before anything else touches it — a draft contract is no contract.
+  if (processor.dpaStatus === "draft") throw new DraftDpaError(processor.name, processor.dpaId);
 
   const location = await db.dataLocation.findFirst({
     where: { principalId: request.principalId ?? "", processorId },
