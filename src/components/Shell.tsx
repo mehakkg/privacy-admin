@@ -8,6 +8,7 @@ import { requireOnboardingGate } from "@/lib/guards/onboardingGate";
 import { ROLE_LABEL } from "@/lib/domain";
 import { RoleSwitcher } from "@/components/RoleSwitcher";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { ProfileMenu } from "@/components/ProfileMenu";
 import { SidebarNav, type NavGroup } from "@/components/SidebarNav";
 
 /**
@@ -25,12 +26,6 @@ function navGroups(openRequests: number): NavGroup[] {
       href: "/requests",
       ready: true,
       badge: openRequests,
-      children: [
-        { href: "/requests", label: "All", ready: true },
-        { href: "/requests?source=grievance_officer", label: "From Grievance Officer", ready: true },
-        { href: "/requests?source=dpb", label: "From the Board", ready: true },
-        { href: "/requests?assigned=me", label: "My assigned", ready: false },
-      ],
     },
     {
       key: "discovery",
@@ -84,7 +79,6 @@ function navGroups(openRequests: number): NavGroup[] {
       children: [
         { href: "/access/provisioning", label: "Provisioning", ready: true },
         { href: "/access/deprovisioning", label: "Deprovisioning", ready: true },
-        { href: "/access/verification", label: "Revocation verification", ready: true },
         { href: "/access/dormant", label: "Dormant accounts", ready: true },
         { href: "/access/roles", label: "RBAC matrix", ready: true },
       ],
@@ -105,11 +99,6 @@ function navGroups(openRequests: number): NavGroup[] {
       label: "Escalations",
       href: "/escalations",
       ready: true,
-      children: [
-        { href: "/escalations?status=open", label: "Open", ready: true },
-        { href: "/escalations?status=ruled", label: "Ruled", ready: true },
-        { href: "/escalations?status=closed", label: "Closed", ready: true },
-      ],
     },
     {
       key: "audit",
@@ -124,22 +113,13 @@ function navGroups(openRequests: number): NavGroup[] {
     {
       key: "analytics",
       label: "Analytics",
-      href: "/analytics",
+      href: "/analytics/risk",
       ready: false,
-      children: [
-        { href: "/analytics/risk", label: "Risk dashboard", ready: false },
-      ],
     },
     {
       key: "governance",
       label: "Approved Policy",
       href: "/governance",
-      ready: true,
-    },
-    {
-      key: "onboarding",
-      label: "Guided setup",
-      href: "/onboarding",
       ready: true,
     },
   ];
@@ -219,15 +199,11 @@ export async function Shell({
           </Link>
           <ThemeToggle />
           <RoleSwitcher current={session.role} />
-          <div className="profile">
-            <span className="avatar" aria-hidden>
-              {initialsOf(session.actor.label)}
-            </span>
-            <span className="profile-meta">
-              <span className="profile-name">{session.actor.label}</span>
-              <span className="profile-role">{ROLE_LABEL[session.role]}</span>
-            </span>
-          </div>
+          <ProfileMenu
+            initials={initialsOf(session.actor.label)}
+            name={session.actor.label}
+            role={ROLE_LABEL[session.role]}
+          />
         </header>
         <main className="main-body">{children}</main>
       </div>

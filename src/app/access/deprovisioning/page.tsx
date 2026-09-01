@@ -10,6 +10,7 @@ import {
   formatDate,
 } from "@/components/ui";
 import { DeprovisionButton } from "@/components/accessActions";
+import { RevocationVerification } from "@/components/RevocationVerification";
 import { computeRevocationCompletion } from "@/lib/engines/access";
 import {
   EMPLOYMENT_STATUS_LABEL,
@@ -32,7 +33,17 @@ export const dynamic = "force-dynamic";
  * how access survives an offboarding, so this screen counts them apart and the
  * completion state refuses to read verified while either is outstanding.
  */
-export default async function DeprovisioningPage() {
+export default async function DeprovisioningPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string }>;
+}) {
+  // Verifying a revocation completed is a STATE of the deprovisioning workflow,
+  // not a separate object — so it is a tab here rather than its own sidebar
+  // entry. The action and its verification live on one screen.
+  const { view } = await searchParams;
+  const tab = view === "verify" ? "verify" : "action";
+
   const users = await db.internalUser.findMany({
     include: {
       accounts: {
@@ -72,9 +83,28 @@ export default async function DeprovisioningPage() {
     <div className="stack">
       <PageHead
         title="Deprovisioning"
-        subtitle="Revoke access across every system at once. Grants and live sessions are tracked separately, because they fail separately."
+        titleTip="Revoke access across every system at once. Grants and live sessions are tracked separately, because they fail separately."
       />
 
+      <nav className="stepper" style={{ marginBottom: 0 }}>
+        <Link
+          href="/access/deprovisioning"
+          className={`step${tab === "action" ? " active" : ""}`}
+        >
+          <span className="step-label">Deprovision</span>
+        </Link>
+        <Link
+          href="/access/deprovisioning?view=verify"
+          className={`step${tab === "verify" ? " active" : ""}`}
+        >
+          <span className="step-label">Revocation verification</span>
+        </Link>
+      </nav>
+
+      {tab === "verify" ? (
+        <RevocationVerification />
+      ) : (
+      <>
       <div className="stat-row">
         <Stat label="People" value={users.length} />
         <Stat
@@ -211,6 +241,8 @@ export default async function DeprovisioningPage() {
           )}
         </Card>
       ))}
+      </>
+      )}
     </div>
   );
 }

@@ -36,6 +36,7 @@ model Actor {
   ruledEscalations    Escalation[]               @relation("EscalationRuledBy")
   checkedItems        VerificationChecklistItem[]
   auditEntries        AuditLogEntry[]
+  assignedRequests    DataPrincipalRequest[]     @relation("RequestAssignee")
   notifications       Notification[]
 
   onboardingEscalationFor OnboardingState[] @relation("OnboardingEscalationContact")
@@ -99,12 +100,18 @@ model DataPrincipalRequest {
   escalationSource      String
   linkedGrievanceCaseId String?
 
+  /// Who is working this request. Needed for the "My assigned" filter; the
+  /// auto-assignment engine from Scenario 10 would populate it, and until that
+  /// exists the seed sets it directly.
+  assignedToActorId String?
+
   /// Set when more than one DataPrincipal plausibly matches rawIdentifier.
   requiresIdentityReview Boolean @default(false)
   identityNote           String?
 
   notes String?
 
+  assignedTo    Actor?               @relation("RequestAssignee", fields: [assignedToActorId], references: [id])
   principal     DataPrincipal?       @relation(fields: [principalId], references: [id])
   executions    ExecutionRecord[]
   exceptions    RetentionException[]

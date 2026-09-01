@@ -329,6 +329,7 @@ async function main() {
       meera.id, "meera.k@example.in", "email", 24, "grievance_officer",
       {
         linkedGrievanceCaseId: "GRV-2026-0188",
+        assignedToActorId: admin.id,
         notes:
           "Data Principal withdrew consent for all non-essential processing and " +
           "asked for erasure across every system.",
@@ -340,7 +341,7 @@ async function main() {
     data: mkRequest(
       "req_arun", "DPR-2026-0418", "erasure", "received",
       arun.id, "arun.nair@example.in", "email", 6, "portal",
-      { notes: "Closed both accounts last month; asks for full erasure." },
+      { assignedToActorId: admin.id, notes: "Closed both accounts last month; asks for full erasure." },
     ),
   });
 

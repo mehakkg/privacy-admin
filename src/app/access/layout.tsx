@@ -5,7 +5,6 @@ import { Shell } from "@/components/Shell";
 const TABS = [
   { href: "/access/provisioning", label: "Provisioning" },
   { href: "/access/deprovisioning", label: "Deprovisioning" },
-  { href: "/access/verification", label: "Revocation verification" },
   { href: "/access/dormant", label: "Dormant accounts" },
   { href: "/access/roles", label: "RBAC matrix" },
 ];

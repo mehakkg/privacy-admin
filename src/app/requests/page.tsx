@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
+import { CompactFilterBar } from "@/components/CompactFilterBar";
 import { SetupStrip } from "@/components/SetupStrip";
 import {
   Citation,
@@ -43,15 +44,34 @@ export const dynamic = "force-dynamic";
 export default async function RequestQueuePage({
   searchParams,
 }: {
-  searchParams: Promise<{ type?: string; source?: string }>;
+  searchParams: Promise<{
+    type?: string;
+    source?: string;
+    status?: string;
+    q?: string;
+    mine?: string;
+  }>;
 }) {
   const params = await searchParams;
   const session = await getSession();
+
+  const term = (params.q ?? "").trim();
 
   const requests = await db.dataPrincipalRequest.findMany({
     where: {
       ...(params.type ? { type: params.type } : {}),
       ...(params.source ? { escalationSource: params.source } : {}),
+      ...(params.status ? { status: params.status } : {}),
+      ...(params.mine === "1" ? { assignedToActorId: session.actor.id ?? "__none" } : {}),
+      ...(term
+        ? {
+            OR: [
+              { referenceCode: { contains: term } },
+              { rawIdentifier: { contains: term } },
+              { principal: { displayName: { contains: term } } },
+            ],
+          }
+        : {}),
     },
     include: { principal: true },
   });
@@ -115,18 +135,45 @@ export default async function RequestQueuePage({
         <Stat label="With failures" value={failing} tone={failing ? "red" : undefined} />
       </div>
 
-      <div className="row" style={{ marginBottom: 12 }}>
-        <span className="section-label" style={{ margin: 0 }}>Filter</span>
-        <FilterLink label="All" href="/requests" active={!params.type && !params.source} />
-        <FilterLink label="Erasure" href="/requests?type=erasure" active={params.type === "erasure"} />
-        <FilterLink label="Access" href="/requests?type=access" active={params.type === "access"} />
-        <FilterLink
-          label="From Grievance Officer"
-          href="/requests?source=grievance_officer"
-          active={params.source === "grievance_officer"}
-        />
-        <FilterLink label="From the Board" href="/requests?source=dpb" active={params.source === "dpb"} />
-      </div>
+      {/* One bar, not a sidebar sub-nav AND page tabs. Every dimension that
+          used to be split across two mechanisms is settable here. */}
+      <CompactFilterBar
+        basePath="/requests"
+        searchPlaceholder="Search reference, name or email…"
+        facets={[
+          {
+            key: "type",
+            label: "Type",
+            options: (Object.keys(REQUEST_TYPE_LABEL) as RequestType[]).map((t) => ({
+              value: t,
+              label: REQUEST_TYPE_LABEL[t],
+            })),
+          },
+          {
+            key: "source",
+            label: "Source",
+            options: (Object.keys(ESCALATION_SOURCE_LABEL) as EscalationSource[]).map((s) => ({
+              value: s,
+              label: ESCALATION_SOURCE_LABEL[s],
+            })),
+          },
+          {
+            key: "status",
+            label: "Status",
+            options: (
+              [
+                "received", "identity_review", "retention_review",
+                "executing", "awaiting_confirmation",
+              ] as RequestStatus[]
+            ).map((s) => ({ value: s, label: REQUEST_STATUS_LABEL[s] })),
+          },
+        ]}
+        toggle={{
+          key: "mine",
+          label: "My assigned",
+          tip: `Requests assigned to ${session.actor.label}. Assignment is set by the auto-assignment engine; until that exists it comes from the seed.`,
+        }}
+      />
 
       <div className="table-wrap">
         <table className="dtable">
@@ -243,21 +290,5 @@ export default async function RequestQueuePage({
         />
       </p>
     </Shell>
-  );
-}
-
-function FilterLink({
-  label,
-  href,
-  active,
-}: {
-  label: string;
-  href: string;
-  active: boolean;
-}) {
-  return (
-    <Link href={href} className={`btn sm ${active ? "primary" : "ghost"}`}>
-      {label}
-    </Link>
   );
 }
