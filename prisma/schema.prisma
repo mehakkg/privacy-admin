@@ -142,10 +142,20 @@ model ConnectedSystem {
   delayDays Int?
   ownerTeam String
 
+  /// Last time the connection was verified by a health check.
+  lastVerifiedAt DateTime?
+  /// JSON: [{ ok, detail?, at }] — health-check history, so a pattern over time
+  /// is visible rather than only the current state.
+  healthHistoryJson String @default("[]")
+
   locations  DataLocation[]
   executions ExecutionRecord[]
   accounts   SystemAccount[]
   mergeSteps MergeStep[]
+  /// The scan-registry facet of the same real system. Connected Systems is a
+  /// purpose-scoped view of that one registry, not a second list — see
+  /// DiscoverySource.connectedSystem.
+  source     DiscoverySource?
 }
 
 /// A Data Processor engaged under contract. DPDP s.8(2): the Data Fiduciary
@@ -169,6 +179,24 @@ model DataProcessor {
   dpaStatus String @default("active")
   /// Optional at registration; JSON string[] of disclosed sub-processors.
   subProcessorsJson String @default("[]")
+
+  /// low | medium | high — the vendor risk assessment, OWNED BY LEGAL /
+  /// PROCUREMENT. Admin sees it for context but cannot edit it here; it is
+  /// managed in the Governance Portal. Distinct governance source from DPO/CISO
+  /// objects, same "visible, not editable" principle.
+  riskClassification String?
+  /// The date the (active) DPA was executed.
+  contractDate DateTime?
+
+  // -- Health --------------------------------------------------------------
+  /// responsive | degraded | unreachable
+  healthStatus      String    @default("responsive")
+  lastCheckedAt     DateTime?
+  /// When the processor first became unreachable in the current outage. Drives
+  /// the "unreachable for N hours" duration and the escalate-after-threshold.
+  unreachableSinceAt DateTime?
+  /// JSON: [{ ok, detail?, at }] — check history over time.
+  healthHistoryJson String @default("[]")
 
   locations  DataLocation[]
   executions ExecutionRecord[]
@@ -1058,6 +1086,20 @@ model DiscoverySource {
   /// Set for "other / custom" sources, which usually cannot be verified
   /// automatically and get routed to manual verification later.
   requiresManualVerification Boolean @default(false)
+
+  // -- Purpose role flags ---------------------------------------------------
+  // The SAME registry serves two purposes. These flags are what Connected
+  // Systems filters on: a system can be a scan target, an execution target, or
+  // both. Connected Systems is the execution-target-scoped view of this list.
+  /// Available to Data Discovery as a scan target.
+  availableAsScanTarget Boolean @default(true)
+  /// Available to Request execution as an execution (deletion/access) target.
+  availableAsExecutionTarget Boolean @default(false)
+  /// The execution facet of this same real system, when it is an execution
+  /// target. One system, one record — this is a link between two purpose facets
+  /// of one registry entry, not two separate systems.
+  connectedSystemId String?          @unique
+  connectedSystem   ConnectedSystem? @relation(fields: [connectedSystemId], references: [id])
 
   /// pending | running | scanned | partial | failed
   scanStatus                String    @default("pending")

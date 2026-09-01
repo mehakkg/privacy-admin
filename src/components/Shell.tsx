@@ -86,12 +86,12 @@ function navGroups(openRequests: number): NavGroup[] {
     {
       key: "integrations",
       label: "Integrations",
-      href: "/integrations",
-      ready: false,
+      href: "/integrations/connected-systems",
+      ready: true,
       children: [
-        { href: "/integrations/systems", label: "Connected systems", ready: false },
-        { href: "/integrations/processors", label: "Data processors", ready: false },
-        { href: "/integrations/health", label: "Health monitoring", ready: false },
+        { href: "/integrations/connected-systems", label: "Connected systems", ready: true },
+        { href: "/integrations/data-processors", label: "Data processors", ready: true },
+        { href: "/integrations/health-monitoring", label: "Health monitoring", ready: true },
       ],
     },
     {

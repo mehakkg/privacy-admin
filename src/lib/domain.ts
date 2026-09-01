@@ -4,13 +4,14 @@
  * schema.prisma has its permitted values here, plus the labels the UI renders.
  */
 
-export type ActorRole = "admin" | "dpo" | "ciso" | "grievance_officer" | "system";
+export type ActorRole = "admin" | "dpo" | "ciso" | "grievance_officer" | "legal" | "system";
 
 export const ROLE_LABEL: Record<ActorRole, string> = {
   admin: "Admin",
   dpo: "Data Protection Officer",
   ciso: "CISO",
   grievance_officer: "Grievance Officer",
+  legal: "Legal / Procurement",
   system: "System",
 };
 

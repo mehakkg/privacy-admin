@@ -1347,6 +1347,163 @@ async function main() {
     },
   });
 
+  // -- Integrations: unify the registry -------------------------------------
+  // Connected Systems is a purpose-scoped VIEW of this same source registry.
+  // Link each source that is also an execution target to its execution facet,
+  // and flag it. One system, one record — the link is between two purposes of
+  // one registry entry, not two separate systems.
+  const hoursAgo = (h: number) => new Date(NOW.getTime() - h * 60 * 60 * 1000);
+  const health = (entries: { ok: boolean; detail?: string; hoursAgo: number }[]) =>
+    JSON.stringify(entries.map((e) => ({ ok: e.ok, detail: e.detail ?? null, at: hoursAgo(e.hoursAgo).toISOString() })));
+
+  const linkExec = async (sourceId: string, systemId: string) =>
+    prisma.discoverySource.update({
+      where: { id: sourceId },
+      data: { connectedSystemId: systemId, availableAsExecutionTarget: true },
+    });
+
+  await linkExec("src_core", coreBanking.id);
+  await linkExec("src_crm", crm.id);
+  await linkExec("src_warehouse", warehouse.id);
+  await linkExec("src_legacy", legacyArchive.id);
+  await linkExec("src_mkt", marketing.id);
+  // src_share (Finance File Share) stays a scan-only source — role "Scan target".
+
+  // Backup Vault is an execution target with no scan role. It still belongs in
+  // the one registry, so it has a source record too — flagged execution-only.
+  await prisma.discoverySource.create({
+    data: {
+      id: "src_backup",
+      name: "Backup Vault",
+      kind: "other",
+      connectionState: "connected",
+      dpoApprovedForScanning: false,
+      availableAsScanTarget: false,
+      availableAsExecutionTarget: true,
+      connectedSystemId: backupVault.id,
+      scanStatus: "pending",
+      entityId: "corporate",
+    },
+  });
+
+  // Health history on the execution systems, so Health Monitoring shows a
+  // pattern over time rather than a single current flag.
+  await prisma.connectedSystem.update({
+    where: { id: coreBanking.id },
+    data: { lastVerifiedAt: hoursAgo(1), healthHistoryJson: health([
+      { ok: true, hoursAgo: 1 }, { ok: true, hoursAgo: 7 }, { ok: true, hoursAgo: 13 }, { ok: true, hoursAgo: 19 },
+    ]) },
+  });
+  await prisma.connectedSystem.update({
+    where: { id: crm.id },
+    data: { lastVerifiedAt: hoursAgo(2), healthHistoryJson: health([
+      { ok: true, hoursAgo: 2 }, { ok: true, hoursAgo: 8 }, { ok: true, hoursAgo: 14 },
+    ]) },
+  });
+  // Marketing Automation is degraded — the token expiry that also failed its
+  // last scan. A specific issue, not a generic "connection failed".
+  await prisma.connectedSystem.update({
+    where: { id: marketing.id },
+    data: { lastVerifiedAt: hoursAgo(6), healthHistoryJson: health([
+      { ok: false, detail: "401 invalid_token — the integration token expired on 2026-08-21.", hoursAgo: 6 },
+      { ok: false, detail: "401 invalid_token", hoursAgo: 12 },
+      { ok: true, hoursAgo: 30 },
+    ]) },
+  });
+  await prisma.connectedSystem.update({
+    where: { id: warehouse.id },
+    data: { lastVerifiedAt: hoursAgo(3), healthHistoryJson: health([
+      { ok: true, hoursAgo: 3 }, { ok: true, hoursAgo: 9 },
+    ]) },
+  });
+
+  // -- Integrations: the two demo processors --------------------------------
+  // CloudSupport Ticketing — active DPA, Medium risk (set by Legal), a real
+  // instruction track record.
+  const cloudSupport = await prisma.dataProcessor.create({
+    data: {
+      id: "proc_cloudsupport",
+      name: "CloudSupport Ticketing",
+      dpaId: "DPA-2026-0143",
+      dpaStatus: "active",
+      dpaScopeJson: list(["identity", "contact", "support"]),
+      contactChannel: "portal",
+      contractDate: daysAgo(210),
+      dpaExpiresAt: new Date("2027-09-30T00:00:00.000Z"),
+      riskClassification: "medium",
+      subProcessorsJson: JSON.stringify([
+        { name: "AWS (ap-south-1 hosting)", status: "approved" },
+        { name: "Twilio (SMS notifications)", status: "approved" },
+      ]),
+      healthStatus: "responsive",
+      lastCheckedAt: hoursAgo(1),
+      healthHistoryJson: health([
+        { ok: true, hoursAgo: 1 }, { ok: true, hoursAgo: 6 }, { ok: true, hoursAgo: 12 },
+      ]),
+    },
+  });
+
+  // MarketPulse Analytics — added during onboarding with the DPA left "Pending".
+  // Draft = a hard block on any live instruction. Also unreachable for 51 hours,
+  // which is what drives the persistent-issue banner against DPR-2026-0419.
+  const marketPulse = await prisma.dataProcessor.create({
+    data: {
+      id: "proc_marketpulse",
+      name: "MarketPulse Analytics",
+      dpaId: "PENDING-marketpulse",
+      dpaStatus: "draft",
+      dpaScopeJson: list([]),
+      contactChannel: "portal",
+      riskClassification: "high",
+      subProcessorsJson: JSON.stringify([
+        { name: "Segment (event pipeline)", status: "disclosed_unreviewed" },
+      ]),
+      healthStatus: "unreachable",
+      lastCheckedAt: hoursAgo(1),
+      unreachableSinceAt: hoursAgo(51),
+      healthHistoryJson: health([
+        { ok: false, detail: "Connection timed out after 30s — no response from the reporting endpoint.", hoursAgo: 1 },
+        { ok: false, detail: "Connection timed out after 30s.", hoursAgo: 13 },
+        { ok: false, detail: "Connection timed out after 30s.", hoursAgo: 27 },
+        { ok: false, detail: "Connection timed out after 30s.", hoursAgo: 51 },
+        { ok: true, hoursAgo: 60 },
+      ]),
+    },
+  });
+
+  // CloudSupport instruction history: 2 fully verified deletions and 1 currently
+  // partial (DPR-2026-0402), so the drawer shows a track record without opening
+  // each request. Three-state, same model as everywhere else.
+  await prisma.executionRecord.createMany({
+    data: [
+      {
+        requestId: "req_arun", processorId: cloudSupport.id, mode: "processor_instruction",
+        status: "verified", dispatchedAt: daysAgo(12), deliveredAt: daysAgo(12), confirmedAt: daysAgo(11),
+        verificationMethod: "processor_confirmation",
+      },
+      {
+        requestId: "req_dpb", processorId: cloudSupport.id, mode: "processor_instruction",
+        status: "verified", dispatchedAt: daysAgo(30), deliveredAt: daysAgo(30), confirmedAt: daysAgo(29),
+        verificationMethod: "processor_confirmation",
+      },
+      {
+        requestId: "req_kavya", processorId: cloudSupport.id, mode: "processor_instruction",
+        status: "partial", dispatchedAt: daysAgo(4), deliveredAt: daysAgo(4),
+        failureDetail: "Deletion confirmed in the primary store; the analytics replica has not yet acknowledged.",
+      },
+    ],
+  });
+
+  // The open request that depends on MarketPulse — what makes its outage a
+  // deadline risk rather than a general hiccup. Pending, not dispatchable while
+  // the DPA is draft and the processor is unreachable.
+  await prisma.executionRecord.create({
+    data: {
+      requestId: "req_access", processorId: marketPulse.id, mode: "processor_instruction",
+      status: "pending",
+    },
+  });
+
   // -- Scan history ---------------------------------------------------------
   const stages = (upTo: string | null, failed = false) => {
     const all = ["connect", "enumerate", "sample", "classify", "reconcile"];
