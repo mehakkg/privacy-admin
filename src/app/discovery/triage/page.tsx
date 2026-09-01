@@ -1,9 +1,8 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
-import { InfoTip, PageHead, Pill, Stat, formatDate } from "@/components/ui";
-import { TriageBulkBar } from "@/components/discoveryActions";
-import type { PillTone } from "@/components/ui";
+import { PageHead, Stat, formatDate } from "@/components/ui";
+import { TriageReview } from "@/components/triageReview";
 
 export const dynamic = "force-dynamic";
 
@@ -18,20 +17,6 @@ const TABS = [
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
-
-const PRIORITY_TONE: Record<string, PillTone> = {
-  high: "red",
-  medium: "yellow",
-  low: "gray",
-};
-
-const CROSSREF_LABEL: Record<string, string> = {
-  low_confidence: "Low-confidence",
-  new_pii: "New PII",
-  rot: "ROT",
-  duplicate: "Duplicates",
-  quarantine: "Quarantined",
-};
 
 /**
  * SCREEN 2 — Triage Queue.
@@ -142,105 +127,51 @@ export default async function TriagePage({
         </div>
       )}
 
-      {items.length === 0 ? (
-        <div className="table-wrap">
-          <div className="empty">
-            <p style={{ margin: "0 0 10px" }}>Nothing open in this category.</p>
-            <Link href="/discovery/inventory" className="btn sm">
-              Browse the inventory
+      <TriageReview
+        rows={items.map((item) => ({
+          id: item.id,
+          type: item.type,
+          label: labelFor(item),
+          sourceName: item.field?.source.name ?? null,
+          priority: item.priority,
+          raised: formatDate(item.createdAt),
+          note: item.note,
+          crossRefType: item.crossRefType,
+          driftFlag: item.field?.driftFlag ?? false,
+          field:
+            item.field && (item.type === "low_confidence" || item.type === "new_pii" || item.type === "quarantine")
+              ? {
+                  id: item.field.id,
+                  detectedType: item.field.detectedType,
+                  maskedSample: item.field.maskedSample,
+                  previousType: item.field.previousType,
+                }
+              : null,
+          resolveHref:
+            item.type === "duplicate" && item.duplicatePairId
+              ? `/discovery/duplicates`
+              : item.type === "rot"
+                ? "/discovery/rot"
+                : null,
+        }))}
+      />
+
+      {pages > 1 && (
+        <div className="row" style={{ marginTop: 12, gap: 8 }}>
+          <span className="cell-sub">
+            Page {page} of {pages}
+          </span>
+          {page > 1 && (
+            <Link href={`/discovery/triage?tab=&page=`} className="btn sm">
+              Previous
             </Link>
-          </div>
-        </div>
-      ) : (
-        <>
-          <div className="table-wrap" style={{ marginBottom: 16 }}>
-              <table className="dtable">
-                <thead>
-                  <tr>
-                    <th>Item</th>
-                    <th>Source</th>
-                    <th>Priority</th>
-                    <th>Raised</th>
-                    <th>Also in</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((item) => (
-                    <tr key={item.id}>
-                      <td>
-                        <div className="cell-stack">
-                          <span className="mono cell-primary">{labelFor(item)}</span>
-                          {item.note && <span className="cell-sub">{item.note}</span>}
-                          {item.field?.driftFlag && <Pill tone="orange">Drift</Pill>}
-                        </div>
-                      </td>
-                      <td className="cell-sub">{item.field?.source.name ?? "—"}</td>
-                      <td>
-                        <Pill tone={PRIORITY_TONE[item.priority] ?? "gray"}>{item.priority}</Pill>
-                      </td>
-                      <td className="cell-sub">{formatDate(item.createdAt)}</td>
-                      <td>
-                        {item.crossRefType ? (
-                          <span className="row" style={{ gap: 5 }}>
-                            <Link
-                              href={`/discovery/triage?tab=${item.crossRefType}`}
-                              className="btn xs ghost"
-                            >
-                              {CROSSREF_LABEL[item.crossRefType]}
-                            </Link>
-                            <InfoTip
-                              align="left"
-                              text="This record also qualifies for another category. It is listed once, here, so the counts stay honest — this links to the other view."
-                            />
-                          </span>
-                        ) : (
-                          <span className="cell-sub">—</span>
-                        )}
-                      </td>
-                      <td>
-                        {tab === "duplicate" && item.duplicatePairId && (
-                          <Link href={`/discovery/duplicates?pair=${item.duplicatePairId}`} className="btn xs">
-                            Resolve
-                          </Link>
-                        )}
-                        {tab === "rot" && (
-                          <Link href="/discovery/rot" className="btn xs">
-                            Resolve
-                          </Link>
-                        )}
-                        {(tab === "low_confidence" || tab === "new_pii") && (
-                          <Link href="/discovery/review" className="btn xs">
-                            Review
-                          </Link>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <TriageBulkBar items={items.map((i) => ({ id: i.id, label: labelFor(i) }))} />
-
-            {pages > 1 && (
-              <div className="row" style={{ marginTop: 12, gap: 8 }}>
-                <span className="cell-sub">
-                  Page {page} of {pages}
-                </span>
-                {page > 1 && (
-                  <Link href={`/discovery/triage?tab=${tab}&page=${page - 1}`} className="btn sm">
-                    Previous
-                  </Link>
-                )}
-                {page < pages && (
-                  <Link href={`/discovery/triage?tab=${tab}&page=${page + 1}`} className="btn sm">
-                    Next
-                  </Link>
-                )}
-              </div>
           )}
-        </>
+          {page < pages && (
+            <Link href={`/discovery/triage?tab=&page=`} className="btn sm">
+              Next
+            </Link>
+          )}
+        </div>
       )}
     </Shell>
   );

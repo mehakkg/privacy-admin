@@ -53,11 +53,14 @@ const ICONS: Record<string, LucideIcon> = {
   onboarding: Rocket,
 };
 
-export interface NavChild {
-  href: string;
-  label: string;
-  ready: boolean;
-}
+/**
+ * A sub-item, or a heading that divides a long child list into labelled groups.
+ * A group with nine children reads as an undifferentiated list; two labelled
+ * runs of three and six read as a sequence.
+ */
+export type NavChild =
+  | { href: string; label: string; ready: boolean; heading?: never }
+  | { heading: string; href?: never; label?: never; ready?: never };
 
 export interface NavGroup {
   key: string;
@@ -74,7 +77,7 @@ const STORAGE_KEY = "privacy-admin.sidebar.collapsed";
 function groupOwnsPath(group: NavGroup, path: string): boolean {
   if (path === group.href || path.startsWith(`${group.href}/`)) return true;
   return (group.children ?? []).some(
-    (c) => path === c.href || path.startsWith(`${c.href}/`),
+    (c) => c.href !== undefined && (path === c.href || path.startsWith(`${c.href}/`)),
   );
 }
 
@@ -176,7 +179,10 @@ export function SidebarNav({
                         Overview
                       </Link>
                     )}
-                    {(group.children ?? []).map((child) =>
+                    {(group.children ?? []).map((child, ci) =>
+                      child.heading !== undefined ? (
+                        <div key={`h${ci}`} className="sidebar-subheading">{child.heading}</div>
+                      ) :
                       child.ready ? (
                         <Link
                           key={child.href}
@@ -237,7 +243,10 @@ export function SidebarNav({
 
               {hasChildren && isOpen && (
                 <div className="sidebar-subnav">
-                  {(group.children ?? []).map((child) =>
+                  {(group.children ?? []).map((child, ci) =>
+                      child.heading !== undefined ? (
+                        <div key={`h${ci}`} className="sidebar-subheading">{child.heading}</div>
+                      ) :
                     child.ready ? (
                       <Link
                         key={child.href}

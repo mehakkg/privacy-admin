@@ -37,13 +37,20 @@ function navGroups(openRequests: number): NavGroup[] {
       label: "Data Discovery & Classification",
       href: "/discovery",
       ready: true,
+      // Two groups, in the order the work actually happens: connect data
+      // before reviewing it. Everything under Review & Classify is downstream
+      // of at least one source existing.
       children: [
+        { heading: "Add data" },
+        { href: "/discovery/sources", label: "Sources", ready: true },
+        { href: "/discovery/import", label: "Bulk import", ready: true },
+        { heading: "Review & classify" },
+        { href: "/discovery", label: "Overview", ready: true },
         { href: "/discovery/triage", label: "Triage queue", ready: true },
         { href: "/discovery/inventory", label: "Data inventory", ready: true },
         { href: "/discovery/review", label: "Classification review", ready: true },
         { href: "/discovery/duplicates", label: "Duplicates", ready: true },
         { href: "/discovery/rot", label: "ROT candidates", ready: true },
-        { href: "/discovery/import", label: "Bulk import", ready: true },
       ],
     },
     {

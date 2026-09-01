@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
+import { CompactFilterBar } from "@/components/CompactFilterBar";
 import {
   InfoTip,
-  Notice,
   PageHead,
   Pill,
   Stat,
@@ -52,6 +52,7 @@ export default async function InventoryPage({
     purpose?: string;
     subject?: string;
     entity?: string;
+    q?: string;
     untagged?: string;
     page?: string;
   }>;
@@ -59,14 +60,29 @@ export default async function InventoryPage({
   const params = await searchParams;
   const page = Math.max(1, Number(params.page) || 1);
 
+  // Purpose is multi-select, so it arrives comma-separated.
+  const purposeIds = (params.purpose ?? "").split(",").filter(Boolean);
+  const term = (params.q ?? "").trim();
+
   const where = {
     ...(params.source ? { sourceId: params.source } : {}),
     ...(params.category ? { category: params.category } : {}),
     ...(params.sensitivity ? { sensitivityTier: params.sensitivity } : {}),
-    ...(params.purpose ? { purposeTagId: params.purpose } : {}),
+    ...(purposeIds.length ? { purposeTagId: { in: purposeIds } } : {}),
     ...(params.subject ? { dataSubjectType: params.subject } : {}),
     ...(params.entity ? { source: { entityId: params.entity } } : {}),
+    // `untagged` wins over a purpose selection: asking for both is
+    // contradictory, and the toggle is the more explicit intent.
     ...(params.untagged === "1" ? { purposeTagId: null } : {}),
+    ...(term
+      ? {
+          OR: [
+            { fieldPath: { contains: term } },
+            { detectedType: { contains: term } },
+            { overriddenType: { contains: term } },
+          ],
+        }
+      : {}),
   };
 
   const [total, fields, sources, purposes, untaggedCount] = await Promise.all([
@@ -116,36 +132,64 @@ export default async function InventoryPage({
         />
       </div>
 
+      {/* Compact banner: the reason an untagged field matters moved to the
+          tooltip on the toggle, so this states the fact and nothing more. */}
       {untaggedCount > 0 && (
-        <Notice tone="warn" title={`${untaggedCount} field(s) have no purpose tag`}>
-          An untagged field means no lawful purpose has been recorded for holding
-          it. These are flagged in the table rather than left blank, because a
-          blank cell reads as &ldquo;nothing to do here&rdquo;.
-          <div style={{ marginTop: 8 }}>
-            <Link href={qs({ untagged: "1" })} className="btn sm">
-              Show only untagged
-            </Link>
-          </div>
-        </Notice>
+        <div className="notice warn compact" style={{ marginBottom: 12 }}>
+          <span>
+            <strong>{untaggedCount}</strong> field{untaggedCount === 1 ? "" : "s"} have
+            no purpose tag.
+          </span>
+        </div>
       )}
 
-      {/* Same inline filter rhythm as the Requests queue: a section label and a
-          row of pills, not a panel. Six dimensions means six rows rather than
-          one, but each row is the same component the rest of the product uses. */}
-      <FilterRow label="Source" name="source" value={params.source} options={sources.map((s) => ({ value: s.id, label: s.name }))} params={params} />
-      <FilterRow label="Category" name="category" value={params.category} options={["identity", "contact", "kyc", "financial", "transaction", "marketing", "behavioural", "support"].map((c) => ({ value: c, label: c }))} params={params} />
-      <FilterRow label="Sensitivity" name="sensitivity" value={params.sensitivity} options={["high", "medium", "low"].map((c) => ({ value: c, label: c }))} params={params} />
-      <FilterRow label="Purpose" name="purpose" value={params.purpose} options={purposes.map((p) => ({ value: p.id, label: p.name }))} params={params} />
-      <FilterRow label="Subject" name="subject" value={params.subject} options={["customer", "employee", "vendor", "minor"].map((c) => ({ value: c, label: c }))} params={params} />
-      {entities.length > 0 && (
-        <FilterRow label="Entity" name="entity" value={params.entity} options={entities.map((e) => ({ value: e, label: e }))} params={params} />
-      )}
+      <CompactFilterBar
+        basePath="/discovery/inventory"
+        searchPlaceholder="Search fields…"
+        facets={[
+          { key: "source", label: "Source", options: sources.map((s) => ({ value: s.id, label: s.name })) },
+          {
+            key: "category",
+            label: "Category",
+            options: [
+              "identity", "contact", "kyc", "financial",
+              "transaction", "marketing", "behavioural", "support",
+            ].map((c) => ({ value: c, label: c })),
+          },
+          {
+            key: "sensitivity",
+            label: "Sensitivity",
+            options: ["high", "medium", "low"].map((c) => ({ value: c, label: c })),
+          },
+          {
+            key: "purpose",
+            label: "Purpose",
+            // Multi-select: a field can legitimately serve more than one purpose.
+            multi: true,
+            options: purposes.map((p) => ({ value: p.id, label: p.name })),
+          },
+        ]}
+        moreFacets={[
+          {
+            key: "subject",
+            label: "Data subject",
+            options: ["customer", "employee", "vendor", "minor"].map((c) => ({ value: c, label: c })),
+          },
+          ...(entities.length > 0
+            ? [{ key: "entity", label: "Entity", options: entities.map((e) => ({ value: e, label: e })) }]
+            : []),
+        ]}
+        toggle={{
+          key: "untagged",
+          label: "Untagged only",
+          tip: "An untagged field has no lawful purpose recorded for holding it. Untagged rows are flagged in the table rather than left blank, because a blank cell reads as nothing to do here.",
+        }}
+      />
 
       <div className="row" style={{ marginBottom: 12 }}>
-        <span className="cell-sub">{total} field{total === 1 ? "" : "s"}</span>
-        <Link href="/discovery/inventory" className="btn sm ghost">
-          Clear filters
-        </Link>
+        <span className="cell-sub">
+          {total} field{total === 1 ? "" : "s"}
+        </span>
       </div>
 
       <div className="table-wrap" style={{ overflowX: "auto" }}>
@@ -246,43 +290,3 @@ export default async function InventoryPage({
   );
 }
 
-function FilterRow({
-  label,
-  name,
-  value,
-  options,
-  params,
-}: {
-  label: string;
-  name: string;
-  value?: string;
-  options: { value: string; label: string }[];
-  params: Record<string, string | undefined>;
-}) {
-  const href = (v: string) => {
-    const next = new URLSearchParams();
-    for (const [k, val] of Object.entries({ ...params, [name]: v, page: undefined })) {
-      if (val) next.set(k, String(val));
-    }
-    return `/discovery/inventory${next.toString() ? `?${next}` : ""}`;
-  };
-
-  // Matches the Requests queue's filter row exactly: inline label, then `btn sm`
-  // pills on one line, 12px below.
-  return (
-    <div className="row" style={{ marginBottom: 12, flexWrap: "wrap" }}>
-      <span className="section-label" style={{ margin: 0, minWidth: 72 }}>
-        {label}
-      </span>
-      {options.map((o) => (
-        <Link
-          key={o.value}
-          href={href(value === o.value ? "" : o.value)}
-          className={`btn sm ${value === o.value ? "primary" : "ghost"}`}
-        >
-          {o.label}
-        </Link>
-      ))}
-    </div>
-  );
-}
