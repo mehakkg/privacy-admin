@@ -61,13 +61,13 @@ export default async function ReviewPage({
         titleTip="Confirm what the scanner found. High-confidence detections can be approved in bulk; anything uncertain is reviewed individually with a recorded reason."
       />
 
-      <div className="stat-row">
+      <div className="stat-row" style={{ marginBottom: 16 }}>
         <Stat label="Drifted" value={drifted.length} tone={drifted.length ? "red" : undefined} />
         <Stat label="High confidence" value={high.length} />
         <Stat label="Needs review" value={needsReview.length} tone={needsReview.length ? "yellow" : undefined} />
       </div>
 
-      <div className="row" style={{ marginBottom: 4 }}>
+      <div className="row" style={{ marginBottom: 12, flexWrap: "wrap" }}>
         <span className="section-label" style={{ margin: 0 }}>Source</span>
         <Link href="/discovery/review" className={`btn sm ${!params.source ? "primary" : "ghost"}`}>
           All
@@ -83,6 +83,7 @@ export default async function ReviewPage({
         ))}
       </div>
 
+      <div className="stack">
       {drifted.length > 0 && (
         <Card
           title={
@@ -151,6 +152,7 @@ export default async function ReviewPage({
           ))
         )}
       </Card>
+      </div>
     </Shell>
   );
 }

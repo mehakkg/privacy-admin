@@ -111,12 +111,14 @@ export default async function SourceDetailPage({
       </nav>
 
       {!source.dpoApprovedForScanning && (
-        <Notice tone="policy" title="Awaiting governance approval">
-          Discovery scope for this source has not been approved by the DPO.
-          Deciding what personal data the organisation looks at is a governance
-          decision, not a technical one, so scanning and scan configuration stay
-          unavailable until it is approved.
-        </Notice>
+        <div style={{ marginBottom: 16 }}>
+          <Notice tone="policy" title="Awaiting governance approval">
+            Discovery scope for this source has not been approved by the DPO.
+            Deciding what personal data the organisation looks at is a governance
+            decision, not a technical one, so scanning and scan configuration stay
+            unavailable until it is approved.
+          </Notice>
+        </div>
       )}
 
       {tab === "overview" && (

@@ -2,7 +2,6 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
 import {
-  Card,
   InfoTip,
   Notice,
   PageHead,
@@ -107,7 +106,7 @@ export default async function InventoryPage({
         }
       />
 
-      <div className="stat-row">
+      <div className="stat-row" style={{ marginBottom: 16 }}>
         <Stat label="Fields in view" value={total} />
         <Stat label="Sources" value={sources.length} />
         <Stat
@@ -130,24 +129,26 @@ export default async function InventoryPage({
         </Notice>
       )}
 
-      <Card title="Filters">
-        <div className="row" style={{ gap: 14, flexWrap: "wrap", alignItems: "flex-end" }}>
-          <FilterSelect label="Source" name="source" value={params.source} options={sources.map((s) => ({ value: s.id, label: s.name }))} params={params} />
-          <FilterSelect label="Category" name="category" value={params.category} options={["identity", "contact", "kyc", "financial", "transaction", "marketing", "behavioural", "support"].map((c) => ({ value: c, label: c }))} params={params} />
-          <FilterSelect label="Sensitivity" name="sensitivity" value={params.sensitivity} options={["high", "medium", "low"].map((c) => ({ value: c, label: c }))} params={params} />
-          <FilterSelect label="Purpose" name="purpose" value={params.purpose} options={purposes.map((p) => ({ value: p.id, label: p.name }))} params={params} />
-          <FilterSelect label="Subject" name="subject" value={params.subject} options={["customer", "employee", "vendor", "minor"].map((c) => ({ value: c, label: c }))} params={params} />
-          {entities.length > 0 && (
-            <FilterSelect label="Entity" name="entity" value={params.entity} options={entities.map((e) => ({ value: e, label: e }))} params={params} />
-          )}
-          <Link href="/discovery/inventory" className="btn sm ghost">
-            Clear
-          </Link>
-        </div>
-      </Card>
+      {/* Same inline filter rhythm as the Requests queue: a section label and a
+          row of pills, not a panel. Six dimensions means six rows rather than
+          one, but each row is the same component the rest of the product uses. */}
+      <FilterRow label="Source" name="source" value={params.source} options={sources.map((s) => ({ value: s.id, label: s.name }))} params={params} />
+      <FilterRow label="Category" name="category" value={params.category} options={["identity", "contact", "kyc", "financial", "transaction", "marketing", "behavioural", "support"].map((c) => ({ value: c, label: c }))} params={params} />
+      <FilterRow label="Sensitivity" name="sensitivity" value={params.sensitivity} options={["high", "medium", "low"].map((c) => ({ value: c, label: c }))} params={params} />
+      <FilterRow label="Purpose" name="purpose" value={params.purpose} options={purposes.map((p) => ({ value: p.id, label: p.name }))} params={params} />
+      <FilterRow label="Subject" name="subject" value={params.subject} options={["customer", "employee", "vendor", "minor"].map((c) => ({ value: c, label: c }))} params={params} />
+      {entities.length > 0 && (
+        <FilterRow label="Entity" name="entity" value={params.entity} options={entities.map((e) => ({ value: e, label: e }))} params={params} />
+      )}
 
-      <Card title={`Fields (${total})`}>
-        <div className="table-wrap" style={{ overflowX: "auto" }}>
+      <div className="row" style={{ marginBottom: 12 }}>
+        <span className="cell-sub">{total} field{total === 1 ? "" : "s"}</span>
+        <Link href="/discovery/inventory" className="btn sm ghost">
+          Clear filters
+        </Link>
+      </div>
+
+      <div className="table-wrap" style={{ overflowX: "auto" }}>
           <table className="dtable">
             <thead>
               <tr>
@@ -224,8 +225,8 @@ export default async function InventoryPage({
           </table>
         </div>
 
-        {pages > 1 && (
-          <div className="row" style={{ marginTop: 12, gap: 8 }}>
+      {pages > 1 && (
+        <div className="row" style={{ marginTop: 12, gap: 8 }}>
             <span className="cell-sub">
               Page {page} of {pages} · {total} fields
             </span>
@@ -239,14 +240,13 @@ export default async function InventoryPage({
                 Next
               </Link>
             )}
-          </div>
-        )}
-      </Card>
+        </div>
+      )}
     </Shell>
   );
 }
 
-function FilterSelect({
+function FilterRow({
   label,
   name,
   value,
@@ -267,20 +267,22 @@ function FilterSelect({
     return `/discovery/inventory${next.toString() ? `?${next}` : ""}`;
   };
 
+  // Matches the Requests queue's filter row exactly: inline label, then `btn sm`
+  // pills on one line, 12px below.
   return (
-    <div>
-      <div className="section-label">{label}</div>
-      <div className="row" style={{ gap: 4, flexWrap: "wrap" }}>
-        {options.map((o) => (
-          <Link
-            key={o.value}
-            href={href(value === o.value ? "" : o.value)}
-            className={`btn xs ${value === o.value ? "primary" : "ghost"}`}
-          >
-            {o.label}
-          </Link>
-        ))}
-      </div>
+    <div className="row" style={{ marginBottom: 12, flexWrap: "wrap" }}>
+      <span className="section-label" style={{ margin: 0, minWidth: 72 }}>
+        {label}
+      </span>
+      {options.map((o) => (
+        <Link
+          key={o.value}
+          href={href(value === o.value ? "" : o.value)}
+          className={`btn sm ${value === o.value ? "primary" : "ghost"}`}
+        >
+          {o.label}
+        </Link>
+      ))}
     </div>
   );
 }

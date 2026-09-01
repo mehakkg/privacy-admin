@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
-import { Card, InfoTip, PageHead, Pill, Stat, formatDate } from "@/components/ui";
+import { InfoTip, PageHead, Pill, Stat, formatDate } from "@/components/ui";
 import { RotActions } from "@/components/discoveryActions";
 
 export const dynamic = "force-dynamic";
@@ -34,21 +34,22 @@ export default async function RotPage() {
         titleTip="Data with little business value that is still held. Keeping personal data longer than it is needed for its purpose is itself a compliance exposure, not just a storage cost."
       />
 
-      <div className="stat-row">
+      <div className="stat-row" style={{ marginBottom: 16 }}>
         <Stat label="Open" value={open.length} tone={open.length ? "yellow" : undefined} />
         <Stat label="Resolved" value={candidates.length - open.length} />
       </div>
 
-      <Card title={`Candidates (${candidates.length})`}>
-        {candidates.length === 0 ? (
+      {candidates.length === 0 ? (
+        <div className="table-wrap">
           <div className="empty">
             <p style={{ margin: "0 0 10px" }}>Nothing flagged as redundant.</p>
             <Link href="/discovery/inventory" className="btn sm">
               Browse the inventory
             </Link>
           </div>
-        ) : (
-          <div className="table-wrap" style={{ overflowX: "auto" }}>
+        </div>
+      ) : (
+        <div className="table-wrap" style={{ overflowX: "auto" }}>
             <table className="dtable">
               <thead>
                 <tr>
@@ -98,9 +99,8 @@ export default async function RotPage() {
                 ))}
               </tbody>
             </table>
-          </div>
-        )}
-      </Card>
+        </div>
+      )}
     </Shell>
   );
 }

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
-import { Card, InfoTip, PageHead, Pill, Stat, formatDate } from "@/components/ui";
+import { InfoTip, PageHead, Pill, Stat, formatDate } from "@/components/ui";
 import { TriageBulkBar } from "@/components/discoveryActions";
 import type { PillTone } from "@/components/ui";
 
@@ -101,7 +101,7 @@ export default async function TriagePage({
         titleTip="Everything discovery has surfaced that needs a decision. Separated by type, because approving a classification and deciding whether to delete stale data are different judgements."
       />
 
-      <div className="stat-row">
+      <div className="stat-row" style={{ marginBottom: 16 }}>
         {TABS.map((t) => (
           <Stat
             key={t.key}
@@ -142,17 +142,18 @@ export default async function TriagePage({
         </div>
       )}
 
-      <Card title={`${TABS.find((t) => t.key === tab)?.label} (${total})`}>
-        {items.length === 0 ? (
+      {items.length === 0 ? (
+        <div className="table-wrap">
           <div className="empty">
             <p style={{ margin: "0 0 10px" }}>Nothing open in this category.</p>
             <Link href="/discovery/inventory" className="btn sm">
               Browse the inventory
             </Link>
           </div>
-        ) : (
-          <>
-            <div className="table-wrap" style={{ marginBottom: 14 }}>
+        </div>
+      ) : (
+        <>
+          <div className="table-wrap" style={{ marginBottom: 16 }}>
               <table className="dtable">
                 <thead>
                   <tr>
@@ -238,10 +239,9 @@ export default async function TriagePage({
                   </Link>
                 )}
               </div>
-            )}
-          </>
-        )}
-      </Card>
+          )}
+        </>
+      )}
     </Shell>
   );
 }

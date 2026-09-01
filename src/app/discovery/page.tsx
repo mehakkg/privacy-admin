@@ -123,6 +123,7 @@ export default async function DiscoveryOverviewPage() {
       />
 
       {loadFailed && (
+        <div style={{ marginBottom: 16 }}>
         <Notice tone="warn" title="Live metrics could not be loaded">
           Showing the last values retrieved. The inventory itself is unaffected —
           only the counts on this page failed to refresh.
@@ -130,9 +131,10 @@ export default async function DiscoveryOverviewPage() {
             As of {formatDate(asOf)}
           </div>
         </Notice>
+        </div>
       )}
 
-      <div className="stat-row">
+      <div className="stat-row" style={{ marginBottom: 16 }}>
         <Stat label="Sources scanned" value={`${byCoverage.filter((s) => s.coverage === "current" || s.coverage === "stale").length}/${sources.length}`} />
         <Stat label="Fields classified" value={fieldCount} />
         <Stat label="Needs review" value={needsReview} tone={needsReview ? "yellow" : undefined} />
@@ -141,6 +143,7 @@ export default async function DiscoveryOverviewPage() {
       </div>
 
       {(neverScanned.length > 0 || awaiting.length > 0) && (
+        <div style={{ marginBottom: 16 }}>
         <Notice tone="warn" title="Coverage gaps">
           <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
             {neverScanned.length > 0 && (
@@ -165,21 +168,24 @@ export default async function DiscoveryOverviewPage() {
             )}
           </ul>
         </Notice>
+        </div>
       )}
 
-      <div className="grid-2">
-        <Card
-          title={
-            <span className="row">
-              Source coverage
-              <InfoTip
-                align="left"
-                text={`Never scanned and stale are separate states on purpose. Never scanned is a setup gap — nothing is known about the source at all. Stale means the inventory exists but is older than ${STALE_AFTER_DAYS} days. They need different follow-up.`}
-              />
-            </span>
-          }
-        >
-          <div className="table-wrap">
+      {/* Section label + bare table, the same treatment the Requests queue uses.
+          A table already carries its own border; wrapping it in a card as well
+          double-frames it and makes the row density read as heavier than the
+          identical table on Requests. */}
+      <div className="row" style={{ marginBottom: 12 }}>
+        <span className="section-label" style={{ margin: 0 }}>
+          Source coverage
+        </span>
+        <InfoTip
+          align="left"
+          text={`Never scanned and stale are separate states on purpose. Never scanned is a setup gap — nothing is known about the source at all. Stale means the inventory exists but is older than ${STALE_AFTER_DAYS} days. They need different follow-up.`}
+        />
+      </div>
+
+      <div className="table-wrap" style={{ marginBottom: 16 }}>
             <table className="dtable">
               <thead>
                 <tr>
@@ -211,42 +217,59 @@ export default async function DiscoveryOverviewPage() {
                 ))}
               </tbody>
             </table>
-          </div>
-        </Card>
+      </div>
 
-        <Card
-          title="Top priority"
-          actions={
-            <Link href="/discovery/triage" className="btn sm">
-              View all
+      <div className="row" style={{ marginBottom: 12 }}>
+        <span className="section-label" style={{ margin: 0 }}>
+          Top priority
+        </span>
+        <Link href="/discovery/triage" className="btn sm ghost">
+          View all
+        </Link>
+      </div>
+
+      <div className="table-wrap">
+        {topItems.length === 0 ? (
+          <div className="empty">
+            <p style={{ margin: "0 0 10px" }}>Nothing is waiting on a decision.</p>
+            <Link href="/discovery/inventory" className="btn sm">
+              Browse the inventory
             </Link>
-          }
-        >
-          {topItems.length === 0 ? (
-            <div className="empty">
-              <p style={{ margin: "0 0 10px" }}>Nothing is waiting on a decision.</p>
-              <Link href="/discovery/inventory" className="btn sm">
-                Browse the inventory
-              </Link>
-            </div>
-          ) : (
-            <div className="stack" style={{ gap: 10 }}>
+          </div>
+        ) : (
+          <table className="dtable">
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Type</th>
+                <th>Priority</th>
+                <th>Raised</th>
+              </tr>
+            </thead>
+            <tbody>
               {topItems.map((item) => (
-                <div key={item.id} className="row" style={{ gap: 8, alignItems: "flex-start" }}>
-                  <Pill tone={item.priority === "high" ? "red" : item.priority === "medium" ? "yellow" : "gray"}>
-                    {item.priority}
-                  </Pill>
-                  <div className="cell-stack">
-                    <span className="mono">{item.label}</span>
-                    <span className="cell-sub">
-                      {TRIAGE_LABEL[item.type] ?? item.type} · {formatDate(item.createdAt)}
-                    </span>
-                  </div>
-                </div>
+                <tr key={item.id}>
+                  <td className="mono cell-primary">{item.label}</td>
+                  <td className="cell-sub">{TRIAGE_LABEL[item.type] ?? item.type}</td>
+                  <td>
+                    <Pill
+                      tone={
+                        item.priority === "high"
+                          ? "red"
+                          : item.priority === "medium"
+                            ? "yellow"
+                            : "gray"
+                      }
+                    >
+                      {item.priority}
+                    </Pill>
+                  </td>
+                  <td className="cell-sub">{formatDate(item.createdAt)}</td>
+                </tr>
               ))}
-            </div>
-          )}
-        </Card>
+            </tbody>
+          </table>
+        )}
       </div>
     </Shell>
   );

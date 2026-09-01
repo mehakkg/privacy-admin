@@ -57,17 +57,25 @@ export default async function DuplicatesPage({
       />
 
       {completions.some((c) => c.state !== "verified") && (
-        <Notice tone="warn" title="A merge has not fully propagated">
-          A merge touches references in every connected system, and those confirm
-          separately. Until each one does, the merge is partial — the same rule
-          used for deletion elsewhere in the product.
-        </Notice>
+        <div style={{ marginBottom: 16 }}>
+          <Notice tone="warn" title="A merge has not fully propagated">
+            A merge touches references in every connected system, and those
+            confirm separately. Until each one does, the merge is partial — the
+            same rule used for deletion elsewhere in the product.
+          </Notice>
+        </div>
       )}
 
-      <div className="grid-2">
-        <Card title={`Candidate pairs (${pairs.length})`}>
-          <div className="table-wrap">
-            <table className="dtable">
+      <div className="stack">
+        <div className="grid-2">
+          <div>
+            <div className="row" style={{ marginBottom: 12 }}>
+              <span className="section-label" style={{ margin: 0 }}>
+                Candidate pairs ({pairs.length})
+              </span>
+            </div>
+            <div className="table-wrap">
+              <table className="dtable">
               <thead>
                 <tr>
                   <th>Pair</th>
@@ -101,10 +109,10 @@ export default async function DuplicatesPage({
                     </td>
                   </tr>
                 ))}
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+            </div>
           </div>
-        </Card>
 
         {selected && (
           <Card
@@ -219,6 +227,7 @@ export default async function DuplicatesPage({
           })}
         </Card>
       )}
+      </div>
     </Shell>
   );
 }
