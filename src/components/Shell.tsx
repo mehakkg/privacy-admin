@@ -51,13 +51,13 @@ function navGroups(openRequests: number): NavGroup[] {
     {
       key: "consent",
       label: "Consent & Notices",
-      href: "/consent",
-      ready: false,
+      href: "/consent/notices",
+      ready: true,
       children: [
-        { href: "/consent/cookies", label: "Cookie consent", ready: false },
-        { href: "/consent/notices", label: "Notices", ready: false },
-        { href: "/consent/platform", label: "Consent platform", ready: false },
-        { href: "/consent/assisted", label: "Assisted collection", ready: false },
+        { href: "/consent/cookies", label: "Cookie consent", ready: true },
+        { href: "/consent/notices", label: "Notices", ready: true },
+        { href: "/consent/platform", label: "Consent platform", ready: true },
+        { href: "/consent/assisted", label: "Assisted collection", ready: true },
       ],
     },
     {

@@ -427,6 +427,7 @@ model PurposeTag {
 
   classifiedFields   ClassifiedField[]
   processingActivities ProcessingActivity[]
+  consentRecords     ConsentRecord[]
 }
 
 /// A record of processing activity, entered by hand for data no scanner can
@@ -477,6 +478,156 @@ model CookieCategory {
   defaultState String
   approvedBy   String
   approvedAt   DateTime
+
+  scripts CookieScript[]
+}
+
+// ---------------------------------------------------------------------------
+// Consent & Notices — Admin's implementation layer.
+//
+// The CATEGORY policy (above) and the purpose taxonomy stay governance-owned.
+// What Admin owns here is the technical implementation: publishing notices to
+// regions, mapping scripts to approved categories, wiring webhooks, and
+// recording consent artifacts. None of these are in the governance-read-only
+// set — they are Admin's job.
+// ---------------------------------------------------------------------------
+
+/// A privacy notice as Admin publishes it. Content is drafted and published
+/// here; the approved substance is the DPO's, but the implementation — region
+/// assignment, language variants, versioning — is Admin's.
+model Notice {
+  id     String @id @default(cuid())
+  name   String
+  /// draft | published | retired
+  status String @default("draft")
+
+  content        String @default("")
+  currentVersion String @default("v1.0")
+  /// template | import | scratch
+  origin String @default("scratch")
+
+  /// JSON string[] of region codes this notice is published to.
+  regionsJson String @default("[]")
+  /// Notify existing users when this notice changes (Publish Settings).
+  notifyOnChange Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  revisions NoticeRevision[]
+  variants  NoticeVariant[]
+}
+
+/// One point in a notice's version history. Editing and history are the same
+/// object at different times, so they live together rather than in split tabs.
+model NoticeRevision {
+  id       String @id @default(cuid())
+  noticeId String
+  version  String
+  content  String
+  note     String?
+  savedBy  String
+  savedAt  DateTime @default(now())
+
+  notice Notice @relation(fields: [noticeId], references: [id])
+
+  @@index([noticeId])
+}
+
+/// Per-language content. `language` is an Eighth Schedule code (DPDP s.5(3)).
+model NoticeVariant {
+  id       String @id @default(cuid())
+  noticeId String
+  language String
+  content  String @default("")
+
+  notice Notice @relation(fields: [noticeId], references: [id])
+
+  @@unique([noticeId, language])
+}
+
+/// A third-party script mapped to a cookie category. The category and its
+/// default state are policy-locked; the mapping is the one thing Admin edits.
+model CookieScript {
+  id         String @id @default(cuid())
+  name       String
+  vendor     String?
+  page       String?
+  categoryId String?
+
+  category CookieCategory? @relation(fields: [categoryId], references: [id])
+}
+
+/// A finding from a cookie compliance scan. Structurally the same "flagged item
+/// needing a decision" as a low-confidence field, so the triage drawer is
+/// reused rather than a new pattern built.
+model CookieScanFinding {
+  id         String @id @default(cuid())
+  scriptName String
+  vendor     String?
+  page       String
+  /// true = declared in the cookie policy; false = undisclosed, needs a call.
+  disclosed  Boolean
+  /// open | categorised | blocked | dismissed
+  status     String @default("open")
+  suggestedCategory String?
+  firstSeen  DateTime @default(now())
+}
+
+/// A webhook endpoint. A real table with an inline add row and a test action,
+/// not a modal form.
+model Webhook {
+  id       String @id @default(cuid())
+  endpoint String
+  /// consent.granted | consent.withdrawn | consent.expired | notice.published
+  event    String
+  /// active | paused | failing
+  status   String @default("active")
+  lastTestAt     DateTime?
+  lastTestResult String?
+
+  createdAt DateTime @default(now())
+}
+
+/// A consent artifact. One model across every channel — digital, bulk import,
+/// and branch/assisted — distinguished by `channelOrigin`, exactly as Requests
+/// treats assisted submissions as a tag on one list rather than a parallel
+/// data model.
+model ConsentRecord {
+  id         String @id @default(cuid())
+  subjectRef String
+  purposeTagId String?
+  /// digital | bulk_import | branch | phone
+  channelOrigin String
+  /// granted | withdrawn | expired
+  status String @default("granted")
+
+  /// Immutability hash over the artifact (MeitY Electronic Consent Framework).
+  artifactHash String?
+  collectedAt  DateTime @default(now())
+  expiresAt    DateTime?
+
+  /// For assisted/offline capture: pending | synced | failed.
+  syncStatus String @default("synced")
+  /// Branch capture: how identity was verified in person.
+  idVerification String?
+
+  purposeTag PurposeTag? @relation(fields: [purposeTagId], references: [id])
+
+  @@index([channelOrigin])
+  @@index([syncStatus])
+}
+
+/// Singleton configuration for the consent platform's Setup tab.
+model ConsentApiConfig {
+  id String @id @default("singleton")
+
+  apiEndpoint        String @default("")
+  preferenceCenterBrand String @default("")
+  /// Whether business units are isolated from one another.
+  businessUnitIsolation Boolean @default(false)
+  /// Default consent validity in months, for the expiry rule builder.
+  defaultExpiryMonths Int @default(24)
 }
 
 model ProtectionRule {

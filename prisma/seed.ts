@@ -66,6 +66,14 @@ async function main() {
     "DuplicatePair",
     "ROTCandidate",
     "ScanRun",
+    "ConsentRecord",
+    "ConsentApiConfig",
+    "Webhook",
+    "CookieScanFinding",
+    "CookieScript",
+    "NoticeVariant",
+    "NoticeRevision",
+    "Notice",
     "ProcessingActivity",
     "ClassifiedField",
     "DiscoverySource",
@@ -1288,6 +1296,112 @@ async function main() {
   });
 
   // -- Processing activities (hand-entered records) ------------------------
+  // =========================================================================
+  // Consent & Notices
+  // =========================================================================
+
+  // -- Notices --------------------------------------------------------------
+  const noticePrivacy = await prisma.notice.create({
+    data: {
+      id: "notice_privacy",
+      name: "Customer Privacy Notice",
+      status: "published",
+      currentVersion: "v3.1",
+      origin: "template",
+      content:
+        "We collect and process your personal data to open and service your " +
+        "accounts, meet our KYC and regulatory obligations, and prevent fraud…",
+      regionsJson: JSON.stringify(["IN", "IN-MH", "IN-KA"]),
+      notifyOnChange: true,
+    },
+  });
+  await prisma.noticeRevision.createMany({
+    data: [
+      { noticeId: "notice_privacy", version: "v3.0", content: "…", note: "Added fraud-prevention purpose.", savedBy: "R. Iyer", savedAt: daysAgo(120) },
+      { noticeId: "notice_privacy", version: "v3.1", content: "…", note: "Reworded retention section for clarity.", savedBy: "R. Iyer", savedAt: daysAgo(30) },
+    ],
+  });
+  await prisma.noticeVariant.createMany({
+    data: [
+      { noticeId: "notice_privacy", language: "en", content: "We collect and process your personal data…" },
+      { noticeId: "notice_privacy", language: "hi", content: "हम आपके व्यक्तिगत डेटा को एकत्र और संसाधित करते हैं…" },
+      { noticeId: "notice_privacy", language: "mr", content: "आम्ही तुमचा वैयक्तिक डेटा संकलित करतो…" },
+    ],
+  });
+  await prisma.notice.create({
+    data: {
+      id: "notice_cookie",
+      name: "Cookie Notice",
+      status: "published",
+      currentVersion: "v1.2",
+      origin: "template",
+      regionsJson: JSON.stringify(["IN"]),
+    },
+  });
+  await prisma.notice.create({
+    data: {
+      id: "notice_marketing",
+      name: "Marketing Consent Notice",
+      status: "draft",
+      currentVersion: "v0.3",
+      origin: "scratch",
+      regionsJson: JSON.stringify([]),
+    },
+  });
+
+  // -- Cookie scripts (mapped to the governance-owned categories) -----------
+  const cookieCats = await prisma.cookieCategory.findMany();
+  const catByName = (n: string) => cookieCats.find((c) => c.name.toLowerCase().includes(n.toLowerCase()))?.id ?? null;
+  await prisma.cookieScript.createMany({
+    data: [
+      { name: "Google Analytics", vendor: "Google", page: "/", categoryId: catByName("analyt") },
+      { name: "Hotjar", vendor: "Hotjar", page: "/dashboard", categoryId: catByName("analyt") },
+      { name: "Meta Pixel", vendor: "Meta", page: "/offers", categoryId: catByName("market") },
+      { name: "Session cookie", vendor: "First-party", page: "/", categoryId: catByName("necess") ?? catByName("strict") },
+    ],
+  });
+  await prisma.cookieScanFinding.createMany({
+    data: [
+      { scriptName: "LinkedIn Insight Tag", vendor: "LinkedIn", page: "/careers", disclosed: false, status: "open", suggestedCategory: "Marketing", firstSeen: daysAgo(2) },
+      { scriptName: "Intercom", vendor: "Intercom", page: "/support", disclosed: false, status: "open", suggestedCategory: "Functional", firstSeen: daysAgo(5) },
+      { scriptName: "Google Analytics", vendor: "Google", page: "/", disclosed: true, status: "categorised", suggestedCategory: "Analytics", firstSeen: daysAgo(40) },
+    ],
+  });
+
+  // -- Webhooks -------------------------------------------------------------
+  await prisma.webhook.createMany({
+    data: [
+      { endpoint: "https://hooks.meridianfin.in/consent", event: "consent.granted", status: "active", lastTestAt: daysAgo(3), lastTestResult: "200 OK" },
+      { endpoint: "https://hooks.meridianfin.in/consent", event: "consent.withdrawn", status: "active", lastTestAt: daysAgo(3), lastTestResult: "200 OK" },
+      { endpoint: "https://crm.example.in/webhooks/notice", event: "notice.published", status: "failing", lastTestAt: daysAgo(1), lastTestResult: "503 Service Unavailable" },
+    ],
+  });
+
+  // -- Consent API config (singleton) --------------------------------------
+  await prisma.consentApiConfig.upsert({
+    where: { id: "singleton" },
+    create: {
+      id: "singleton",
+      apiEndpoint: "https://consent.meridianfin.in/api/v2",
+      preferenceCenterBrand: "Meridian Financial",
+      businessUnitIsolation: true,
+      defaultExpiryMonths: 24,
+    },
+    update: {},
+  });
+
+  // -- Consent records (one model, channel-origin tag) ----------------------
+  await prisma.consentRecord.createMany({
+    data: [
+      { subjectRef: "CUST-449120", purposeTagId: "pt_marketing", channelOrigin: "digital", status: "granted", artifactHash: "sha256:9f2a…c4", collectedAt: daysAgo(60), expiresAt: new Date(NOW.getTime() + 700 * 86400000), syncStatus: "synced" },
+      { subjectRef: "CUST-772301", purposeTagId: "pt_servicing", channelOrigin: "digital", status: "granted", artifactHash: "sha256:11bd…07", collectedAt: daysAgo(200), syncStatus: "synced" },
+      { subjectRef: "CUST-889100", purposeTagId: "pt_marketing", channelOrigin: "branch", status: "granted", artifactHash: "sha256:44ce…9a", collectedAt: daysAgo(1), syncStatus: "synced", idVerification: "PAN card + staff witness" },
+      { subjectRef: "CUST-889233", purposeTagId: "pt_marketing", channelOrigin: "branch", status: "granted", collectedAt: daysAgo(0), syncStatus: "pending", idVerification: "Aadhaar (masked) + staff witness" },
+      { subjectRef: "CUST-889401", purposeTagId: "pt_servicing", channelOrigin: "branch", status: "granted", collectedAt: daysAgo(0), syncStatus: "failed", idVerification: "Passport + staff witness" },
+      { subjectRef: "CUST-771002", purposeTagId: "pt_marketing", channelOrigin: "phone", status: "withdrawn", collectedAt: daysAgo(15), syncStatus: "synced" },
+    ],
+  });
+
   await prisma.processingActivity.createMany({
     data: [
       {

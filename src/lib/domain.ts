@@ -373,3 +373,45 @@ export const GOVERNANCE_OWNERS = {
   protectionRule: "CISO",
   rbacBaseline: "CISO",
 } as const;
+
+// ---------------------------------------------------------------------------
+// Consent & Notices
+// ---------------------------------------------------------------------------
+
+/** A subset of the Eighth Schedule languages (DPDP s.5(3)) for notice variants. */
+export const SCHEDULE_8_LANGUAGES = [
+  { code: "en", label: "English" },
+  { code: "hi", label: "Hindi" },
+  { code: "bn", label: "Bengali" },
+  { code: "mr", label: "Marathi" },
+  { code: "ta", label: "Tamil" },
+  { code: "te", label: "Telugu" },
+  { code: "gu", label: "Gujarati" },
+  { code: "kn", label: "Kannada" },
+  { code: "ml", label: "Malayalam" },
+  { code: "pa", label: "Punjabi" },
+  { code: "or", label: "Odia" },
+  { code: "as", label: "Assamese" },
+] as const;
+
+export const REGIONS = [
+  { code: "IN", label: "India (all states)" },
+  { code: "IN-MH", label: "Maharashtra" },
+  { code: "IN-KA", label: "Karnataka" },
+  { code: "IN-TN", label: "Tamil Nadu" },
+  { code: "IN-DL", label: "Delhi" },
+] as const;
+
+export const CHANNEL_ORIGIN_LABEL: Record<string, string> = {
+  digital: "Digital",
+  bulk_import: "Bulk import",
+  branch: "Branch (assisted)",
+  phone: "Phone",
+};
+
+export const WEBHOOK_EVENTS = [
+  "consent.granted",
+  "consent.withdrawn",
+  "consent.expired",
+  "notice.published",
+];
