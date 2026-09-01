@@ -4,6 +4,8 @@ import { Card, GovernanceBanner, PageHead, Pill, formatDate } from "@/components
 import { decodeList } from "@/lib/codec/json";
 import { GOVERNANCE_OWNER } from "@/lib/guards/escalationGate";
 import { ROLE_LABEL } from "@/lib/domain";
+import { getCurrentRole } from "@/lib/session";
+import { PurposeTaxonomy } from "@/components/PurposeTaxonomy";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +25,8 @@ export const dynamic = "force-dynamic";
  * seed, which stands in for them.
  */
 export default async function GovernancePage() {
+  const role = await getCurrentRole();
+  const isDpo = role === "dpo";
   const [purposes, notices, cookies, rules] = await Promise.all([
     db.purposeTag.findMany({ orderBy: { name: "asc" } }),
     db.noticeVersion.findMany({ orderBy: { version: "desc" } }),
@@ -39,35 +43,32 @@ export default async function GovernancePage() {
 
       <div className="stack">
         <Card title="Specified purposes">
-          <GovernanceBanner
-            owner={ROLE_LABEL[GOVERNANCE_OWNER.PurposeTag]}
-            object="The purpose catalogue"
-          />
-          <div className="table-wrap" style={{ marginTop: 12 }}>
-            <table className="dtable">
-              <thead>
-                <tr>
-                  <th>Purpose</th>
-                  <th>Description</th>
-                  <th>Status</th>
-                  <th>Approved</th>
-                </tr>
-              </thead>
-              <tbody>
-                {purposes.map((p) => (
-                  <tr key={p.id}>
-                    <td className="cell-primary">{p.name}</td>
-                    <td className="muted">{p.description}</td>
-                    <td>
-                      <Pill tone="green">{p.status}</Pill>
-                    </td>
-                    <td className="cell-sub">
-                      {p.approvedBy} · {formatDate(p.approvedAt)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {isDpo ? (
+            <div className="notice policy" style={{ marginBottom: 12 }}>
+              <div className="notice-title">You are acting as the DPO</div>
+              <div>
+                This is your object to define. Add or retire purposes below; Admin
+                sees the same table read-only and can only request additions.
+              </div>
+            </div>
+          ) : (
+            <GovernanceBanner
+              owner={ROLE_LABEL[GOVERNANCE_OWNER.PurposeTag]}
+              object="The purpose catalogue"
+            />
+          )}
+          <div style={{ marginTop: 12 }}>
+            <PurposeTaxonomy
+              canEdit={isDpo}
+              purposes={purposes.map((p) => ({
+                id: p.id,
+                name: p.name,
+                description: p.description,
+                status: p.status,
+                approvedBy: p.approvedBy,
+                approvedAt: formatDate(p.approvedAt),
+              }))}
+            />
           </div>
         </Card>
 

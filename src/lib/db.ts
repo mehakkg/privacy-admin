@@ -89,8 +89,44 @@ function buildClient() {
 
 type ExtendedClient = ReturnType<typeof buildClient>;
 
-const globalForPrisma = globalThis as unknown as { prisma?: ExtendedClient };
+/**
+ * A client that keeps the append-only AUDIT protection but drops ONLY the
+ * governance-read-only block. It exists so the DPO — the actual owner of the
+ * purpose taxonomy — can edit it, without weakening the guarantee that Admin
+ * cannot: this client is imported solely inside actions that first assert the
+ * acting role is DPO. Admin's role check fails before this client is reached,
+ * so from Admin's side governance objects remain refused, and the refusal is
+ * still a property of the system rather than of a screen's markup.
+ */
+function buildGovernanceClient() {
+  return new PrismaClient().$extends({
+    query: {
+      $allModels: {
+        async $allOperations({ model, operation, args, query }) {
+          if (MUTATING_OPS.has(operation)) {
+            if (IMMUTABLE_MODELS.has(model) && DESTRUCTIVE_OPS.has(operation)) {
+              throw new ImmutableRecordError(model, operation);
+            }
+          }
+          return query(args);
+        },
+      },
+    },
+  });
+}
+
+const globalForPrisma = globalThis as unknown as {
+  prisma?: ExtendedClient;
+  governancePrisma?: ReturnType<typeof buildGovernanceClient>;
+};
 
 export const db: ExtendedClient = globalForPrisma.prisma ?? buildClient();
+
+export const governanceDb =
+  globalForPrisma.governancePrisma ?? buildGovernanceClient();
+
+if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.governancePrisma = governanceDb;
+}
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = db;
