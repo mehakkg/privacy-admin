@@ -36,6 +36,16 @@ if (!process.env.DATABASE_URL) {
       "Database) and redeploy.\n",
   );
 } else {
-  const migrated = run("Applying migrations", "npx prisma migrate deploy");
-  if (migrated) run("Seeding if empty", "npx tsx prisma/bootstrap.ts");
+  // Sync the FULL current schema onto the attached Postgres with `db push`
+  // rather than `migrate deploy`. The committed migration history is a single
+  // early baseline and has not been kept in step with the schema as each
+  // section was added, so `migrate deploy` would leave most tables missing.
+  // `db push` makes the database match prisma/schema.prisma exactly, which is
+  // what a prototype deploy needs. --accept-data-loss lets it reconcile an
+  // existing store; on a fresh database it simply creates every table.
+  const synced = run(
+    "Syncing schema (db push)",
+    "npx prisma db push --skip-generate --accept-data-loss",
+  );
+  if (synced) run("Seeding if empty", "npx tsx prisma/bootstrap.ts");
 }
