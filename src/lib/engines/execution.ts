@@ -236,6 +236,7 @@ export async function requestRetentionOverride(
           retentionExceptionId: exceptionId,
           sourceRole: actor.role,
           targetRole: "dpo",
+          type: "retention_conflict",
           reason,
           contextJson: encodeObject(context),
           status: "open",

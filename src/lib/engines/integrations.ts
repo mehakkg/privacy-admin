@@ -203,6 +203,7 @@ export async function requestDpaUpdate(processorId: string, reason: string, acto
         data: {
           sourceRole: actor.role,
           targetRole: "legal",
+          type: "dpa_update",
           reason: reason || `Requesting a DPA update for ${processor.name}.`,
           contextJson: JSON.stringify(context),
           status: "open",

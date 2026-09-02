@@ -130,6 +130,7 @@ export async function requestPurposeAction(
         data: {
           sourceRole: actor.role,
           targetRole: "dpo",
+          type: "purpose_request",
           reason: reason.trim() || `Requesting a new purpose: ${name.trim()}`,
           contextJson: encodeObject(context),
           status: "open",

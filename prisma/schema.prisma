@@ -350,6 +350,16 @@ model Escalation {
   /// admin | dpo | ciso | grievance_officer
   sourceRole String
   targetRole String
+  /// retention_conflict | policy_ambiguity | rule_request | rule_exception |
+  /// purpose_request | dpa_update | other
+  ///
+  /// One object, many sources: every escalation-creating action across the
+  /// product produces this same shape, distinguished by `type` — not five
+  /// bespoke mechanisms.
+  type       String @default("other")
+  /// Human reference, e.g. ESC-2026-0031. Null on runtime-created ones, which
+  /// the UI renders from the id instead.
+  referenceCode String?
   reason     String
   /// JSON snapshot of the state at escalation time.
   contextJson String

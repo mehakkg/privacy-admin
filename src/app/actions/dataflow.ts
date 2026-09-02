@@ -167,6 +167,7 @@ export async function requestRuleAction(
           data: {
             sourceRole: actor.role,
             targetRole: "ciso",
+            type: "rule_request",
             reason: `New protection rule requested for ${dataCategory}: ${reason.trim()}`,
             contextJson: encodeObject(context),
             status: "open",
@@ -215,6 +216,7 @@ export async function requestExceptionAction(
           data: {
             sourceRole: actor.role,
             targetRole: "ciso",
+            type: "rule_exception",
             reason: `Exception to "${ruleName}" for ${process.trim()}: ${reason.trim()}`,
             contextJson: encodeObject(context),
             status: "open",

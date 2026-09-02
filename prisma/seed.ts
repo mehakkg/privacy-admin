@@ -738,6 +738,8 @@ async function main() {
       requestId: "req_kavya",
       sourceRole: "admin",
       targetRole: "dpo",
+      type: "other",
+      referenceCode: "ESC-2026-0019",
       reason:
         "Marketing Automation has refused deletion for six days with an expired " +
         "service token. The fulfilment deadline is in three days and I cannot " +
@@ -763,6 +765,8 @@ async function main() {
       retentionExceptionId: "ret_kavya",
       sourceRole: "admin",
       targetRole: "dpo",
+      type: "retention_conflict",
+      referenceCode: "ESC-2026-0012",
       reason:
         "The Data Principal disputes that an open matter still exists and has " +
         "asked for the identity fields to be erased. Requesting a ruling on " +
@@ -791,6 +795,8 @@ async function main() {
       requestId: "req_arun",
       sourceRole: "admin",
       targetRole: "dpo",
+      type: "retention_conflict",
+      referenceCode: "ESC-2026-0009",
       reason:
         "Raised on the assumption that the Legacy Loan Archive held KYC records " +
         "for this Data Principal.",
@@ -802,6 +808,114 @@ async function main() {
       }),
       status: "withdrawn",
       createdAt: daysAgo(5),
+    },
+  });
+
+  // -- Escalations: the convergence demo set --------------------------------
+  // One object, every source. Retention conflict (DPO), rule exception (CISO,
+  // ruled), DPA update (Legal — deliberately VACANT, no Legal actor seeded), and
+  // a purpose request (DPO). Each carries auto-compiled context so the routed-to
+  // role never has to be re-told what is already known.
+
+  // ESC-2026-0031 — retention conflict on Meera's erasure (DPR-2026-0412),
+  // routed to the DPO. Open: the rulable-as-DPO demo.
+  await prisma.escalation.create({
+    data: {
+      id: "esc_meera_kyc",
+      requestId: "req_meera",
+      sourceRole: "admin",
+      targetRole: "dpo",
+      type: "retention_conflict",
+      referenceCode: "ESC-2026-0031",
+      reason:
+        "Meera Krishnan has asked for erasure across every system, but her KYC " +
+        "records carry a 10-year retention obligation that has not yet run. Need a " +
+        "ruling on whether to proceed excluding the retained KYC fields.",
+      contextJson: JSON.stringify({
+        request: "DPR-2026-0412",
+        retentionObligation: "KYC — 10 years",
+        conflictingScope: "Full erasure across all systems",
+        retainedFields: ["kyc.pan", "kyc.address_proof", "kyc.id_document"],
+      }),
+      status: "open",
+      createdAt: daysAgo(1),
+    },
+  });
+
+  // ESC-2026-0028 — rule exception, routed to the CISO, already ruled.
+  await prisma.escalation.create({
+    data: {
+      id: "esc_pan_exception",
+      sourceRole: "admin",
+      targetRole: "ciso",
+      type: "rule_exception",
+      referenceCode: "ESC-2026-0028",
+      reason:
+        "The internal reporting dashboard is blocked by the PAN masking rule on " +
+        "customer-facing views. Requesting an exception so reconciliation totals " +
+        "can be verified.",
+      contextJson: JSON.stringify({
+        rule: "PAN masking — customer-facing views",
+        processBlocked: "Internal reporting dashboard",
+        proposedNarrowerScope: "Last-4-digits display only",
+      }),
+      status: "ruled",
+      ruling: "approve_exception",
+      rulingRationale:
+        "Approved, narrowed to last-4-digits display only. Full PAN stays masked " +
+        "everywhere else; the exception is scoped to the reporting dashboard.",
+      ruledByActorId: "act_ciso",
+      ruledAt: daysAgo(3),
+      createdAt: daysAgo(6),
+    },
+  });
+
+  // ESC-2026-0035 — DPA update for MarketPulse, routed to LEGAL. No Legal actor
+  // exists (the role is newly added and not yet staffed), so this is the
+  // vacant-role queued demo: it stays visibly open, ruled by no one.
+  await prisma.escalation.create({
+    data: {
+      id: "esc_marketpulse_dpa",
+      sourceRole: "admin",
+      targetRole: "legal",
+      type: "dpa_update",
+      referenceCode: "ESC-2026-0035",
+      reason:
+        "MarketPulse Analytics is registered but its DPA is still pending, so it " +
+        "cannot be instructed. Requesting Legal to finalise and issue the DPA " +
+        "reference.",
+      contextJson: JSON.stringify({
+        processor: "MarketPulse Analytics",
+        currentDpaState: "Draft — DPA pending",
+        requestedUpdate: "Finalise contract and issue an active DPA reference",
+      }),
+      status: "open",
+      createdAt: daysAgo(2),
+    },
+  });
+
+  // ESC-2026-0022 — purpose request, routed to the DPO. Open: the merge-path
+  // ruling demo when viewed as DPO.
+  await prisma.escalation.create({
+    data: {
+      id: "esc_purpose_fraud",
+      sourceRole: "admin",
+      targetRole: "dpo",
+      type: "purpose_request",
+      referenceCode: "ESC-2026-0022",
+      reason:
+        "The processing activity 'Loan application scoring — fraud check module' " +
+        "has no matching purpose category. Requesting a decision on whether it " +
+        "needs a new purpose or fits an existing one.",
+      contextJson: JSON.stringify({
+        activity: "Loan application scoring — fraud check module",
+        proposedName: "Credit-decision fraud screening",
+        whyNoExistingFits:
+          "Closest is 'Fraud prevention', but this is decision-time scoring on a " +
+          "loan application, not transaction monitoring.",
+      }),
+      status: "open",
+      createdAt: daysAgo(4),
     },
   });
 
