@@ -736,6 +736,99 @@ table.dtable {
   font-size: 12px;
 }
 
+/* ------------------------------------------------------- risk dashboard */
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+.metric-card {
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface, #fff);
+  padding: 14px 16px;
+  min-height: 118px;
+  text-decoration: none;
+  color: inherit;
+}
+.metric-card.linkable {
+  cursor: pointer;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.metric-card.linkable:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.08));
+}
+.metric-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-2, #475569);
+}
+.metric-trend {
+  font-size: 15px;
+  font-weight: 700;
+}
+.metric-value {
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.1;
+  margin-top: 8px;
+}
+.metric-freshness {
+  font-size: 11px;
+  color: var(--text-4, #94a3b8);
+  margin-top: 10px;
+}
+.metric-freshness.stale {
+  color: var(--yellow);
+  font-weight: 600;
+}
+.metric-link {
+  font-size: 11.5px;
+  color: var(--accent);
+  margin-top: 4px;
+}
+.metric-disconnected {
+  margin-top: 8px;
+  opacity: 0.85;
+}
+.metric-unable {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-4, #94a3b8);
+}
+
+/* Slide-over drawer (configure / metric detail). */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  z-index: 60;
+  display: flex;
+  justify-content: flex-end;
+}
+.drawer-panel {
+  width: min(460px, 92vw);
+  height: 100%;
+  background: var(--surface, #fff);
+  box-shadow: -8px 0 28px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.drawer-body {
+  padding: 18px;
+  overflow-y: auto;
+}
+
 /* Bulk-action bar above a selectable table (dormant accounts). */
 .bulk-bar {
   border: 1px solid var(--accent);

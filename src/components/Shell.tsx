@@ -114,7 +114,7 @@ function navGroups(openRequests: number): NavGroup[] {
       key: "analytics",
       label: "Analytics",
       href: "/analytics/risk",
-      ready: false,
+      ready: true,
     },
     {
       key: "governance",
