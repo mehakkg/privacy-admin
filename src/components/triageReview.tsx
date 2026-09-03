@@ -56,6 +56,8 @@ const CROSSREF_LABEL: Record<string, string> = {
 function crossRefHref(type: string): string {
   if (type === "duplicate") return "/discovery/duplicates";
   if (type === "rot") return "/discovery/rot";
+  // Low-confidence is owned by Classification Review, no longer a triage tab.
+  if (type === "low_confidence") return "/discovery/review";
   return `/discovery/triage?tab=${type}`;
 }
 

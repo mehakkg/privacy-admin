@@ -58,10 +58,13 @@ function navGroups(openRequests: number): NavEntry[] {
         { href: "/discovery/sources", label: "Sources", ready: true },
         { href: "/discovery/import", label: "Add processing activity", ready: true },
         { heading: "Review & classify" },
+        // Ordered by dependency: orient (Overview), surface what's genuinely
+        // new (Triage), decide (Classification review), then consult the record
+        // it produces (Data inventory). Hygiene and generated output come last.
         { href: "/discovery", label: "Overview", ready: true },
         { href: "/discovery/triage", label: "Triage queue", ready: true },
-        { href: "/discovery/inventory", label: "Data inventory", ready: true },
         { href: "/discovery/review", label: "Classification review", ready: true },
+        { href: "/discovery/inventory", label: "Data inventory", ready: true },
         { href: "/discovery/duplicates", label: "Duplicates", ready: true },
         { href: "/discovery/rot", label: "ROT candidates", ready: true },
         { href: "/discovery/ropa", label: "ROPA recommendations", ready: true },
@@ -72,35 +75,46 @@ function navGroups(openRequests: number): NavEntry[] {
       label: "Consent & Notices",
       href: "/consent/notices",
       ready: true,
+      // DPDP Rule 3 requires a notice to precede or accompany a consent request:
+      // Notices leads because the law sequences it that way, not for convenience.
+      // Consent Platform is the infrastructure the capture channels plug into.
       children: [
-        { href: "/consent/cookies", label: "Cookie consent", ready: true },
+        { heading: "Foundation" },
         { href: "/consent/notices", label: "Notices", ready: true },
         { href: "/consent/platform", label: "Consent platform", ready: true },
+        { heading: "Capture channels" },
+        { href: "/consent/cookies", label: "Cookie consent", ready: true },
         { href: "/consent/assisted", label: "Assisted collection", ready: true },
       ],
     },
     {
       key: "protection",
       label: "Data Flow & Protection Rules",
-      href: "/data-flow/map",
+      href: "/data-flow/entities",
       ready: true,
+      // Entity configuration defines the structure Flow Map's entity filter and
+      // per-entity policy depend on — this section's Sources. Flow Map shows what
+      // exists, Protection Rules acts on it, Data Integrity verifies it last.
       children: [
+        { href: "/data-flow/entities", label: "Entity configuration", ready: true },
         { href: "/data-flow/map", label: "Flow map", ready: true },
         { href: "/data-flow/protection-rules", label: "Protection rules", ready: true },
-        { href: "/data-flow/entities", label: "Entity configuration", ready: true },
         { href: "/data-flow/integrity", label: "Data integrity", ready: true },
       ],
     },
     {
       key: "access",
       label: "Identity & Access",
-      href: "/access/provisioning",
+      href: "/access/roles",
       ready: true,
+      // RBAC Matrix defines the role templates Provisioning consumes — roles
+      // exist before granting. Provisioning precedes Deprovisioning in the access
+      // lifecycle; Dormant Accounts is maintenance, relevant only later.
       children: [
+        { href: "/access/roles", label: "RBAC matrix", ready: true },
         { href: "/access/provisioning", label: "Provisioning", ready: true },
         { href: "/access/deprovisioning", label: "Deprovisioning", ready: true },
         { href: "/access/dormant", label: "Dormant accounts", ready: true },
-        { href: "/access/roles", label: "RBAC matrix", ready: true },
       ],
     },
     {
@@ -128,37 +142,45 @@ function navGroups(openRequests: number): NavEntry[] {
     {
       key: "platform",
       label: "Platform Settings",
-      href: "/platform/api-keys",
+      href: "/platform/sign-in",
       ready: true,
+      // Sign-in methods (how anyone gets in at all) is most security-critical,
+      // then API keys (an extension of who/what can access), then Branding, last
+      // as the purely cosmetic item.
       children: [
-        { href: "/platform/api-keys", label: "API keys", ready: true },
         { href: "/platform/sign-in", label: "Sign-in methods", ready: true },
+        { href: "/platform/api-keys", label: "API keys", ready: true },
         { href: "/platform/branding", label: "Branding", ready: true },
       ],
     },
-    // Oversight, evidence, reference — pulled from, not executed into.
+    // Oversight, evidence, reference — pulled from, not executed into. Approved
+    // Policy leads as the rules everything else is measured against; Audit is the
+    // evidence layer; Analytics scores posture against those rules; User Directory
+    // is a standalone lookup, dependent on neither, so it's last.
     { section: "Govern & Review" },
+    {
+      key: "governance",
+      label: "Approved Policy",
+      href: "/governance",
+      ready: true,
+    },
     {
       key: "audit",
       label: "Audit & Compliance",
       href: "/audit",
       ready: true,
+      // Alert-first (Policy Violation Dashboard) → raw detail (Unified Log
+      // Search) → compiled output (Evidence Compiler): orientation, then depth.
       children: [
+        { href: "/audit/violations", label: "Policy violation dashboard", ready: true },
         { href: "/audit", label: "Unified log search", ready: true },
         { href: "/audit/evidence", label: "Evidence compiler", ready: false },
-        { href: "/audit/violations", label: "Policy violation dashboard", ready: true },
       ],
     },
     {
       key: "analytics",
       label: "Analytics",
       href: "/analytics/risk",
-      ready: true,
-    },
-    {
-      key: "governance",
-      label: "Approved Policy",
-      href: "/governance",
       ready: true,
     },
     {
