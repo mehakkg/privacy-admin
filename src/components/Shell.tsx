@@ -45,6 +45,15 @@ function navGroups(openRequests: number): NavEntry[] {
     },
     // Setup and ongoing technical maintenance.
     { section: "Configure" },
+    // Fiduciaries leads: the dependency chain is Fiduciary → Processing Activity
+    // → DPIA, so the Fiduciary record has to exist first, structurally. Promoted
+    // and renamed from the old Entity Configuration.
+    {
+      key: "fiduciaries",
+      label: "Fiduciaries",
+      href: "/fiduciaries",
+      ready: true,
+    },
     {
       key: "discovery",
       label: "Data Discovery & Classification",
@@ -90,13 +99,12 @@ function navGroups(openRequests: number): NavEntry[] {
     {
       key: "protection",
       label: "Data Flow & Protection Rules",
-      href: "/data-flow/entities",
+      href: "/data-flow/map",
       ready: true,
-      // Entity configuration defines the structure Flow Map's entity filter and
-      // per-entity policy depend on — this section's Sources. Flow Map shows what
-      // exists, Protection Rules acts on it, Data Integrity verifies it last.
+      // Entity configuration was promoted out to the top-level Fiduciaries
+      // section. Flow Map shows what exists, Protection Rules acts on it, Data
+      // Integrity verifies it last.
       children: [
-        { href: "/data-flow/entities", label: "Entity configuration", ready: true },
         { href: "/data-flow/map", label: "Flow map", ready: true },
         { href: "/data-flow/protection-rules", label: "Protection rules", ready: true },
         { href: "/data-flow/integrity", label: "Data integrity", ready: true },
@@ -179,9 +187,15 @@ function navGroups(openRequests: number): NavEntry[] {
     },
     {
       key: "analytics",
-      label: "Analytics",
+      label: "Analytics & Reporting",
       href: "/analytics/risk",
       ready: true,
+      // Risk dashboard scores posture; Reports is the library of standardized
+      // regulatory deliverables — distinct from Evidence Compiler's ad hoc packages.
+      children: [
+        { href: "/analytics/risk", label: "Risk dashboard", ready: true },
+        { href: "/analytics/reports", label: "Reports", ready: true },
+      ],
     },
     {
       key: "directory",

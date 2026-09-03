@@ -9,6 +9,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Building2,
   ClipboardCheck,
   FileCheck2,
   Inbox,
@@ -45,6 +46,7 @@ import {
 
 const ICONS: Record<string, LucideIcon> = {
   dashboard: LayoutDashboard,
+  fiduciaries: Building2,
   requests: Inbox,
   discovery: ScanSearch,
   consent: FileCheck2,
