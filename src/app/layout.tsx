@@ -1,6 +1,12 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
+// Every screen reads live data, so nothing should be prerendered at build time.
+// Forcing dynamic here (inherited by all routes) also means the build never
+// needs a database connection to generate pages — the deploy builds green even
+// before Postgres is attached, then serves live data once it is.
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Privacy Admin — DPDP",
   description:
