@@ -1868,3 +1868,52 @@ button.profile:hover .profile-name {
 tr.cross-entity > td {
   background: var(--yellow-bg);
 }
+
+/* ---------------------------------------------------------------------------
+   Sidebar refinements: full-text labels, whole-row group toggle, single blue
+   active target, and a real icon-rail collapse (logo included).
+   --------------------------------------------------------------------------- */
+.sidebar-nav { width: 244px; }
+
+/* Rows are directly .sidebar-item now (no inner main wrapper), so give them
+   their own vertical padding and let the label take the remaining width. */
+.sidebar-item { padding: 7px 8px; gap: 9px; }
+.sidebar-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  white-space: normal;      /* full text — wrap the longest labels, never clip */
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.sidebar-item svg { flex-shrink: 0; color: var(--text-3); }
+.sidebar-item.active svg { color: var(--accent-600); }
+.sidebar-item .count { margin-left: 6px; }
+
+/* Group header is a full-width button: clicking anywhere on the row toggles it,
+   not only the chevron. It is never itself highlighted — only its active
+   sub-item is. */
+.sidebar-grouprow {
+  width: 100%;
+  background: none;
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+  color: var(--text-2);
+}
+.sidebar-chevron {
+  margin-left: 4px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-4);
+  flex-shrink: 0;
+  transition: transform 0.14s ease;
+}
+.sidebar-grouprow:hover .sidebar-chevron { color: var(--text-2); }
+
+/* Collapsed rail: shrink the whole sidebar (the .app grid column is `auto`),
+   showing only the product icon — no words. */
+.sidebar[data-rail="1"] .sidebar-logo-words { display: none; }
+.sidebar[data-rail="1"] .sidebar-logo { padding: 0; justify-content: center; }
+/* Keep the collapsed rail's icons centered despite the general row padding. */
+.sidebar-nav.rail .sidebar-item { padding: 8px 0; justify-content: center; gap: 0; }
