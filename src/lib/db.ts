@@ -67,8 +67,19 @@ export class GovernanceReadOnlyError extends Error {
   }
 }
 
+/**
+ * Resolve the Postgres connection at runtime. Different hosts expose it under
+ * different names; prefer DATABASE_URL, then Vercel/Neon's pooled variants.
+ * Returns undefined when DATABASE_URL is set (or nothing is), so Prisma's own
+ * schema-env resolution stays the default path locally.
+ */
+function resolveDbUrl(): string | undefined {
+  if (process.env.DATABASE_URL) return undefined;
+  return process.env.POSTGRES_PRISMA_URL || process.env.POSTGRES_URL || undefined;
+}
+
 function buildClient() {
-  return new PrismaClient().$extends({
+  return new PrismaClient({ datasourceUrl: resolveDbUrl() }).$extends({
     query: {
       $allModels: {
         async $allOperations({ model, operation, args, query }) {
@@ -99,7 +110,7 @@ type ExtendedClient = ReturnType<typeof buildClient>;
  * still a property of the system rather than of a screen's markup.
  */
 function buildGovernanceClient() {
-  return new PrismaClient().$extends({
+  return new PrismaClient({ datasourceUrl: resolveDbUrl() }).$extends({
     query: {
       $allModels: {
         async $allOperations({ model, operation, args, query }) {

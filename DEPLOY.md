@@ -1,54 +1,45 @@
 # Deploying to Vercel
 
-The prototype now runs on Postgres rather than a local file, because Vercel does
-not keep a filesystem between requests — every write the demo depends on
-(acknowledging a retention obligation, executing, attesting) would otherwise
-vanish.
+This is a Next.js app backed by **Postgres** (via Prisma). Locally it runs on
+SQLite; on Vercel it needs a real Postgres database. The code is already set up
+so that, once a database is attached, the build creates every table and seeds
+demo data automatically — you do **not** need to run any migrations by hand.
 
-## What you do (two steps)
+## One-time setup (≈2 minutes, in the Vercel dashboard)
 
-### 1. Create the project and its database
+### 1. Import the project (skip if it already exists)
+- Vercel → **Add New… → Project** → import `mehakkg/privacy-admin`.
+- Framework preset: **Next.js** (auto-detected). Leave build/output settings default.
+- Don't worry if this first deploy errors — it has no database yet. Continue to step 2.
 
-1. Go to <https://vercel.com/new>.
-2. Create a new project. When it asks for a repository, choose to skip / create
-   an empty project — the code is pushed from this machine, not from GitHub.
-3. Open the project → **Storage** tab → **Create Database** → **Postgres**
-   (Neon). Accept the defaults and attach it to this project.
+### 2. Attach a Postgres database (this is the step that was missing)
+- In the project: **Storage → Create Database → Postgres** → **Connect** to this project.
+  (Vercel's Postgres is Neon-backed; the free tier is plenty for a demo.)
+- Connecting it automatically sets `DATABASE_URL` (and the pooled/direct variants)
+  as environment variables on the project. You do not have to copy anything by hand.
 
-Vercel sets `DATABASE_URL` on the project automatically. You never have to copy
-it anywhere, and it never appears in chat.
+### 3. Redeploy
+- **Deployments → ⋯ on the latest → Redeploy** (or push any commit).
+- This time the build runs `prisma db push` (creates all tables) and seeds the
+  demo data, then serves the app. Landing page is `/dashboard`.
 
-### 2. Log in from this machine
+### 4. (Optional) Make it publicly viewable
+- If the deployment sits behind Vercel's login wall: **Settings → Deployment
+  Protection → Vercel Authentication → Disabled** (or add the people who should see it).
 
-```bash
-npx vercel login
-```
-
-Then link this folder to the project you just made:
-
-```bash
-npx vercel link
-```
-
-Tell me once both have finished.
-
-## What happens next (I do this)
-
-1. `npx vercel env pull .env` — brings the connection string down to this
-   machine so migrations can run. It lands in `.env`, which is git-ignored.
-2. `npx prisma migrate deploy` — creates the tables in the hosted database.
-3. `npm run db:seed` — loads the demo fixtures.
-4. `npx vercel --prod` — deploys and returns the permanent URL.
-
-Every later deploy is just step 4: `npm run build` runs `prisma migrate deploy`
-first, so schema changes travel with the code.
+## Why it failed before
+- The committed Prisma migration history is a single early baseline. `prisma
+  migrate deploy` (the old build step) only applied that baseline, so most tables
+  were never created and every data page errored. The build now runs `prisma db
+  push` instead, which makes the database match the current schema exactly.
+- And there was simply no database attached — SQLite is local-only.
 
 ## Notes
-
-- `.env` and `.env*.local` are git-ignored, so the connection string is never
-  committed.
-- Local development uses the same hosted database once `.env` is pulled. There is
-  no second copy of the data to drift out of sync — but it does mean local work
-  writes to the same database the deployed site reads.
-- `npm run db:seed` **wipes and reloads** everything. Do not run it against a
-  deployment anyone is relying on without expecting that.
+- `next.config.ts` intentionally ignores ESLint/type errors during the build so a
+  stray lint finding can't block a deploy. Flip both back on before treating this
+  as production.
+- `prisma/prepare.mjs` is non-fatal and idempotent: it seeds only when the
+  database is empty, so redeploys won't duplicate data.
+- Connection-string variable names differ by provider; the app resolves
+  `DATABASE_URL`, then `POSTGRES_PRISMA_URL`/`POSTGRES_URL`, and uses a direct
+  (non-pooling) URL for the schema push when one is available.

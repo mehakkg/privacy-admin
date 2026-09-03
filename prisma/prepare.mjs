@@ -17,10 +17,25 @@
 
 import { execSync } from "node:child_process";
 
-function run(label, command) {
+// Different Postgres providers hand Vercel different env-var names. Resolve the
+// runtime (pooled) connection and, separately, a direct (non-pooling) one — DDL
+// like `db push` should go over a direct connection, not a PgBouncer pool.
+const POOLED =
+  process.env.DATABASE_URL ||
+  process.env.POSTGRES_PRISMA_URL ||
+  process.env.POSTGRES_URL ||
+  "";
+const DIRECT =
+  process.env.DIRECT_URL ||
+  process.env.POSTGRES_URL_NON_POOLING ||
+  process.env.DATABASE_URL_UNPOOLED ||
+  POOLED;
+
+function run(label, command, url) {
   try {
     console.log(`\n[prepare] ${label}…`);
-    execSync(command, { stdio: "inherit" });
+    // Prisma reads DATABASE_URL; point each step at the right connection.
+    execSync(command, { stdio: "inherit", env: { ...process.env, DATABASE_URL: url } });
     return true;
   } catch {
     console.log(`[prepare] ${label} did not complete. Continuing with the build.`);
@@ -28,24 +43,23 @@ function run(label, command) {
   }
 }
 
-if (!process.env.DATABASE_URL) {
+if (!POOLED) {
   console.log(
-    "\n[prepare] DATABASE_URL is not set — no database is attached to this " +
-      "project yet.\n[prepare] The build will finish, but pages that read data " +
-      "will error until you attach a\n[prepare] Postgres store (Storage → Create " +
-      "Database) and redeploy.\n",
+    "\n[prepare] No Postgres connection string found (DATABASE_URL / " +
+      "POSTGRES_PRISMA_URL / POSTGRES_URL).\n[prepare] The build will finish, but " +
+      "pages that read data will error until you attach a Postgres\n[prepare] store " +
+      "(Storage → Create Database → connect to this project) and redeploy.\n",
   );
 } else {
   // Sync the FULL current schema onto the attached Postgres with `db push`
-  // rather than `migrate deploy`. The committed migration history is a single
-  // early baseline and has not been kept in step with the schema as each
-  // section was added, so `migrate deploy` would leave most tables missing.
-  // `db push` makes the database match prisma/schema.prisma exactly, which is
-  // what a prototype deploy needs. --accept-data-loss lets it reconcile an
-  // existing store; on a fresh database it simply creates every table.
+  // rather than `migrate deploy`: the committed migration history is a single
+  // early baseline, so `migrate deploy` would leave most tables missing. db push
+  // makes the database match prisma/schema.prisma exactly. Run it over the
+  // DIRECT connection; seed over the pooled one the app itself uses.
   const synced = run(
     "Syncing schema (db push)",
     "npx prisma db push --skip-generate --accept-data-loss",
+    DIRECT,
   );
-  if (synced) run("Seeding if empty", "npx tsx prisma/bootstrap.ts");
+  if (synced) run("Seeding if empty", "npx tsx prisma/bootstrap.ts", POOLED);
 }
