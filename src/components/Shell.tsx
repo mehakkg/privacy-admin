@@ -9,7 +9,7 @@ import { ROLE_LABEL } from "@/lib/domain";
 import { RoleSwitcher } from "@/components/RoleSwitcher";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ProfileMenu } from "@/components/ProfileMenu";
-import { SidebarNav, type NavGroup } from "@/components/SidebarNav";
+import { SidebarNav, type NavEntry } from "@/components/SidebarNav";
 
 /**
  * Admin module navigation.
@@ -18,8 +18,10 @@ import { SidebarNav, type NavGroup } from "@/components/SidebarNav";
  * built in this pass are listed but inert, so the shape of the module stays
  * legible without pretending the screens exist.
  */
-function navGroups(openRequests: number): NavGroup[] {
+function navGroups(openRequests: number): NavEntry[] {
   return [
+    // Daily, deadline-bound work.
+    { section: "Operate" },
     {
       key: "requests",
       label: "Requests",
@@ -27,6 +29,14 @@ function navGroups(openRequests: number): NavGroup[] {
       ready: true,
       badge: openRequests,
     },
+    {
+      key: "escalations",
+      label: "Escalations",
+      href: "/escalations",
+      ready: true,
+    },
+    // Setup and ongoing technical maintenance.
+    { section: "Configure" },
     {
       key: "discovery",
       label: "Data Discovery & Classification",
@@ -94,12 +104,8 @@ function navGroups(openRequests: number): NavGroup[] {
         { href: "/integrations/health-monitoring", label: "Health monitoring", ready: true },
       ],
     },
-    {
-      key: "escalations",
-      label: "Escalations",
-      href: "/escalations",
-      ready: true,
-    },
+    // Oversight, evidence, reference — pulled from, not executed into.
+    { section: "Govern & Review" },
     {
       key: "audit",
       label: "Audit & Compliance",

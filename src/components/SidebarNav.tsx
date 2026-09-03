@@ -72,6 +72,17 @@ export interface NavGroup {
   children?: NavChild[];
 }
 
+/**
+ * A top-level section divider — Operate / Configure / Govern & Review. The three
+ * tiers say what each run of groups is *for*: daily deadline-bound work, setup
+ * and maintenance, and oversight that is pulled from rather than executed into.
+ */
+export type NavSection = { section: string };
+export type NavEntry = NavSection | NavGroup;
+function isSection(e: NavEntry): e is NavSection {
+  return (e as NavSection).section !== undefined;
+}
+
 const STORAGE_KEY = "privacy-admin.sidebar.collapsed";
 
 function groupOwnsPath(group: NavGroup, path: string): boolean {
@@ -85,7 +96,7 @@ export function SidebarNav({
   groups,
   active,
 }: {
-  groups: NavGroup[];
+  groups: NavEntry[];
   active: string;
 }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -95,7 +106,7 @@ export function SidebarNav({
   // Only the group owning the current page starts open.
   const [open, setOpen] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {};
-    for (const g of groups) initial[g.key] = groupOwnsPath(g, active);
+    for (const g of groups) if (!isSection(g)) initial[g.key] = groupOwnsPath(g, active);
     return initial;
   });
 
@@ -115,7 +126,7 @@ export function SidebarNav({
   useEffect(() => {
     setOpen((prev) => {
       const next = { ...prev };
-      for (const g of groups) if (groupOwnsPath(g, active)) next[g.key] = true;
+      for (const g of groups) if (!isSection(g) && groupOwnsPath(g, active)) next[g.key] = true;
       return next;
     });
     setFlyout(null);
@@ -140,7 +151,16 @@ export function SidebarNav({
       onMouseLeave={() => setFlyout(null)}
     >
       <div className="sidebar-nav-items">
-        {groups.map((group) => {
+        {groups.map((entry, ei) => {
+          // Top-level section divider (Operate / Configure / Govern & Review).
+          if (isSection(entry)) {
+            return collapsed ? (
+              <div key={`s${ei}`} className="sidebar-rail-divider" aria-hidden />
+            ) : (
+              <div key={`s${ei}`} className="sidebar-section-label">{entry.section}</div>
+            );
+          }
+          const group = entry;
           const Icon = ICONS[group.key] ?? Inbox;
           const owns = groupOwnsPath(group, active);
           const isOpen = open[group.key] ?? false;

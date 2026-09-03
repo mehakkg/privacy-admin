@@ -310,6 +310,16 @@ textarea {
   color: var(--text-4);
   padding: 14px 8px 6px;
 }
+/* The first section heading shouldn't push the whole nav down. */
+.sidebar-nav-items > .sidebar-section-label:first-child {
+  padding-top: 4px;
+}
+/* Section divider in the collapsed icon rail — a hairline between tiers. */
+.sidebar-rail-divider {
+  height: 1px;
+  background: var(--border-soft);
+  margin: 8px 6px;
+}
 .sidebar-item {
   display: flex;
   align-items: center;
