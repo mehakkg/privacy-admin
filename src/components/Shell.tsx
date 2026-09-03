@@ -20,6 +20,14 @@ import { SidebarNav, type NavEntry } from "@/components/SidebarNav";
  */
 function navGroups(openRequests: number): NavEntry[] {
   return [
+    // The permanent landing surface — a summary, not a work queue, so it sits
+    // above the three macro-groups rather than inside Operate.
+    {
+      key: "dashboard",
+      label: "Dashboard",
+      href: "/dashboard",
+      ready: true,
+    },
     // Daily, deadline-bound work.
     { section: "Operate" },
     {
@@ -56,6 +64,7 @@ function navGroups(openRequests: number): NavEntry[] {
         { href: "/discovery/review", label: "Classification review", ready: true },
         { href: "/discovery/duplicates", label: "Duplicates", ready: true },
         { href: "/discovery/rot", label: "ROT candidates", ready: true },
+        { href: "/discovery/ropa", label: "ROPA recommendations", ready: true },
       ],
     },
     {
@@ -79,6 +88,7 @@ function navGroups(openRequests: number): NavEntry[] {
         { href: "/data-flow/map", label: "Flow map", ready: true },
         { href: "/data-flow/protection-rules", label: "Protection rules", ready: true },
         { href: "/data-flow/entities", label: "Entity configuration", ready: true },
+        { href: "/data-flow/integrity", label: "Data integrity", ready: true },
       ],
     },
     {
@@ -104,6 +114,28 @@ function navGroups(openRequests: number): NavEntry[] {
         { href: "/integrations/health-monitoring", label: "Health monitoring", ready: true },
       ],
     },
+    {
+      key: "notifications",
+      label: "Notifications",
+      href: "/notifications/channels",
+      ready: true,
+      children: [
+        { href: "/notifications/channels", label: "Channels", ready: true },
+        { href: "/notifications/templates", label: "Templates", ready: true },
+        { href: "/notifications/routing", label: "Routing", ready: true },
+      ],
+    },
+    {
+      key: "platform",
+      label: "Platform Settings",
+      href: "/platform/api-keys",
+      ready: true,
+      children: [
+        { href: "/platform/api-keys", label: "API keys", ready: true },
+        { href: "/platform/sign-in", label: "Sign-in methods", ready: true },
+        { href: "/platform/branding", label: "Branding", ready: true },
+      ],
+    },
     // Oversight, evidence, reference — pulled from, not executed into.
     { section: "Govern & Review" },
     {
@@ -114,6 +146,7 @@ function navGroups(openRequests: number): NavEntry[] {
       children: [
         { href: "/audit", label: "Unified log search", ready: true },
         { href: "/audit/evidence", label: "Evidence compiler", ready: false },
+        { href: "/audit/violations", label: "Policy violation dashboard", ready: true },
       ],
     },
     {
@@ -126,6 +159,12 @@ function navGroups(openRequests: number): NavEntry[] {
       key: "governance",
       label: "Approved Policy",
       href: "/governance",
+      ready: true,
+    },
+    {
+      key: "directory",
+      label: "User Directory",
+      href: "/directory",
       ready: true,
     },
   ];

@@ -11,8 +11,6 @@ const PAGE_SIZE = 25;
 const TABS = [
   { key: "low_confidence", label: "Low-confidence" },
   { key: "new_pii", label: "New PII" },
-  { key: "rot", label: "ROT candidates" },
-  { key: "duplicate", label: "Duplicates" },
   { key: "quarantine", label: "Quarantined" },
 ] as const;
 
@@ -25,8 +23,12 @@ type TabKey = (typeof TABS)[number]["key"];
  * judgements and carry different urgency; merging them produces a list long
  * enough to ignore and undifferentiated enough to be useless.
  *
- * An item that qualifies for two categories appears ONCE, in its primary tab,
- * with a cross-reference badge. Duplicating the row would make the counts lie.
+ * Triage is for one-time decisions only: low-confidence classifications, newly
+ * discovered PII, and quarantined items. Duplicates and ROT are NOT tabs here —
+ * they have their own dedicated screens under Review & Classify, where a flagged
+ * item graduates to full ongoing management rather than a single triage call.
+ * Keeping them as both a tab and a screen was the sidebar-vs-tabs duplication
+ * already fixed for Requests and Escalations; this closes the same gap.
  */
 export default async function TriagePage({
   searchParams,

@@ -50,6 +50,15 @@ const CROSSREF_LABEL: Record<string, string> = {
   quarantine: "Quarantined",
 };
 
+// Duplicates and ROT are no longer triage tabs — they have their own dedicated
+// screens under Review & Classify. A cross-reference to one links to that
+// screen; the remaining categories still resolve to a triage tab.
+function crossRefHref(type: string): string {
+  if (type === "duplicate") return "/discovery/duplicates";
+  if (type === "rot") return "/discovery/rot";
+  return `/discovery/triage?tab=${type}`;
+}
+
 const TYPES = [
   "PAN", "Aadhaar", "Email", "Phone", "Date of birth", "Currency",
   "Customer ID", "Free text", "Not personal data",
@@ -104,7 +113,7 @@ export function TriageReview({ rows }: { rows: TriageRow[] }) {
         r.crossRefType ? (
           <span className="row" style={{ gap: 5 }}>
             <Link
-              href={`/discovery/triage?tab=${r.crossRefType}`}
+              href={crossRefHref(r.crossRefType)}
               className="btn xs ghost"
               onClick={(e) => e.stopPropagation()}
             >

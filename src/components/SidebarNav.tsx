@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   BarChart3,
+  Bell,
   ChevronDown,
   ChevronRight,
   ChevronsLeft,
@@ -11,11 +12,14 @@ import {
   ClipboardCheck,
   FileCheck2,
   Inbox,
+  LayoutDashboard,
   Plug,
   Rocket,
   ScanSearch,
+  Settings,
   ShieldCheck,
   TriangleAlert,
+  Users,
   UserCog,
   Workflow,
   type LucideIcon,
@@ -40,16 +44,20 @@ import {
  */
 
 const ICONS: Record<string, LucideIcon> = {
+  dashboard: LayoutDashboard,
   requests: Inbox,
   discovery: ScanSearch,
   consent: FileCheck2,
   protection: Workflow,
   access: UserCog,
   integrations: Plug,
+  notifications: Bell,
+  platform: Settings,
   escalations: TriangleAlert,
   audit: ClipboardCheck,
   analytics: BarChart3,
   governance: ShieldCheck,
+  directory: Users,
   onboarding: Rocket,
 };
 
