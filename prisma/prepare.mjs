@@ -61,5 +61,10 @@ if (!POOLED) {
     "npx prisma db push --skip-generate --accept-data-loss",
     DIRECT,
   );
-  if (synced) run("Seeding if empty", "npx tsx prisma/bootstrap.ts", POOLED);
+  if (synced) {
+    run("Seeding if empty", "npx tsx prisma/bootstrap.ts", POOLED);
+    // Idempotent: brings existing notice rows up to the revised data shape
+    // (Fiduciary / Category / Purpose / Rule 3) on databases seeded before it.
+    run("Backfilling notice metadata", "npx tsx prisma/patch-notices.ts", POOLED);
+  }
 }

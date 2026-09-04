@@ -467,6 +467,7 @@ model PurposeTag {
   processingActivities ProcessingActivity[]
   consentRecords     ConsentRecord[]
   dataFlowConnections DataFlowConnection[]
+  notices            Notice[] @relation("NoticePurpose")
 }
 
 /// A record of processing activity, entered by hand for data no scanner can
@@ -545,16 +546,56 @@ model Notice {
   /// template | import | scratch
   origin String @default("scratch")
 
+  /// The Fiduciary this notice belongs to. Required in the UI; nullable in the
+  /// schema so full tenant isolation can be layered on once multi-tenancy is
+  /// resolved (business unit vs. separate client org) without a data migration.
+  fiduciaryId String?
+  /// Controlled data category (src/lib/domain DataCategory) — never free text,
+  /// which is what let production drift PERSONAL_DATA vs PERSONAL_INFORMATION.
+  dataCategory String?
+  /// FK into the DPO-approved purpose taxonomy — the same policy-locked source
+  /// every other purpose reference in this product uses.
+  purposeTagId String?
+
   /// JSON string[] of region codes this notice is published to.
   regionsJson String @default("[]")
   /// Notify existing users when this notice changes (Publish Settings).
   notifyOnChange Boolean @default(false)
 
+  /// Manual Rule 3 confirmations, keyed by item, each with the required note
+  /// explaining where the requirement is met (e.g. a global footer link). The
+  /// three link checks auto-detect from the body; this covers overrides and the
+  /// two prose statements. See src/lib/notices.ts.
+  rule3ManualJson String @default("{}")
+
+  /// Publish is DPO-gated, matching every other governance object. Admin can
+  /// only submit; the transition itself is a DPO action.
+  /// none | pending_publish | pending_unpublish
+  approvalState      String  @default("none")
+  /// Payload staged with a pending publish request, applied on DPO approval.
+  pendingRegionsJson String?
+  pendingNotify      Boolean @default(false)
+  submittedBy        String?
+  submittedAt        DateTime?
+
+  /// Retired is a terminal state a live notice moves INTO once superseded — a
+  /// draft was never live, so the two are not the same. Retiring records what
+  /// replaced it, so the historical record is navigable.
+  retiredAt      DateTime?
+  supersededById String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  fiduciary    Entity?     @relation(fields: [fiduciaryId], references: [id])
+  purposeTag   PurposeTag? @relation("NoticePurpose", fields: [purposeTagId], references: [id])
+  supersededBy Notice?     @relation("NoticeSupersession", fields: [supersededById], references: [id])
+  supersedes   Notice[]    @relation("NoticeSupersession")
+
   revisions NoticeRevision[]
   variants  NoticeVariant[]
+
+  @@index([fiduciaryId])
 }
 
 /// One point in a notice's version history. Editing and history are the same
@@ -1220,6 +1261,7 @@ model Entity {
   mergerPending  Boolean @default(false)
 
   userMappings EntityUserMapping[]
+  notices      Notice[]
 }
 
 model EntityUserMapping {

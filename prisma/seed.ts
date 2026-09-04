@@ -1860,6 +1860,12 @@ async function main() {
   // =========================================================================
 
   // -- Notices --------------------------------------------------------------
+  // A published notice is Rule 3-complete: its three links auto-detect from the
+  // body, and the two prose requirements are confirmed.
+  const rule3AllConfirmed = JSON.stringify({
+    itemization: { note: "Data categories itemised in the body." },
+    purpose: { note: "Purpose stated in the opening paragraph." },
+  });
   const noticePrivacy = await prisma.notice.create({
     data: {
       id: "notice_privacy",
@@ -1867,11 +1873,19 @@ async function main() {
       status: "published",
       currentVersion: "v3.1",
       origin: "template",
+      fiduciaryId: "ent_meridian",
+      dataCategory: "kyc",
+      purposeTagId: "pt_servicing",
       content:
-        "We collect and process your personal data to open and service your " +
-        "accounts, meet our KYC and regulatory obligations, and prevent fraud…",
+        "We collect and process the following personal data — identity, contact, " +
+        "KYC and transaction records — to open and service your accounts, meet our " +
+        "KYC and regulatory obligations, and prevent fraud. " +
+        "You may withdraw consent at any time: https://meridian.example.in/consent/withdraw. " +
+        "Exercise your rights (access, correct, erase, nominate): https://meridian.example.in/rights. " +
+        "Complain to the Data Protection Board: https://meridian.example.in/grievance/board.",
       regionsJson: JSON.stringify(["IN", "IN-MH", "IN-KA"]),
       notifyOnChange: true,
+      rule3ManualJson: rule3AllConfirmed,
     },
   });
   await prisma.noticeRevision.createMany({
@@ -1894,16 +1908,59 @@ async function main() {
       status: "published",
       currentVersion: "v1.2",
       origin: "template",
+      fiduciaryId: "ent_meridian",
+      dataCategory: "behavioural",
+      purposeTagId: "pt_service",
+      content:
+        "This site uses cookies for behavioural analytics to improve the service. " +
+        "Withdraw consent: https://meridian.example.in/cookies/withdraw. " +
+        "Exercise your rights: https://meridian.example.in/rights. " +
+        "Complain to the Board: https://meridian.example.in/grievance/board.",
       regionsJson: JSON.stringify(["IN"]),
+      rule3ManualJson: rule3AllConfirmed,
     },
   });
+  // Draft that FAILS Rule 3 on 2 of 5: a rights link is present in the body and
+  // itemisation + purpose are manually confirmed, but there is no withdrawal
+  // link and no Board-complaint link — so Submit for approval stays disabled.
   await prisma.notice.create({
     data: {
       id: "notice_marketing",
       name: "Marketing Consent Notice",
       status: "draft",
-      currentVersion: "v0.3",
+      currentVersion: "v1.5",
       origin: "scratch",
+      fiduciaryId: "ent_meridian",
+      dataCategory: "behavioural",
+      purposeTagId: "pt_marketing",
+      content:
+        "We would like to send you marketing communications about our products. " +
+        "You can exercise your rights here: https://meridian.example.in/rights.",
+      regionsJson: JSON.stringify([]),
+      rule3ManualJson: JSON.stringify({
+        itemization: { note: "Marketing preferences and contact details itemised above." },
+        purpose: { note: "Purpose: marketing communication, stated in the first line." },
+      }),
+    },
+  });
+  await prisma.noticeRevision.createMany({
+    data: [
+      { noticeId: "notice_marketing", version: "v1.4", content: "…", note: "Reworded the opt-in language.", savedBy: "R. Iyer", savedAt: daysAgo(12) },
+      { noticeId: "notice_marketing", version: "v1.5", content: "…", note: "Added the rights link.", savedBy: "R. Iyer", savedAt: daysAgo(3) },
+    ],
+  });
+  // A second Fiduciary's draft — so the Fiduciary filter genuinely narrows.
+  await prisma.notice.create({
+    data: {
+      id: "notice_northgate",
+      name: "Northgate Lending Loan Notice",
+      status: "draft",
+      currentVersion: "v0.2",
+      origin: "scratch",
+      fiduciaryId: "ent_northgate",
+      dataCategory: "kyc",
+      purposeTagId: "pt_servicing",
+      content: "Notice for loan applicants of Northgate Lending. Draft — pending content.",
       regionsJson: JSON.stringify([]),
     },
   });

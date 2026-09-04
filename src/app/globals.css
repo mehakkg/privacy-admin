@@ -1951,3 +1951,125 @@ tr.cross-entity > td {
 }
 .sidebar .rail-flyout .sidebar-subitem { color: #c2cddc; }
 .sidebar .rail-flyout .sidebar-subitem:hover { background: rgba(255, 255, 255, 0.07); color: #ffffff; }
+
+/* ===========================================================================
+   NOTICES — list row actions, Rule 3 checklist, metadata form, lifecycle modal
+   =========================================================================== */
+
+/* Row / page action popovers -------------------------------------------------- */
+.rowmenu { position: relative; display: inline-flex; }
+.rowmenu-scrim { position: fixed; inset: 0; z-index: 40; }
+.rowmenu-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 41;
+  min-width: 180px;
+  padding: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.12));
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-2);
+  text-align: left;
+  cursor: pointer;
+}
+.menu-item:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+.menu-item:disabled { opacity: 0.45; cursor: not-allowed; }
+.menu-item.danger { color: var(--red); }
+.menu-item.danger:hover:not(:disabled) { background: var(--red-bg, rgba(220, 38, 38, 0.08)); }
+
+/* Metadata form (Fiduciary / Category / Purpose) ------------------------------ */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+.field { display: flex; flex-direction: column; gap: 5px; }
+.field-label { font-size: 12px; font-weight: 600; color: var(--text-2); display: flex; align-items: center; gap: 6px; }
+.req {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--yellow, #a16207);
+  background: var(--yellow-bg, rgba(234, 179, 8, 0.12));
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+/* Rule 3 checklist ------------------------------------------------------------ */
+.rule3-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid var(--border-soft, var(--border));
+  border-radius: var(--radius);
+}
+.rule3-check {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1.5px solid var(--border);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+.rule3-check.on { background: var(--green, #16a34a); border-color: var(--green, #16a34a); }
+
+/* Version history View / Restore ---------------------------------------------- */
+.version-row {
+  padding: 10px;
+  border: 1px solid var(--border-soft, var(--border));
+  border-radius: var(--radius);
+}
+.version-view {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: var(--bg-page);
+  border-radius: var(--radius);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+/* Notify-users confirmation modal --------------------------------------------- */
+.modal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(15, 23, 42, 0.45);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+.modal {
+  width: 100%;
+  max-width: 420px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px);
+  padding: 20px;
+  box-shadow: var(--shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.2));
+}
+
+.input.sm { padding: 5px 8px; font-size: 13px; }
