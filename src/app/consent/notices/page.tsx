@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
 import { CompactFilterBar } from "@/components/CompactFilterBar";
 import { PageHead, Stat, formatDate } from "@/components/ui";
-import { NewNoticeButton } from "@/components/consentActions";
+import { NewNoticePanel } from "@/components/newNoticePanel";
 import { NoticesTable, type NoticeRow } from "@/components/noticesTable";
 import { decodeList } from "@/lib/codec/json";
 import { DATA_CATEGORIES, DATA_CATEGORY_LABEL, type DataCategory } from "@/lib/domain";
@@ -42,10 +42,11 @@ export default async function NoticesPage({
     orderBy: { updatedAt: "desc" },
   });
 
-  const [all, fiduciaries, purposes] = await Promise.all([
+  const [all, fiduciaries, purposes, sources] = await Promise.all([
     db.notice.findMany({ select: { status: true } }),
     db.entity.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.purposeTag.findMany({ where: { status: "approved" }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    db.notice.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, content: true } }),
   ]);
   const published = all.filter((n) => n.status === "published").length;
   const draft = all.filter((n) => n.status === "draft").length;
@@ -71,7 +72,7 @@ export default async function NoticesPage({
     ? fiduciaries.find((f) => f.id === params.fiduciary)?.name
     : undefined;
 
-  const existing = notices.map((n) => ({ id: n.id, name: n.name }));
+  const newNotice = <NewNoticePanel fiduciaries={fiduciaries} purposes={purposes} sources={sources} />;
 
   return (
     <Shell active="/consent" title="Consent & Notices / Notices">
@@ -116,7 +117,7 @@ export default async function NoticesPage({
             options: purposes.map((p) => ({ value: p.id, label: p.name })),
           },
         ]}
-        actions={<NewNoticeButton existing={existing} />}
+        actions={newNotice}
       />
 
       {rows.length === 0 ? (
@@ -129,7 +130,7 @@ export default async function NoticesPage({
           <p className="cell-sub" style={{ margin: "0 0 12px" }}>
             Every notice needs to exist before its linked consent flow can go live.
           </p>
-          <NewNoticeButton existing={existing} />
+          {newNotice}
         </div>
       ) : (
         <NoticesTable rows={rows} />

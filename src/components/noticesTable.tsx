@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Pencil, Clock, MoreHorizontal, Copy, Archive, RotateCcw, Trash2 } from "lucide-react";
+import { MoreHorizontal, Pencil, Clock, Copy, Archive, RotateCcw, Trash2 } from "lucide-react";
 import { Pill } from "@/components/ui";
 import { ActionError } from "@/components/actions";
 import {
@@ -56,30 +56,42 @@ function useRun() {
   return { pending, result, run, setResult };
 }
 
-/** ⋯ menu per row: Duplicate / Retire|Restore / Delete (type-to-confirm). */
+/**
+ * ⋯ menu per row — the single trigger for ALL five row actions (Edit, View
+ * history, Duplicate, Retire/Restore, Delete). Five is well above the two-icon
+ * threshold, so nothing sits as a loose icon beside it.
+ */
 function RowMenu({ row }: { row: NoticeRow }) {
   const { pending, result, run } = useRun();
   const [open, setOpen] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [view, setView] = useState<"menu" | "history" | "delete">("menu");
   const [typed, setTyped] = useState("");
   const retired = row.status === "retired";
 
+  const closeAll = () => { setOpen(false); setView("menu"); setTyped(""); };
+
   return (
     <span className="rowmenu">
-      <button className="icon-btn" title="More actions" onClick={() => setOpen((o) => !o)} aria-label="More actions">
+      <button className="icon-btn" title="Actions" onClick={() => setOpen((o) => !o)} aria-label="Actions">
         <MoreHorizontal size={16} />
       </button>
       {open && (
         <>
-          <div className="rowmenu-scrim" onClick={() => { setOpen(false); setConfirmDelete(false); }} />
-          <div className="rowmenu-pop" onClick={(e) => e.stopPropagation()}>
-            {!confirmDelete ? (
+          <div className="rowmenu-scrim" onClick={closeAll} />
+          <div className="rowmenu-pop" onClick={(e) => e.stopPropagation()} style={{ minWidth: view === "menu" ? 190 : 280 }}>
+            {view === "menu" && (
               <div className="stack" style={{ gap: 2 }}>
-                <button className="menu-item" disabled={pending} onClick={() => run(() => duplicateNoticeAction(row.id), () => setOpen(false))}>
+                <Link href={`/consent/notices/${row.id}?tab=content`} className="menu-item">
+                  <Pencil size={14} /> Edit
+                </Link>
+                <button className="menu-item" onClick={() => setView("history")}>
+                  <Clock size={14} /> View history
+                </button>
+                <button className="menu-item" disabled={pending} onClick={() => run(() => duplicateNoticeAction(row.id), closeAll)}>
                   <Copy size={14} /> Duplicate
                 </button>
                 {retired ? (
-                  <button className="menu-item" disabled={pending} onClick={() => run(() => restoreRetiredNoticeAction(row.id), () => setOpen(false))}>
+                  <button className="menu-item" disabled={pending} onClick={() => run(() => restoreRetiredNoticeAction(row.id), closeAll)}>
                     <RotateCcw size={14} /> Restore to draft
                   </button>
                 ) : (
@@ -87,72 +99,55 @@ function RowMenu({ row }: { row: NoticeRow }) {
                     className="menu-item"
                     disabled={pending || row.status !== "published"}
                     title={row.status !== "published" ? "Only a published notice can be retired" : undefined}
-                    onClick={() => run(() => retireNoticeAction(row.id, null), () => setOpen(false))}
+                    onClick={() => run(() => retireNoticeAction(row.id, null), closeAll)}
                   >
                     <Archive size={14} /> Retire
                   </button>
                 )}
-                <button className="menu-item danger" onClick={() => setConfirmDelete(true)}>
+                <button className="menu-item danger" onClick={() => setView("delete")}>
                   <Trash2 size={14} /> Delete…
                 </button>
               </div>
-            ) : (
-              <div className="stack" style={{ gap: 8, minWidth: 240 }}>
-                <div className="cell-sub">
-                  Type <strong>{row.name}</strong> to delete. This cannot be undone.
+            )}
+
+            {view === "history" && (
+              <div>
+                <div className="section-label" style={{ marginTop: 0 }}>Version history</div>
+                {row.history.length === 0 ? (
+                  <div className="cell-sub">No saved versions yet.</div>
+                ) : (
+                  <div className="stack" style={{ gap: 8, maxHeight: 240, overflowY: "auto" }}>
+                    {row.history.map((h, i) => (
+                      <div key={i} className="row" style={{ gap: 8, alignItems: "flex-start" }}>
+                        <span className="mono cell-primary">{h.version}</span>
+                        <div className="cell-stack">
+                          <span className="cell-sub">{h.note ?? "—"}</span>
+                          <span className="cell-sub">{h.savedBy} · {formatDateTime(new Date(h.savedAt))}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="row" style={{ gap: 6, marginTop: 8 }}>
+                  <button className="btn ghost xs" onClick={() => setView("menu")}>← Back</button>
+                  <Link href={`/consent/notices/${row.id}?tab=content`} className="btn ghost xs">Open full history →</Link>
                 </div>
+              </div>
+            )}
+
+            {view === "delete" && (
+              <div className="stack" style={{ gap: 8 }}>
+                <div className="cell-sub">Type <strong>{row.name}</strong> to delete. This cannot be undone.</div>
                 <input className="input" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={row.name} autoFocus />
                 <div className="row" style={{ gap: 6 }}>
-                  <button
-                    className="btn danger sm"
-                    disabled={pending || typed !== row.name}
-                    onClick={() => run(() => deleteNoticeAction(row.id, typed), () => setOpen(false))}
-                  >
+                  <button className="btn danger sm" disabled={pending || typed !== row.name} onClick={() => run(() => deleteNoticeAction(row.id, typed), closeAll)}>
                     {pending ? "Deleting…" : "Delete notice"}
                   </button>
-                  <button className="btn ghost sm" onClick={() => { setConfirmDelete(false); setTyped(""); }}>Cancel</button>
+                  <button className="btn ghost sm" onClick={() => setView("menu")}>Cancel</button>
                 </div>
                 <ActionError result={result} />
               </div>
             )}
-          </div>
-        </>
-      )}
-    </span>
-  );
-}
-
-/** Clock icon → lightweight version-history popover, without leaving the list. */
-function HistoryPopover({ row }: { row: NoticeRow }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <span className="rowmenu">
-      <button className="icon-btn" title="Version history" onClick={() => setOpen((o) => !o)} aria-label="Version history">
-        <Clock size={16} />
-      </button>
-      {open && (
-        <>
-          <div className="rowmenu-scrim" onClick={() => setOpen(false)} />
-          <div className="rowmenu-pop" onClick={(e) => e.stopPropagation()} style={{ minWidth: 280 }}>
-            <div className="section-label" style={{ marginTop: 0 }}>Version history</div>
-            {row.history.length === 0 ? (
-              <div className="cell-sub">No saved versions yet.</div>
-            ) : (
-              <div className="stack" style={{ gap: 8, maxHeight: 260, overflowY: "auto" }}>
-                {row.history.map((h, i) => (
-                  <div key={i} className="row" style={{ gap: 8, alignItems: "flex-start" }}>
-                    <span className="mono cell-primary">{h.version}</span>
-                    <div className="cell-stack">
-                      <span className="cell-sub">{h.note ?? "—"}</span>
-                      <span className="cell-sub">{h.savedBy} · {formatDateTime(new Date(h.savedAt))}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div style={{ marginTop: 8 }}>
-              <Link href={`/consent/notices/${row.id}?tab=content`} className="btn ghost xs">Open full history →</Link>
-            </div>
           </div>
         </>
       )}
@@ -254,13 +249,7 @@ export function NoticesTable({ rows }: { rows: NoticeRow[] }) {
                 <td className="cell-sub">{n.languageCount}</td>
                 <td className="cell-sub">{n.updated}</td>
                 <td>
-                  <span className="row" style={{ gap: 2 }}>
-                    <Link href={`/consent/notices/${n.id}?tab=content`} className="icon-btn" title="Edit content" aria-label="Edit">
-                      <Pencil size={16} />
-                    </Link>
-                    <HistoryPopover row={n} />
-                    <RowMenu row={n} />
-                  </span>
+                  <RowMenu row={n} />
                 </td>
               </tr>
             ))}

@@ -51,7 +51,11 @@ function useAction() {
 
 export interface Option { id: string; name: string }
 
-/** Fiduciary / Data Category / Purpose — controlled fields above the editor. */
+/**
+ * Fiduciary / Data Category / Purpose. Captured at creation, so here it is a
+ * COLLAPSED summary with a small inline edit — it doesn't compete with the main
+ * content editor's own save. Expanding reveals the controlled dropdowns.
+ */
 export function NoticeMeta({
   noticeId,
   fiduciaryId,
@@ -68,46 +72,62 @@ export function NoticeMeta({
   purposes: Option[];
 }) {
   const { pending, result, run } = useAction();
+  const [open, setOpen] = useState(false);
   const [fid, setFid] = useState(fiduciaryId ?? "");
   const [cat, setCat] = useState(dataCategory ?? "");
   const [pur, setPur] = useState(purposeTagId ?? "");
   const dirty = fid !== (fiduciaryId ?? "") || cat !== (dataCategory ?? "") || pur !== (purposeTagId ?? "");
 
+  const fidName = fiduciaries.find((f) => f.id === fiduciaryId)?.name ?? "—";
+  const catName = dataCategory ? (DATA_CATEGORY_LABEL[dataCategory as keyof typeof DATA_CATEGORY_LABEL] ?? dataCategory) : "—";
+  const purName = purposes.find((p) => p.id === purposeTagId)?.name ?? "—";
+
   return (
-    <Card title="Classification">
-      <div className="form-grid">
-        <label className="field">
-          <span className="field-label">Fiduciary <span className="req">required</span></span>
-          <select className="input" value={fid} onChange={(e) => setFid(e.target.value)}>
-            <option value="">Select a Fiduciary…</option>
-            {fiduciaries.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-          </select>
-        </label>
-        <label className="field">
-          <span className="field-label">Data Category <span className="req">required</span></span>
-          <select className="input" value={cat} onChange={(e) => setCat(e.target.value)}>
-            <option value="">Select a category…</option>
-            {DATA_CATEGORIES.map((c) => <option key={c} value={c}>{DATA_CATEGORY_LABEL[c]}</option>)}
-          </select>
-        </label>
-        <label className="field">
-          <span className="field-label">
-            Purpose <span className="req">required</span> <span className="lock-mark" title="From the DPO-approved taxonomy">🔒 DPO taxonomy</span>
-          </span>
-          <select className="input" value={pur} onChange={(e) => setPur(e.target.value)}>
-            <option value="">Select an approved purpose…</option>
-            {purposes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-        </label>
-      </div>
-      <div className="row" style={{ marginTop: 10 }}>
-        <button className="btn primary sm" disabled={pending || !dirty} onClick={() => run(() => saveNoticeMetaAction(noticeId, fid, cat, pur))}>
-          {pending ? "Saving…" : "Save classification"}
-        </button>
-        <span className="cell-sub">Category and Purpose are controlled lists — never free text.</span>
-      </div>
-      <ActionError result={result} />
-    </Card>
+    <div className="classification">
+      <button className="classification-summary" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+        <span className="cell-sub">Classification</span>
+        <span className="class-chips">
+          <span className="class-chip">{fidName}</span>
+          <span className="class-chip">{catName}</span>
+          <span className="class-chip">{purName}</span>
+        </span>
+        <span className="cell-sub" style={{ marginLeft: "auto" }}>{open ? "Close" : "Edit classification"}</span>
+      </button>
+      {open && (
+        <div className="classification-edit">
+          <div className="form-grid">
+            <label className="field">
+              <span className="field-label">Fiduciary <span className="req">required</span></span>
+              <select className="input sm" value={fid} onChange={(e) => setFid(e.target.value)}>
+                <option value="">Select a Fiduciary…</option>
+                {fiduciaries.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+            </label>
+            <label className="field">
+              <span className="field-label">Data Category <span className="req">required</span></span>
+              <select className="input sm" value={cat} onChange={(e) => setCat(e.target.value)}>
+                <option value="">Select a category…</option>
+                {DATA_CATEGORIES.map((c) => <option key={c} value={c}>{DATA_CATEGORY_LABEL[c]}</option>)}
+              </select>
+            </label>
+            <label className="field">
+              <span className="field-label">Purpose <span className="req">required</span> <span className="lock-mark">🔒 DPO</span></span>
+              <select className="input sm" value={pur} onChange={(e) => setPur(e.target.value)}>
+                <option value="">Select an approved purpose…</option>
+                {purposes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </label>
+          </div>
+          <div className="row" style={{ marginTop: 8 }}>
+            <button className="btn sm" disabled={pending || !dirty} onClick={() => run(() => saveNoticeMetaAction(noticeId, fid, cat, pur), () => setOpen(false))}>
+              {pending ? "Saving…" : "Save"}
+            </button>
+            <span className="cell-sub">Category and Purpose are controlled lists — never free text.</span>
+          </div>
+          <ActionError result={result} />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -580,7 +600,11 @@ function UnpublishRetire({ noticeId, supersedeOptions }: { noticeId: string; sup
 
 // --- Page-level action menu (header) ---------------------------------------
 
-/** Duplicate / Retire / Delete — the same set as the list row, on the detail. */
+/**
+ * Duplicate / Retire / Delete for the detail header. Three actions on a page
+ * with room to spare, so they are explicit labelled buttons — not hidden behind
+ * a "⋯" dropdown. Retire only appears for a Published notice.
+ */
 export function NoticePageActions({
   noticeId,
   name,
@@ -595,9 +619,8 @@ export function NoticePageActions({
   const router = useRouter();
   const [pending, start] = useTransition();
   const [result, setResult] = useState<ActionResult | null>(null);
-  const [open, setOpen] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [retiring, setRetiring] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [supersededBy, setSupersededBy] = useState("");
   const [typed, setTyped] = useState("");
 
@@ -605,50 +628,54 @@ export function NoticePageActions({
     start(async () => {
       const r = await op();
       setResult(r);
-      if (r.ok) { onOk?.(); router.refresh(); } // eslint-disable-line
+      if (r.ok) { onOk?.(); router.refresh(); }
     });
 
   return (
-    <span className="rowmenu">
-      <button className="btn ghost sm" onClick={() => setOpen((o) => !o)} aria-haspopup="menu">⋯ Actions</button>
-      {open && (
-        <>
-          <div className="rowmenu-scrim" onClick={() => { setOpen(false); setConfirmDelete(false); setRetiring(false); }} />
-          <div className="rowmenu-pop" onClick={(e) => e.stopPropagation()} style={{ minWidth: 240 }}>
-            {confirmDelete ? (
-              <div className="stack" style={{ gap: 8 }}>
-                <div className="cell-sub">Type <strong>{name}</strong> to delete permanently.</div>
-                <input className="input sm" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={name} autoFocus />
-                <div className="row" style={{ gap: 6 }}>
-                  <button className="btn danger sm" disabled={pending || typed !== name} onClick={() => act(() => deleteNoticeAction(noticeId, typed), () => router.push("/consent/notices"))}>
-                    {pending ? "Deleting…" : "Delete"}
-                  </button>
-                  <button className="btn ghost sm" onClick={() => { setConfirmDelete(false); setTyped(""); }}>Cancel</button>
-                </div>
-              </div>
-            ) : retiring ? (
-              <div className="stack" style={{ gap: 8 }}>
+    <div className="row" style={{ gap: 8, position: "relative" }}>
+      <button className="btn sm" disabled={pending} onClick={() => act(() => duplicateNoticeAction(noticeId))}>Duplicate</button>
+
+      {status === "published" && (
+        <span className="rowmenu">
+          <button className="btn sm" onClick={() => setRetiring((v) => !v)}>Retire</button>
+          {retiring && (
+            <>
+              <div className="rowmenu-scrim" onClick={() => setRetiring(false)} />
+              <div className="rowmenu-pop" onClick={(e) => e.stopPropagation()} style={{ minWidth: 260 }}>
                 <div className="section-label" style={{ marginTop: 0 }}>Retire this notice</div>
-                <select className="input sm" value={supersededBy} onChange={(e) => setSupersededBy(e.target.value)}>
+                <select className="input sm" value={supersededBy} onChange={(e) => setSupersededBy(e.target.value)} style={{ marginBottom: 8 }}>
                   <option value="">Superseded by… (optional)</option>
                   {supersedeOptions.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
                 </select>
                 <div className="row" style={{ gap: 6 }}>
-                  <button className="btn primary sm" disabled={pending} onClick={() => act(() => retireNoticeAction(noticeId, supersededBy || null), () => setOpen(false))}>Confirm retire</button>
+                  <button className="btn primary sm" disabled={pending} onClick={() => act(() => retireNoticeAction(noticeId, supersededBy || null), () => setRetiring(false))}>Confirm retire</button>
                   <button className="btn ghost sm" onClick={() => setRetiring(false)}>Cancel</button>
                 </div>
+                <ActionError result={result} />
               </div>
-            ) : (
-              <div className="stack" style={{ gap: 2 }}>
-                <button className="menu-item" disabled={pending} onClick={() => act(() => duplicateNoticeAction(noticeId), () => setOpen(false))}>Duplicate</button>
-                <button className="menu-item" disabled={pending || status !== "published"} title={status !== "published" ? "Only a published notice can be retired" : undefined} onClick={() => setRetiring(true)}>Retire…</button>
-                <button className="menu-item danger" onClick={() => setConfirmDelete(true)}>Delete…</button>
-              </div>
-            )}
+            </>
+          )}
+        </span>
+      )}
+
+      <button className="btn sm btn-outline-danger" onClick={() => setDeleting(true)}>Delete</button>
+
+      {deleting && (
+        <div className="modal-scrim" onClick={() => setDeleting(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ marginTop: 0 }}>Delete “{name}”?</h3>
+            <p className="cell-sub">Type <strong>{name}</strong> to confirm. This cannot be undone.</p>
+            <input className="input" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={name} autoFocus />
+            <div className="row" style={{ gap: 8, marginTop: 12 }}>
+              <button className="btn danger" disabled={pending || typed !== name} onClick={() => act(() => deleteNoticeAction(noticeId, typed), () => router.push("/consent/notices"))}>
+                {pending ? "Deleting…" : "Delete notice"}
+              </button>
+              <button className="btn ghost" onClick={() => { setDeleting(false); setTyped(""); }}>Cancel</button>
+            </div>
             <ActionError result={result} />
           </div>
-        </>
+        </div>
       )}
-    </span>
+    </div>
   );
 }

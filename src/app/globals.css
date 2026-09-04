@@ -1274,7 +1274,8 @@ select.input:focus {
   transform: translateX(-50%);
   width: max-content;
   max-width: 300px;
-  background: var(--text);
+  /* Brand-blue tooltip, product-wide (was near-black). White text for contrast. */
+  background: var(--accent);
   color: var(--on-accent);
   font-size: 11.5px;
   font-weight: 400;
@@ -1295,7 +1296,7 @@ select.input:focus {
   left: 50%;
   transform: translateX(-50%);
   border: 5px solid transparent;
-  border-top-color: var(--text);
+  border-top-color: var(--accent);
 }
 .tip:hover .tip-body,
 .tip:focus-within .tip-body {
@@ -2073,3 +2074,143 @@ tr.cross-entity > td {
 }
 
 .input.sm { padding: 5px 8px; font-size: 13px; }
+
+/* ===========================================================================
+   NOTICES v2 — creation slide-over, segmented control, classification bar
+   =========================================================================== */
+
+/* Slide-in creation panel ----------------------------------------------------- */
+.slideover-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(15, 23, 42, 0.4);
+  display: flex;
+  justify-content: flex-end;
+}
+.slideover {
+  width: 100%;
+  max-width: 480px;
+  height: 100%;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.16);
+  display: flex;
+  flex-direction: column;
+  animation: slideover-in 0.18s ease-out;
+}
+.slideover.wide { max-width: 860px; }
+@keyframes slideover-in { from { transform: translateX(24px); opacity: 0.6; } to { transform: none; opacity: 1; } }
+.slideover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.slideover-body { flex: 1; overflow-y: auto; padding: 18px; }
+.slideover-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--border);
+}
+.slideover-grid { display: grid; grid-template-columns: 300px 1fr; gap: 16px; align-items: start; }
+
+/* Segmented "start with" control --------------------------------------------- */
+.segmented {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  background: var(--bg-page);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.seg {
+  padding: 6px 14px;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.seg.on { background: var(--accent); color: var(--on-accent); }
+
+/* Source picker (template / duplicate) + preview ----------------------------- */
+.pick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 420px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 6px;
+}
+.pick-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.pick-item:hover { background: var(--bg-hover); }
+.pick-item.on { border-color: var(--accent); background: var(--accent-50); }
+.preview-pane {
+  padding: 12px 14px;
+  background: var(--bg-page);
+  border: 1px solid var(--border-soft, var(--border));
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.import-drop {
+  padding: 16px;
+  border: 1.5px dashed var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-page);
+}
+
+/* Collapsed classification bar (Content tab) --------------------------------- */
+.classification { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg); }
+.classification-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+.class-chips { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.class-chip {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-50);
+  color: var(--accent-600);
+  border: 1px solid var(--accent-100);
+}
+.classification-edit { padding: 0 14px 14px; border-top: 1px solid var(--border-soft, var(--border)); }
+
+/* Outline-red delete button for the detail header ---------------------------- */
+.btn.btn-outline-danger {
+  background: none;
+  border: 1px solid var(--red, #dc2626);
+  color: var(--red, #dc2626);
+}
+.btn.btn-outline-danger:hover:not(:disabled) { background: var(--red-bg, rgba(220, 38, 38, 0.08)); }

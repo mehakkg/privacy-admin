@@ -160,3 +160,62 @@ export function regionLanguageGaps(regions: string[], variantLangs: string[]): R
 /** State-level region codes (everything except the "all India" umbrella). */
 export const STATE_REGIONS = REGIONS.filter((r) => r.code !== "IN");
 export const ALL_INDIA = "IN";
+
+// ---------------------------------------------------------------------------
+// Starter templates for the creation panel. Each ships Rule 3-shaped content
+// (the three links plus itemisation/purpose scaffolding) so a notice created
+// from one starts far closer to publishable than a blank draft does.
+// ---------------------------------------------------------------------------
+
+export interface NoticeTemplate {
+  id: string;
+  name: string;
+  description: string;
+  suggestedCategory: string;
+  content: string;
+}
+
+const LINKS =
+  "You may withdraw consent at any time: https://example.in/consent/withdraw. " +
+  "Exercise your rights (access, correct, erase, nominate): https://example.in/rights. " +
+  "Complain to the Data Protection Board: https://example.in/grievance/board.";
+
+export const NOTICE_TEMPLATES: NoticeTemplate[] = [
+  {
+    id: "tpl_privacy",
+    name: "Customer privacy notice",
+    description: "General-purpose s.5 notice covering identity, contact, KYC and transaction data.",
+    suggestedCategory: "kyc",
+    content:
+      "We collect and process the following personal data — identity, contact, KYC and " +
+      "transaction records — to open and service your accounts, meet our regulatory " +
+      "obligations, and prevent fraud. " + LINKS,
+  },
+  {
+    id: "tpl_cookie",
+    name: "Cookie notice",
+    description: "Behavioural analytics and cookie disclosure for web properties.",
+    suggestedCategory: "behavioural",
+    content:
+      "This site uses cookies for behavioural analytics to improve the service. We collect " +
+      "device and usage data. " + LINKS,
+  },
+  {
+    id: "tpl_marketing",
+    name: "Marketing consent notice",
+    description: "Opt-in notice for marketing communications, consent-first.",
+    suggestedCategory: "marketing",
+    content:
+      "We would like to send you marketing communications about our products, using your " +
+      "contact details and marketing preferences. This is entirely optional. " + LINKS,
+  },
+  {
+    id: "tpl_employee",
+    name: "Employee data notice",
+    description: "Processing notice for employee identity, contact and payroll data.",
+    suggestedCategory: "identity",
+    content:
+      "We process your identity, contact and payroll data to administer your employment, " +
+      "meet statutory obligations, and operate benefits. " + LINKS,
+  },
+];

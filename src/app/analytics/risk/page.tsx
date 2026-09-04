@@ -70,7 +70,7 @@ export default async function RiskDashboardPage({
       ((r.slaDeadline && r.slaDeadline.getTime() < now) || blockedRequestIds.has(r.id)),
   );
   const lastRequestUpdate = requests.reduce<Date | null>(
-    (acc, r) => (!acc || r.updatedAt > acc ? r.updatedAt : acc),
+    (acc, r) => (!acc || r.receivedAt > acc ? r.receivedAt : acc),
     null,
   );
 

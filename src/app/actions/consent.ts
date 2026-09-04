@@ -45,6 +45,74 @@ export async function createNoticeAction(
   );
 }
 
+export interface CreateNoticeInput {
+  mode: "blank" | "template" | "duplicate" | "import";
+  name: string;
+  fiduciaryId: string;
+  dataCategory: string;
+  purposeTagId: string;
+  /** Content for blank/template/import. For duplicate, the source's content is copied. */
+  content?: string;
+  /** Source notice id for the duplicate path. */
+  sourceId?: string;
+}
+
+/**
+ * Creation with classification captured up front — the notice lands already
+ * populated (Fiduciary, Category, Purpose, and the chosen starting content), so
+ * Admin goes straight to writing rather than into an empty shell. Returns the
+ * new id so the caller can route directly into Content & Versions.
+ */
+export async function createNoticeFullAction(
+  input: CreateNoticeInput,
+): Promise<ActionResult & { id?: string }> {
+  const { actor } = await getSession();
+  if (!input.name.trim()) return { ok: false, error: "A title is required.", errorKind: "ValidationError" };
+  if (!input.fiduciaryId) return { ok: false, error: "Select a Fiduciary.", errorKind: "ValidationError" };
+  if (!input.dataCategory) return { ok: false, error: "Select a Data Category.", errorKind: "ValidationError" };
+  if (!input.purposeTagId) return { ok: false, error: "Select a Purpose.", errorKind: "ValidationError" };
+
+  try {
+    let content = input.content ?? "";
+    let rule3ManualJson = "{}";
+    if (input.mode === "duplicate" && input.sourceId) {
+      const src = await db.notice.findUnique({ where: { id: input.sourceId } });
+      if (!src) return { ok: false, error: "The notice to duplicate no longer exists.", errorKind: "NotFoundError" };
+      content = src.content;
+      rule3ManualJson = src.rule3ManualJson;
+    }
+    const origin = input.mode === "blank" ? "scratch" : input.mode;
+    const created = await audited(
+      {
+        actor,
+        action: "notice.created",
+        targetType: "Notice",
+        targetId: input.name.trim(),
+        payload: { mode: input.mode, fiduciaryId: input.fiduciaryId, dataCategory: input.dataCategory, purposeTagId: input.purposeTagId },
+      },
+      (tx: TxClient) =>
+        tx.notice.create({
+          data: {
+            name: input.name.trim(),
+            status: "draft",
+            origin: origin === "import" ? "import" : origin === "template" ? "template" : "scratch",
+            content,
+            currentVersion: "v0.1",
+            fiduciaryId: input.fiduciaryId,
+            dataCategory: input.dataCategory,
+            purposeTagId: input.purposeTagId,
+            rule3ManualJson,
+          },
+        }),
+    );
+    revalidatePath("/consent/notices", "layout");
+    return { ok: true, id: (created as { id: string }).id };
+  } catch (error) {
+    const e = error as Error;
+    return { ok: false, error: e.message, errorKind: e.name };
+  }
+}
+
 export async function saveNoticeContentAction(
   noticeId: string,
   content: string,
