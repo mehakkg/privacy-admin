@@ -1917,3 +1917,34 @@ tr.cross-entity > td {
 .sidebar[data-rail="1"] .sidebar-logo { padding: 0; justify-content: center; }
 /* Keep the collapsed rail's icons centered despite the general row padding. */
 .sidebar-nav.rail .sidebar-item { padding: 8px 0; justify-content: center; gap: 0; }
+
+/* ---------------------------------------------------------------------------
+   Dark left navigation — a permanent navy rail (independent of the app's
+   light/dark theme), matching the production console. Every sidebar element
+   recolours from this scoped token set, so icons, labels, hover and the
+   blue-filled active state stay consistent across all sections.
+   --------------------------------------------------------------------------- */
+.sidebar {
+  --bg-sidebar: #0e1b2d;
+  --text: #e8eef7;          /* logo name, hovered text */
+  --text-2: #c2cddc;        /* item labels */
+  --text-3: #94a2b8;        /* icons, sub-items */
+  --text-4: #647388;        /* section labels, sub-headings, collapse */
+  --bg-hover: rgba(255, 255, 255, 0.07);
+  --accent-50: #2563eb;     /* active fill */
+  --accent-600: #ffffff;    /* active text + icon */
+  --border: #1d2c44;
+  --border-soft: #1b2840;
+  background: var(--bg-sidebar);
+}
+/* The sub-nav guide line reads better a touch lighter than the row borders. */
+.sidebar .sidebar-subnav { border-left-color: #24344f; }
+/* Rail tooltip and flyout are popovers — keep them dark with light text, not
+   the light-token surfaces that would be invisible against light content. */
+.sidebar .rail-tip { background: #1e293b; color: #ffffff; }
+.sidebar .rail-flyout {
+  background: #12233b;
+  border-color: #26374f;
+}
+.sidebar .rail-flyout .sidebar-subitem { color: #c2cddc; }
+.sidebar .rail-flyout .sidebar-subitem:hover { background: rgba(255, 255, 255, 0.07); color: #ffffff; }
