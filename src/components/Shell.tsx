@@ -63,10 +63,8 @@ function navGroups(openRequests: number): NavEntry[] {
       // before reviewing it. Everything under Review & Classify is downstream
       // of at least one source existing.
       children: [
-        { heading: "Add data" },
         { href: "/discovery/sources", label: "Sources", ready: true },
         { href: "/discovery/import", label: "Add processing activity", ready: true },
-        { heading: "Review & classify" },
         // Ordered by dependency: orient (Overview), surface what's genuinely
         // new (Triage), decide (Classification review), then consult the record
         // it produces (Data inventory). Hygiene and generated output come last.
@@ -88,10 +86,8 @@ function navGroups(openRequests: number): NavEntry[] {
       // Notices leads because the law sequences it that way, not for convenience.
       // Consent Platform is the infrastructure the capture channels plug into.
       children: [
-        { heading: "Foundation" },
         { href: "/consent/notices", label: "Notices", ready: true },
         { href: "/consent/platform", label: "Consent platform", ready: true },
-        { heading: "Capture channels" },
         { href: "/consent/cookies", label: "Cookie consent", ready: true },
         { href: "/consent/assisted", label: "Assisted collection", ready: true },
       ],

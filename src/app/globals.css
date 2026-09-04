@@ -1937,6 +1937,9 @@ tr.cross-entity > td {
   --border-soft: #1b2840;
   background: var(--bg-sidebar);
 }
+/* Logo wordmark: inherits dark body text otherwise, invisible on the navy rail. */
+.sidebar .sidebar-logo-name { color: var(--text); }
+.sidebar .sidebar-logo-sub { color: var(--text-4); }
 /* The sub-nav guide line reads better a touch lighter than the row borders. */
 .sidebar .sidebar-subnav { border-left-color: #24344f; }
 /* Rail tooltip and flyout are popovers — keep them dark with light text, not
