@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
-import { Card, PageHead, Pill, Stat, formatDateTime } from "@/components/ui";
-import { analyseRole } from "@/lib/guards/baselineGate";
+import { Card, InfoTip, PageHead, Pill, Stat, formatDateTime } from "@/components/ui";
+import { decodeList } from "@/lib/codec/json";
 import { ROLE_LABEL, type ActorRole } from "@/lib/domain";
 
 export const dynamic = "force-dynamic";
@@ -32,22 +32,47 @@ interface Alert {
 export default async function DashboardPage() {
   const now = Date.now();
 
-  const [requests, exceptions, escalations, processors, roles, recent] = await Promise.all([
-    db.dataPrincipalRequest.findMany(),
-    db.retentionException.findMany({ where: { reviewStatus: "unreviewed" } }),
-    db.escalation.findMany({ where: { status: "open" } }),
-    db.dataProcessor.findMany(),
-    db.rBACRole.findMany(),
-    db.auditLogEntry.findMany({ orderBy: { seq: "desc" }, take: 8 }),
-  ]);
+  const [requests, exceptions, escalations, processors, recent, classifiedFields, activities, locations] =
+    await Promise.all([
+      db.dataPrincipalRequest.findMany(),
+      db.retentionException.findMany({ where: { reviewStatus: "unreviewed" } }),
+      db.escalation.findMany({ where: { status: "open" } }),
+      db.dataProcessor.findMany(),
+      db.auditLogEntry.findMany({ orderBy: { seq: "desc" }, take: 8 }),
+      db.classifiedField.findMany(),
+      db.processingActivity.findMany({ select: { purposeTagId: true } }),
+      db.dataLocation.findMany({ select: { dataCategoriesJson: true, principalId: true, stale: true } }),
+    ]);
 
   const blockedIds = new Set(exceptions.map((e) => e.requestId).filter(Boolean) as string[]);
   const pastDeadline = requests.filter(
     (r) => !CLOSED.has(r.status) && r.slaDeadline && r.slaDeadline.getTime() < now,
   );
   const unreachable = processors.filter((p) => p.healthStatus === "unreachable");
-  const drift = roles.map(analyseRole).filter((a) => a.severity === "significant");
   const blocked = requests.filter((r) => !CLOSED.has(r.status) && blockedIds.has(r.id));
+
+  // --- RoPA drift & violations ----------------------------------------------
+  // Reality (what DLP classified) checked against the register (what Processing
+  // Activities claim is processed). Two disagreements: a field reclassified
+  // since the last scan, and processing whose purpose no RoPA record carries.
+  const personalFields = classifiedFields.filter((f) => f.category);
+  const ropaPurposes = new Set(activities.map((a) => a.purposeTagId).filter(Boolean) as string[]);
+  const reclassified = classifiedFields.filter((f) => f.driftFlag);
+  const unregistered = personalFields.filter((f) => !f.purposeTagId || !ropaPurposes.has(f.purposeTagId));
+  const driftIds = new Set<string>([...reclassified.map((f) => f.id), ...unregistered.map((f) => f.id)]);
+  const driftTotal = driftIds.size;
+
+  // --- Data Principal linkage -----------------------------------------------
+  // A classified personal-data field is "linked" once its category has been
+  // located to at least one identified Data Principal. Heuristic by category
+  // until the field-level linkage in Data Inventory is built.
+  const linkedCategories = new Set<string>();
+  for (const l of locations) for (const c of decodeList(l.dataCategoriesJson)) linkedCategories.add(c);
+  const linkedFields = personalFields.filter((f) => f.category && linkedCategories.has(f.category)).length;
+  const unlinkedFields = personalFields.length - linkedFields;
+  const identifiedPrincipals = new Set(locations.map((l) => l.principalId)).size;
+  const staleLocations = locations.filter((l) => l.stale).length;
+  const linkedPct = personalFields.length ? Math.round((linkedFields / personalFields.length) * 100) : 0;
 
   const alerts: Alert[] = [];
   if (pastDeadline.length)
@@ -78,12 +103,12 @@ export default async function DashboardPage() {
       href: "/requests",
       cta: "Open Requests",
     });
-  if (drift.length)
+  if (driftTotal)
     alerts.push({
       severity: "yellow",
-      text: `${drift.length} role${drift.length === 1 ? "" : "s"} with significant RBAC drift`,
-      href: "/access/roles?drift=significant",
-      cta: "RBAC Matrix",
+      text: `${driftTotal} field${driftTotal === 1 ? "" : "s"} drift from the RoPA register`,
+      href: "/discovery/ropa",
+      cta: "Open ROPA",
     });
 
   return (
@@ -103,6 +128,65 @@ export default async function DashboardPage() {
         <Stat label="Past deadline" value={pastDeadline.length} tone={pastDeadline.length ? "red" : undefined} />
         <Stat label="Open escalations" value={escalations.length} tone={escalations.length ? "yellow" : undefined} />
         <Stat label="Processors unreachable" value={unreachable.length} tone={unreachable.length ? "red" : undefined} />
+      </div>
+
+      {/* The two dashboard widgets called for by the navigation structure. */}
+      <div className="grid-2" style={{ marginBottom: 16 }}>
+        <Card
+          title={
+            <span className="row" style={{ gap: 6 }}>
+              RoPA drift &amp; violations
+              <InfoTip align="left" text="Reality (what DLP classified) checked against the register (what Processing Activities claim). A gap means the RoPA is out of date, not just that a scan changed." />
+            </span>
+          }
+          actions={<Link href="/discovery/ropa" className="btn xs ghost">Open ROPA →</Link>}
+        >
+          <div className="row" style={{ gap: 20, alignItems: "baseline" }}>
+            <div>
+              <div className="stat-value" style={{ fontSize: 30, color: driftTotal ? "var(--yellow)" : "var(--green)" }}>{driftTotal}</div>
+              <div className="cell-sub">field{driftTotal === 1 ? "" : "s"} drift from the register</div>
+            </div>
+          </div>
+          <div className="stack" style={{ gap: 4, marginTop: 10 }}>
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <span className="cell-sub">Reclassified since last scan</span>
+              <span className="cell-primary">{reclassified.length}</span>
+            </div>
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <span className="cell-sub">Processing not in any RoPA record</span>
+              <span className="cell-primary">{unregistered.length}</span>
+            </div>
+          </div>
+          {driftTotal === 0 && <p className="cell-sub" style={{ margin: "10px 0 0" }}>The register matches what was scanned.</p>}
+        </Card>
+
+        <Card
+          title={
+            <span className="row" style={{ gap: 6 }}>
+              Data Principal linkage
+              <InfoTip align="left" text="A classified personal-data field is linked once its data has been located to an identified Data Principal. The field-level linkage lives in Data Inventory." />
+            </span>
+          }
+          actions={<Link href="/discovery/inventory" className="btn xs ghost">Open Data inventory →</Link>}
+        >
+          <div className="row" style={{ gap: 24, alignItems: "baseline" }}>
+            <div>
+              <div className="stat-value" style={{ fontSize: 30, color: "var(--green)" }}>{linkedFields}</div>
+              <div className="cell-sub">linked</div>
+            </div>
+            <div>
+              <div className="stat-value" style={{ fontSize: 30, color: unlinkedFields ? "var(--yellow)" : undefined }}>{unlinkedFields}</div>
+              <div className="cell-sub">unlinked</div>
+            </div>
+          </div>
+          <div className="linkbar" style={{ marginTop: 12 }}>
+            <div className="linkbar-fill" style={{ width: `${linkedPct}%` }} />
+          </div>
+          <div className="row" style={{ justifyContent: "space-between", marginTop: 8 }}>
+            <span className="cell-sub">{identifiedPrincipals} identified principal{identifiedPrincipals === 1 ? "" : "s"} mapped</span>
+            {staleLocations > 0 && <span className="cell-sub">{staleLocations} location{staleLocations === 1 ? "" : "s"} stale</span>}
+          </div>
+        </Card>
       </div>
 
       <div className="grid-2">
