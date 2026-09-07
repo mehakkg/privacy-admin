@@ -21,60 +21,31 @@ import { SidebarNav, type NavEntry } from "@/components/SidebarNav";
 function navGroups(openRequests: number): NavEntry[] {
   return [
     // The permanent landing surface — a summary, not a work queue, so it sits
-    // above the three macro-groups rather than inside Operate.
+    // above the six sections as its own item.
     {
       key: "dashboard",
       label: "Dashboard",
       href: "/dashboard",
       ready: true,
     },
-    // Daily, deadline-bound work.
-    { section: "Operate" },
+
+    // Six sections below Dashboard. Each is a page-group; anything deeper than a
+    // page is a tab INSIDE that page, never a third sidebar level. Fiduciary
+    // management lives as a tab within Processing Activities (its richest detail
+    // — Linked Users, SDF status, hierarchy — belongs there); every other screen
+    // that needs a Fiduciary reference pulls from that same registry.
     {
-      key: "requests",
-      label: "Requests",
-      href: "/requests",
+      key: "data-map",
+      label: "Data Map",
+      href: "/discovery/sources",
       ready: true,
-      badge: openRequests,
-    },
-    {
-      key: "escalations",
-      label: "Escalations",
-      href: "/escalations",
-      ready: true,
-    },
-    // Setup and ongoing technical maintenance.
-    { section: "Configure" },
-    // Fiduciaries leads: the dependency chain is Fiduciary → Processing Activity
-    // → DPIA, so the Fiduciary record has to exist first, structurally. Promoted
-    // and renamed from the old Entity Configuration.
-    {
-      key: "fiduciaries",
-      label: "Fiduciaries",
-      href: "/fiduciaries",
-      ready: true,
-    },
-    {
-      key: "discovery",
-      label: "Data Discovery & Classification",
-      href: "/discovery",
-      ready: true,
-      // Two groups, in the order the work actually happens: connect data
-      // before reviewing it. Everything under Review & Classify is downstream
-      // of at least one source existing.
       children: [
         { href: "/discovery/sources", label: "Sources", ready: true },
-        { href: "/discovery/import", label: "Add processing activity", ready: true },
-        // Ordered by dependency: orient (Overview), surface what's genuinely
-        // new (Triage), decide (Classification review), then consult the record
-        // it produces (Data inventory). Hygiene and generated output come last.
-        { href: "/discovery", label: "Overview", ready: true },
-        { href: "/discovery/triage", label: "Triage queue", ready: true },
-        { href: "/discovery/review", label: "Classification review", ready: true },
+        { href: "/discovery/import", label: "Processing activities", ready: true },
         { href: "/discovery/inventory", label: "Data inventory", ready: true },
-        { href: "/discovery/duplicates", label: "Duplicates", ready: true },
-        { href: "/discovery/rot", label: "ROT candidates", ready: true },
-        { href: "/discovery/ropa", label: "ROPA recommendations", ready: true },
+        { href: "/discovery/triage", label: "Review queue", ready: true },
+        { href: "/data-flow/map", label: "Data flow", ready: true },
+        { href: "/discovery/ropa", label: "ROPA", ready: true },
       ],
     },
     {
@@ -82,122 +53,63 @@ function navGroups(openRequests: number): NavEntry[] {
       label: "Consent & Notices",
       href: "/consent/notices",
       ready: true,
-      // DPDP Rule 3 requires a notice to precede or accompany a consent request:
-      // Notices leads because the law sequences it that way, not for convenience.
-      // Consent Platform is the infrastructure the capture channels plug into.
+      // Notices leads because DPDP Rule 3 sequences a notice before consent.
       children: [
         { href: "/consent/notices", label: "Notices", ready: true },
-        { href: "/consent/platform", label: "Consent platform", ready: true },
-        { href: "/consent/cookies", label: "Cookie consent", ready: true },
-        { href: "/consent/assisted", label: "Assisted collection", ready: true },
+        { href: "/consent/platform", label: "Consent collection", ready: true },
+        { href: "/consent/records", label: "Consent records", ready: true },
       ],
     },
     {
-      key: "protection",
-      label: "Data Flow & Protection Rules",
-      href: "/data-flow/map",
+      key: "rights",
+      label: "Rights Requests",
+      href: "/requests",
       ready: true,
-      // Entity configuration was promoted out to the top-level Fiduciaries
-      // section. Flow Map shows what exists, Protection Rules acts on it, Data
-      // Integrity verifies it last.
+      badge: openRequests,
       children: [
-        { href: "/data-flow/map", label: "Flow map", ready: true },
+        { href: "/requests", label: "Requests", ready: true },
+        { href: "/escalations", label: "Escalations", ready: true },
+        { href: "/requests/sla", label: "SLA & routing", ready: true },
+      ],
+    },
+    {
+      key: "risk",
+      label: "Risk & Compliance",
+      href: "/analytics/risk",
+      ready: true,
+      children: [
+        { href: "/analytics/risk", label: "Risk dashboard", ready: true },
         { href: "/data-flow/protection-rules", label: "Protection rules", ready: true },
-        { href: "/data-flow/integrity", label: "Data integrity", ready: true },
+        { href: "/risk/access-insights", label: "Access insights", ready: true },
+        { href: "/risk/assessments", label: "Assessments", ready: true },
+        { href: "/audit", label: "Audit & evidence", ready: true },
+        { href: "/analytics/reports", label: "Reports", ready: true },
       ],
     },
-    {
-      key: "access",
-      label: "Identity & Access",
-      href: "/access/roles",
-      ready: true,
-      // RBAC Matrix defines the role templates Provisioning consumes — roles
-      // exist before granting. Provisioning precedes Deprovisioning in the access
-      // lifecycle; Dormant Accounts is maintenance, relevant only later.
-      children: [
-        { href: "/access/roles", label: "RBAC matrix", ready: true },
-        { href: "/access/provisioning", label: "Provisioning", ready: true },
-        { href: "/access/deprovisioning", label: "Deprovisioning", ready: true },
-        { href: "/access/dormant", label: "Dormant accounts", ready: true },
-      ],
-    },
-    {
-      key: "integrations",
-      label: "Integrations",
-      href: "/integrations/connected-systems",
-      ready: true,
-      children: [
-        { href: "/integrations/connected-systems", label: "Connected systems", ready: true },
-        { href: "/integrations/data-processors", label: "Data processors", ready: true },
-        { href: "/integrations/health-monitoring", label: "Health monitoring", ready: true },
-      ],
-    },
-    {
-      key: "notifications",
-      label: "Notifications",
-      href: "/notifications/channels",
-      ready: true,
-      children: [
-        { href: "/notifications/channels", label: "Channels", ready: true },
-        { href: "/notifications/templates", label: "Templates", ready: true },
-        { href: "/notifications/routing", label: "Routing", ready: true },
-      ],
-    },
-    {
-      key: "platform",
-      label: "Platform Settings",
-      href: "/platform/sign-in",
-      ready: true,
-      // Sign-in methods (how anyone gets in at all) is most security-critical,
-      // then API keys (an extension of who/what can access), then Branding, last
-      // as the purely cosmetic item.
-      children: [
-        { href: "/platform/sign-in", label: "Sign-in methods", ready: true },
-        { href: "/platform/api-keys", label: "API keys", ready: true },
-        { href: "/platform/branding", label: "Branding", ready: true },
-      ],
-    },
-    // Oversight, evidence, reference — pulled from, not executed into. Approved
-    // Policy leads as the rules everything else is measured against; Audit is the
-    // evidence layer; Analytics scores posture against those rules; User Directory
-    // is a standalone lookup, dependent on neither, so it's last.
-    { section: "Govern & Review" },
+
+    // Approved Policy: the one deliberate exception to the six-section rule. It
+    // is referenced constantly across nearly every other section, so it sits at
+    // the top level rather than nested inside one.
     {
       key: "governance",
       label: "Approved Policy",
       href: "/governance",
       ready: true,
     },
+
     {
-      key: "audit",
-      label: "Audit & Compliance",
-      href: "/audit",
+      key: "settings",
+      label: "Settings",
+      href: "/settings/organization",
       ready: true,
-      // Alert-first (Policy Violation Dashboard) → raw detail (Unified Log
-      // Search) → compiled output (Evidence Compiler): orientation, then depth.
+      // Configured once at setup, revisited rarely — so Privacy Roles &
+      // Permissions and Sign-in methods live here, not at the top level.
       children: [
-        { href: "/audit/violations", label: "Policy violation dashboard", ready: true },
-        { href: "/audit", label: "Unified log search", ready: true },
-        { href: "/audit/evidence", label: "Evidence compiler", ready: false },
+        { href: "/settings/organization", label: "Organization", ready: true },
+        { href: "/settings/users", label: "Users & roles", ready: true },
+        { href: "/integrations/connected-systems", label: "Integrations", ready: true },
+        { href: "/notifications/channels", label: "Notifications", ready: true },
       ],
-    },
-    {
-      key: "analytics",
-      label: "Analytics & Reporting",
-      href: "/analytics/risk",
-      ready: true,
-      // Risk dashboard scores posture; Reports is the library of standardized
-      // regulatory deliverables — distinct from Evidence Compiler's ad hoc packages.
-      children: [
-        { href: "/analytics/risk", label: "Risk dashboard", ready: true },
-        { href: "/analytics/reports", label: "Reports", ready: true },
-      ],
-    },
-    {
-      key: "directory",
-      label: "User Directory",
-      href: "/directory",
-      ready: true,
     },
   ];
 }

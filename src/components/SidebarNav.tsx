@@ -13,8 +13,10 @@ import {
   Building2,
   ClipboardCheck,
   FileCheck2,
+  Gauge,
   Inbox,
   LayoutDashboard,
+  Map,
   Plug,
   Rocket,
   ScanSearch,
@@ -39,10 +41,16 @@ import {
 
 const ICONS: Record<string, LucideIcon> = {
   dashboard: LayoutDashboard,
+  "data-map": Map,
+  consent: FileCheck2,
+  rights: Inbox,
+  risk: Gauge,
+  governance: ShieldCheck,
+  settings: Settings,
+  // retained keys still used by individual pages / fallbacks
   fiduciaries: Building2,
   requests: Inbox,
   discovery: ScanSearch,
-  consent: FileCheck2,
   protection: Workflow,
   access: UserCog,
   integrations: Plug,
@@ -51,7 +59,6 @@ const ICONS: Record<string, LucideIcon> = {
   escalations: TriangleAlert,
   audit: ClipboardCheck,
   analytics: BarChart3,
-  governance: ShieldCheck,
   directory: Users,
   onboarding: Rocket,
 };
