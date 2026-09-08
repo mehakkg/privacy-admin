@@ -2340,3 +2340,6 @@ h3.drawer-section.first { margin-top: 0; padding-top: 0; border-top: 0; }
 .related-links { display: flex; gap: 8px; flex-wrap: wrap; }
 .related-link { display: inline-flex; align-items: center; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-page); font-size: 13px; color: var(--text); text-decoration: none; }
 .related-link:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Flagged (undisclosed) disclosure rows — instantly distinct from approved ones */
+.dtable tr.flagged-row, .dtable tr.flagged-row:hover { background: var(--red-bg); }

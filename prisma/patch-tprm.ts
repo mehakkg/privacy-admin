@@ -105,10 +105,46 @@ async function seedAssessments() {
   console.log("patch-tprm: assessments seeded.");
 }
 
+async function seedDisclosures() {
+  if ((await prisma.subProcessorDisclosure.count()) > 0) { console.log("patch-tprm: disclosures present, skipping."); return; }
+  const vendors = await prisma.vendor.findMany({ select: { id: true, name: true } });
+  if (vendors.length === 0) return;
+  const vid = (name: string) => vendors.find((v) => v.name === name)?.id ?? null;
+  const now = Date.now();
+
+  const northgate = vid("Northgate Lending");
+  if (northgate) {
+    const disc = await prisma.subProcessorDisclosure.create({
+      data: { primaryVendorId: northgate, subProcessorName: "CreditCheck Analytics", scope: "Credit scoring data", reason: "Underwriting needs an external credit-scoring model.", piiTypesJson: JSON.stringify(["financial", "transaction"]), status: "held_pending_approval", disclosedAt: d("2026-09-02") },
+    });
+    await prisma.subProcessorDocument.create({ data: { vendorId: northgate, disclosureId: disc.id, name: "CreditCheck Analytics DPA", docType: "dpa" } });
+    // A standing evidence doc expiring soon, to demo the <30-day flag.
+    await prisma.subProcessorDocument.create({ data: { vendorId: northgate, name: "ISO 27001 certificate", docType: "certification", expiresAt: new Date(now + 20 * day) } });
+  }
+
+  const freshdesk = vid("Freshdesk");
+  if (freshdesk) {
+    const disc = await prisma.subProcessorDisclosure.create({
+      data: { primaryVendorId: freshdesk, subProcessorName: "AWS (infra hosting)", scope: "Ticket data storage", piiTypesJson: JSON.stringify(["support", "contact"]), status: "active", disclosedAt: d("2026-04-10"), approvedAt: d("2026-04-14"), approvedBy: "Neha Kapoor" },
+    });
+    await prisma.subProcessorDocument.create({ data: { vendorId: freshdesk, disclosureId: disc.id, name: "AWS SOC 2 Type II", docType: "certification", expiresAt: d("2027-03-01") } });
+  }
+
+  // Detector output: Razorpay's flow map shows a destination matching no disclosure.
+  const razorpay = vid("Razorpay");
+  if (razorpay) {
+    await prisma.subProcessorDisclosure.create({
+      data: { primaryVendorId: razorpay, subProcessorName: "Unregistered endpoint (data-labs.io)", scope: "", piiTypesJson: JSON.stringify(["transaction"]), status: "flagged", detected: true, firstDetectedAt: d("2026-09-05"), flagStatus: "under_investigation" },
+    });
+  }
+  console.log("patch-tprm: disclosures seeded.");
+}
+
 async function main() {
   if (!process.env.DATABASE_URL) { console.log("patch-tprm: no DATABASE_URL, skipping."); return; }
   await seedVendors();
   await seedAssessments();
+  await seedDisclosures();
 }
 
 main()

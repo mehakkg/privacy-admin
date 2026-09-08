@@ -1,7 +1,8 @@
+import Link from "next/link";
 import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
 import { CompactFilterBar } from "@/components/CompactFilterBar";
-import { PageHead, Stat } from "@/components/ui";
+import { Notice, PageHead, Stat } from "@/components/ui";
 import { FlowCanvas, type FlowNode, type FlowEdge } from "@/components/FlowCanvas";
 import { decodeList } from "@/lib/codec/json";
 
@@ -22,12 +23,13 @@ export default async function FlowMapPage({
 }) {
   const params = await searchParams;
 
-  const [nodesRaw, edgesRaw, purposes, processors, entities] = await Promise.all([
+  const [nodesRaw, edgesRaw, purposes, processors, entities, flaggedSubprocessors] = await Promise.all([
     db.dataFlowNode.findMany(),
     db.dataFlowConnection.findMany({ include: { purposeTag: true } }),
     db.purposeTag.findMany({ where: { status: "approved" }, orderBy: { name: "asc" } }),
     db.dataProcessor.findMany(),
     db.entity.findMany(),
+    db.subProcessorDisclosure.count({ where: { detected: true, flagStatus: { not: "resolved" } } }),
   ]);
 
   const procName = new Map(processors.map((p) => [p.id, p.name]));
@@ -79,6 +81,15 @@ export default async function FlowMapPage({
         title="Flow map"
         titleTip="Auto-generated from your connected sources and integrations. Undisclosed connections — detected transfers with no recorded purpose or DPIA — are flagged in red."
       />
+
+      {flaggedSubprocessors > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <Notice tone="danger" title="Undisclosed sub-processor transfer detected">
+            {flaggedSubprocessors} data destination{flaggedSubprocessors === 1 ? "" : "s"} match no registered vendor or approved sub-processor disclosure.{" "}
+            <Link href="/vendor-risk/sub-processor-disclosures/flagged" className="row-link">Review in Vendor Risk →</Link>
+          </Notice>
+        </div>
+      )}
 
       <div className="stat-row" style={{ marginBottom: 16 }}>
         <Stat label="Nodes" value={nodesRaw.length} />

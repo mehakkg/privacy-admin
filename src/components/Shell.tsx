@@ -100,7 +100,7 @@ function navGroups(openRequests: number): NavEntry[] {
       children: [
         { href: "/vendor-risk/register", label: "Vendor register", ready: true },
         { href: "/vendor-risk/assessments", label: "Assessments", ready: true },
-        { href: "/vendor-risk/sub-processors", label: "Sub-processor disclosures", ready: true },
+        { href: "/vendor-risk/sub-processor-disclosures", label: "Sub-processor disclosures", ready: true },
       ],
     },
     {

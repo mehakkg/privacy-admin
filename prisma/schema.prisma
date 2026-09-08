@@ -699,6 +699,67 @@ model Vendor {
 
   purposeMappings VendorPurposeMapping[]
   assessments     VendorAssessment[]
+  subProcessorDisclosures SubProcessorDisclosure[]
+  documents       SubProcessorDocument[]
+}
+
+/// A vendor's disclosure that it wants to bring in its own subcontractor to touch
+/// the Fiduciary's data. The lifecycle is FOUR states, not the usual three: the
+/// extra `held_pending_approval` is a genuine system-enforced block — there is no
+/// processor-side action anywhere that can move a disclosure to `active`; only a
+/// Legal/DPO approval can. `flagged` records are the detector's output: a transfer
+/// seen on the flow map that matches no registered disclosure.
+model SubProcessorDisclosure {
+  id               String @id @default(cuid())
+  primaryVendorId  String
+  subProcessorName String
+  scope            String  @default("")
+  reason           String?
+  /// string[] of PII categories the sub-processor will touch — the fields the
+  /// undisclosed-transfer detector checks a flagged flow against.
+  piiTypesJson     String  @default("[]")
+
+  /// draft | pending_disclosure | held_pending_approval | active | flagged
+  status String @default("draft")
+
+  disclosedAt    DateTime?
+  approvedAt     DateTime?
+  approvedBy     String?
+  rejectedReason String?
+
+  // Detection (Screen 3.4) — set on records the detector raised, not the vendor.
+  detected        Boolean   @default(false)
+  firstDetectedAt DateTime?
+  /// under_investigation | routed_to_legal | resolved — the flag's routing state.
+  flagStatus      String?
+
+  createdAt DateTime @default(now())
+
+  primaryVendor Vendor                 @relation(fields: [primaryVendorId], references: [id])
+  documents     SubProcessorDocument[]
+
+  @@index([primaryVendorId])
+  @@index([status])
+}
+
+/// A compliance document. Attached to a disclosure (Screen 3.2 Step 3) AND, via
+/// the same records, populating the vendor's standing Evidence Package Store
+/// (Screen 3.6) — one upload mechanism, two surfaces, never two.
+model SubProcessorDocument {
+  id           String  @id @default(cuid())
+  vendorId     String
+  disclosureId String?
+  name         String
+  /// certification | dpa | security | other
+  docType   String @default("other")
+  expiresAt DateTime?
+  uploadedAt DateTime @default(now())
+
+  vendor     Vendor                  @relation(fields: [vendorId], references: [id])
+  disclosure SubProcessorDisclosure? @relation(fields: [disclosureId], references: [id])
+
+  @@index([vendorId])
+  @@index([disclosureId])
 }
 
 /// A vendor's risk-assessment lifecycle: baseline (by category) → questionnaire
