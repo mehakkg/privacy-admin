@@ -58,6 +58,10 @@ function navGroups(openRequests: number): NavEntry[] {
         { href: "/consent/notices", label: "Notices", ready: true },
         { href: "/consent/platform", label: "Consent collection", ready: true },
         { href: "/consent/records", label: "Consent records", ready: true },
+        // Cookie consent has a materially different feature set (script-blocking,
+        // banner config, geo/language) from general consent capture, so it is its
+        // own sub-tab rather than folded into Consent collection.
+        { href: "/consent/cookies", label: "Cookie consent", ready: true },
       ],
     },
     {
@@ -70,6 +74,33 @@ function navGroups(openRequests: number): NavEntry[] {
         { href: "/requests", label: "Requests", ready: true },
         { href: "/escalations", label: "Escalations", ready: true },
         { href: "/requests/sla", label: "SLA & routing", ready: true },
+      ],
+    },
+    // Breach Management and Vendor Risk are TOP-LEVEL, not nested under Risk &
+    // Compliance: each carries its own statutory clock and penalty exposure
+    // (DPDP s.8(5)/(6), the 72-hour Board-notification deadline), so burying them
+    // a level deeper would undersell their urgency. They sit in the OPERATE tier,
+    // after Rights Requests and before the GOVERN & REVIEW tier.
+    {
+      key: "breach",
+      label: "Breach Management",
+      href: "/breach/incidents",
+      ready: true,
+      children: [
+        { href: "/breach/incidents", label: "Incidents", ready: true },
+        { href: "/breach/investigation", label: "Investigation", ready: true },
+        { href: "/breach/notifications", label: "Notifications & Board reporting", ready: true },
+      ],
+    },
+    {
+      key: "tprm",
+      label: "Vendor Risk (TPRM)",
+      href: "/vendor-risk/register",
+      ready: true,
+      children: [
+        { href: "/vendor-risk/register", label: "Vendor register", ready: true },
+        { href: "/vendor-risk/assessments", label: "Assessments", ready: true },
+        { href: "/vendor-risk/sub-processors", label: "Sub-processor disclosures", ready: true },
       ],
     },
     {
