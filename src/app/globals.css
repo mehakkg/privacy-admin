@@ -2228,3 +2228,33 @@ tr.cross-entity > td {
   border-radius: 999px;
   transition: width 0.3s ease;
 }
+
+/* ===========================================================================
+   DASHBOARD — widget catalog, My Dashboard grid, widget library
+   =========================================================================== */
+.myd-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.myd-cell.full { grid-column: 1 / -1; }
+.myd-cell { cursor: grab; }
+.myd-cell:active { cursor: grabbing; }
+.myd-grip { color: var(--text-4); cursor: grab; }
+@media (max-width: 720px) { .myd-grid { grid-template-columns: 1fr; } .myd-cell.full { grid-column: auto; } }
+
+/* Horizontal metric bars (breakdowns) */
+.wbar { flex: 1; height: 8px; border-radius: 999px; background: var(--bg-muted, var(--bg-page)); overflow: hidden; }
+.wbar-fill { display: block; height: 100%; border-radius: 999px; }
+
+/* Category filter chips (library panel) */
+.chip {
+  padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--bg); font: inherit; font-size: 12px; color: var(--text-2); cursor: pointer;
+}
+.chip.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+
+/* Library rows with live preview thumbnails */
+.lib-row { display: flex; align-items: center; gap: 12px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-md); }
+.lib-thumb {
+  width: 120px; flex-shrink: 0; height: 64px; overflow: hidden; padding: 8px;
+  background: var(--bg-page); border: 1px solid var(--border-soft, var(--border)); border-radius: var(--radius);
+  transform: scale(0.92); transform-origin: left center; pointer-events: none;
+}
+.lib-thumb .stat-value { font-size: 18px !important; }

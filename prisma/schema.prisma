@@ -626,6 +626,18 @@ model NoticeVariant {
   @@unique([noticeId, language])
 }
 
+/// A saved "My Dashboard" layout. Keyed by ROLE, not by person: customization
+/// reuses the "Acting as" switcher, so a DPO and an Admin get different default
+/// dashboards, matching how per-role configuration works everywhere else here.
+/// `widgetsJson` is a JSON array of { id, size } — the Tier-2/Tier-3 widgets the
+/// role has added, in order. Tier-1 widgets are never stored: they are pinned on
+/// Operations regardless and are not customization candidates.
+model DashboardLayout {
+  role        String   @id
+  widgetsJson String   @default("[]")
+  updatedAt   DateTime @updatedAt
+}
+
 /// A third-party script mapped to a cookie category. The category and its
 /// default state are policy-locked; the mapping is the one thing Admin edits.
 model CookieScript {
