@@ -698,6 +698,39 @@ model Vendor {
   createdAt DateTime @default(now())
 
   purposeMappings VendorPurposeMapping[]
+  assessments     VendorAssessment[]
+}
+
+/// A vendor's risk-assessment lifecycle: baseline (by category) → questionnaire
+/// assigned → vendor responds → Legal reviews and sets the FINAL classification,
+/// written back to the Vendor. The baseline is a starting suggestion for the
+/// questionnaire's rigor, never a substitute for the human review.
+model VendorAssessment {
+  id           String   @id @default(cuid())
+  vendorId     String
+  templateName String
+  assignedAt   DateTime @default(now())
+
+  /// not_started | in_progress | submitted — the vendor's side.
+  vendorStatus String @default("not_started")
+  /// pending | partial | verified — Legal's three-state review.
+  legalReviewStatus String @default("pending")
+
+  /// low | medium | high | critical — the final classification, once verified.
+  classification       String?
+  classificationReason String?
+  /// The system-suggested baseline captured at assignment time.
+  baselineRating String
+
+  submittedAt DateTime?
+  /// The vendor's answers: { questionId: answerText }.
+  responseJson String @default("{}")
+
+  createdAt DateTime @default(now())
+
+  vendor Vendor @relation(fields: [vendorId], references: [id])
+
+  @@index([vendorId])
 }
 
 /// One Purpose → PII-types → processing-activity row for a vendor. This is the
