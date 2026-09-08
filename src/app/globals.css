@@ -2258,3 +2258,23 @@ tr.cross-entity > td {
   transform: scale(0.92); transform-origin: left center; pointer-events: none;
 }
 .lib-thumb .stat-value { font-size: 18px !important; }
+
+/* ===========================================================================
+   DATA MAP — Processing Activities nested (grouped-row) table
+   =========================================================================== */
+.dtable td.group-cell {
+  vertical-align: top;
+  background: var(--bg-page);
+  border-right: 1px solid var(--border);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.lock-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-3);
+  font-size: 13px;
+}
+.lock-inline svg { color: var(--text-4); }
+.dtable tr.add-row td { background: var(--bg-page); }

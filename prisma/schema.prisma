@@ -200,6 +200,7 @@ model DataProcessor {
 
   locations  DataLocation[]
   executions ExecutionRecord[]
+  activityElements ActivityElement[]
 }
 
 /// Discovered location of a principal's data. Exactly one of systemId or
@@ -468,6 +469,7 @@ model PurposeTag {
   consentRecords     ConsentRecord[]
   dataFlowConnections DataFlowConnection[]
   notices            Notice[] @relation("NoticePurpose")
+  activityElements   ActivityElement[] @relation("ElementPurpose")
 }
 
 /// A record of processing activity, entered by hand for data no scanner can
@@ -492,8 +494,37 @@ model ProcessingActivity {
   origin    String   @default("manual")
 
   purposeTag PurposeTag? @relation(fields: [purposeTagId], references: [id])
+  elements   ActivityElement[]
 
   @@index([purposeTagId])
+}
+
+/// One PII element within a Processing Activity. Purpose and Processor attach
+/// HERE, at the element level — not once per activity — because "Loan
+/// Application" legitimately uses PAN for KYC (no processor) and Phone for
+/// marketing (an SMS processor) at the same time. Admin never sets Purpose
+/// directly: an unassigned element routes a bundled Purpose+Processor request to
+/// the DPO (requestState = requested) rather than a free-text create.
+model ActivityElement {
+  id          String  @id @default(cuid())
+  activityId  String
+  elementName String
+  /// FK to the DPO-approved taxonomy (policy-locked). Null = unassigned.
+  purposeTagId String?
+  /// The processor this element's data is shared with. Null = internal only.
+  processorId  String?
+  /// customer | employee | vendor | minor
+  subjectType String?
+  /// none | requested — a bundled Purpose+Processor request is pending DPO.
+  requestState String @default("none")
+
+  createdAt DateTime @default(now())
+
+  activity   ProcessingActivity @relation(fields: [activityId], references: [id])
+  purposeTag PurposeTag?        @relation("ElementPurpose", fields: [purposeTagId], references: [id])
+  processor  DataProcessor?     @relation(fields: [processorId], references: [id])
+
+  @@index([activityId])
 }
 
 model NoticeVersion {

@@ -66,5 +66,7 @@ if (!POOLED) {
     // Idempotent: brings existing notice rows up to the revised data shape
     // (Fiduciary / Category / Purpose / Rule 3) on databases seeded before it.
     run("Backfilling notice metadata", "npx tsx prisma/patch-notices.ts", POOLED);
+    // Idempotent: seeds the element-level Data Map demo (Loan Application).
+    run("Seeding Data Map demo", "npx tsx prisma/patch-datamap.ts", POOLED);
   }
 }
