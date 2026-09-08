@@ -2282,3 +2282,61 @@ tr.cross-entity > td {
 /* Clickable table rows (List + Detail Drawer pattern) */
 .dtable tr.clickable { cursor: pointer; }
 .dtable tr.clickable:hover { background: var(--bg-row-hover); }
+
+/* ===========================================================================
+   TPRM — Assign wizard (two-column, circular stepper) + Vendor drawer polish
+   =========================================================================== */
+
+/* Two-column wizard */
+.wiz-grid { display: grid; grid-template-columns: 1fr minmax(230px, 36%); gap: 20px; align-items: start; }
+@media (max-width: 760px) { .wiz-grid { grid-template-columns: 1fr; } }
+
+/* Circular numbered stepper with connecting line */
+.wiz-steps { list-style: none; display: flex; padding: 0; margin: 0 0 18px; }
+.wiz-step { display: flex; flex-direction: column; align-items: center; flex: 1; gap: 6px; position: relative; }
+.wiz-step::before { content: ""; position: absolute; top: 13px; left: -50%; width: 100%; height: 2px; background: var(--border); z-index: 0; }
+.wiz-step:first-child::before { display: none; }
+.wiz-step.done::before, .wiz-step.current::before { background: var(--accent); }
+.wiz-dot {
+  width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+  border: 2px solid var(--border); background: var(--bg); color: var(--text-3);
+  font-size: 13px; font-weight: 600; z-index: 1;
+}
+.wiz-step.done .wiz-dot { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.wiz-step.current .wiz-dot { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 3px var(--accent-50); }
+.wiz-step-name { font-size: 12px; color: var(--text-3); }
+.wiz-step.current .wiz-step-name { color: var(--text); font-weight: 600; }
+.wiz-actions { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-top: 16px; }
+
+/* Persistent assignment summary */
+.assign-summary { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-page); padding: 14px 16px; position: sticky; top: 12px; }
+.asum-head { font-weight: 600; font-size: 13px; margin-bottom: 8px; }
+.asum-row { display: flex; flex-direction: column; gap: 3px; padding: 9px 0; border-top: 1px solid var(--border-soft); }
+.asum-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-4); }
+.asum-value { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.asum-check { color: var(--green); }
+.asum-edit { border: 0; background: none; color: var(--accent); font: inherit; font-size: 11px; cursor: pointer; display: inline-flex; gap: 3px; align-items: center; margin-left: 4px; }
+.asum-edit:hover { text-decoration: underline; }
+
+/* Template cards */
+.tpl-card { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 11px 13px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg); cursor: pointer; font: inherit; }
+.tpl-card:hover { border-color: var(--accent-100); }
+.tpl-card.on { border-color: var(--accent); background: var(--accent-50); }
+.tpl-card.off-tier { opacity: 0.72; border-color: var(--border-soft); }
+.tpl-card.off-tier .cell-primary { color: var(--text-3); }
+.tpl-badge { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--green); background: var(--green-bg); padding: 2px 7px; border-radius: 999px; }
+.tpl-warn { font-size: 11px; color: var(--yellow); }
+
+/* Drawer polish */
+.drawer-sticky { position: sticky; top: 0; background: var(--bg); z-index: 2; }
+h3.drawer-section { font-size: 13.5px; font-weight: 700; letter-spacing: 0.02em; margin: 24px 0 10px; padding-top: 16px; border-top: 1px solid var(--border); }
+h3.drawer-section.first { margin-top: 0; padding-top: 0; border-top: 0; }
+.link-action { border: 0; background: none; padding: 0; font: inherit; color: var(--accent); cursor: pointer; margin-top: 10px; display: inline-block; }
+.link-action:hover { text-decoration: underline; }
+.log-entry { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--border-soft); border-radius: var(--radius); }
+.log-avatar { width: 26px; height: 26px; border-radius: 50%; background: var(--accent-50); color: var(--accent-600); display: grid; place-items: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+.pill-transition { display: inline-flex; align-items: center; gap: 4px; vertical-align: middle; }
+.pill-transition .arrow { color: var(--text-4); }
+.related-links { display: flex; gap: 8px; flex-wrap: wrap; }
+.related-link { display: inline-flex; align-items: center; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-page); font-size: 13px; color: var(--text); text-decoration: none; }
+.related-link:hover { border-color: var(--accent); color: var(--accent); }

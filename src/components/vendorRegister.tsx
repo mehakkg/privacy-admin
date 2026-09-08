@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { X, Lock } from "lucide-react";
-import { Pill, type PillTone } from "@/components/ui";
+import { Pill, InfoTip, type PillTone } from "@/components/ui";
 import { ActionError } from "@/components/actions";
 import { overrideVendorRiskAction } from "@/app/actions/vendorRisk";
 import { useRouter } from "next/navigation";
@@ -109,6 +109,10 @@ export function VendorRegister({ vendors, view }: { vendors: VendorDetail[]; vie
   );
 }
 
+function initials(name: string): string {
+  return name.split(/\s+/).map((p) => p.replace(/[^A-Za-z]/g, "").charAt(0)).filter(Boolean).slice(0, 2).join("").toUpperCase() || "?";
+}
+
 function VendorDrawer({ v, focusDpa, onClose }: { v: VendorDetail; focusDpa: boolean; onClose: () => void }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -127,8 +131,9 @@ function VendorDrawer({ v, focusDpa, onClose }: { v: VendorDetail; focusDpa: boo
 
   return (
     <div className="drawer-backdrop" onClick={onClose}>
-      <aside className="drawer-panel" style={{ background: "var(--bg)", width: "min(520px, 94vw)" }} onClick={(e) => e.stopPropagation()}>
-        <div className="drawer-head">
+      <aside className="drawer-panel" style={{ background: "var(--bg)", width: "min(540px, 94vw)" }} onClick={(e) => e.stopPropagation()}>
+        {/* Sticky mini-header — stays visible while scrolling. */}
+        <div className="drawer-head drawer-sticky">
           <div className="row" style={{ gap: 8 }}>
             <strong>{v.name}</strong>
             <Pill tone={RISK_TONE[v.riskRating]}>{v.riskRating}</Pill>
@@ -137,7 +142,7 @@ function VendorDrawer({ v, focusDpa, onClose }: { v: VendorDetail; focusDpa: boo
         </div>
         <div className="drawer-body">
           {/* Overview */}
-          <div className="section-label" style={{ marginTop: 0 }}>Overview</div>
+          <h3 className="drawer-section first">Overview</h3>
           <dl className="kv">
             <div style={{ display: "contents" }}><dt>Category</dt><dd>{v.category}</dd></div>
             <div style={{ display: "contents" }}><dt>Relationship owner</dt><dd>{v.ownerName ?? "—"}</dd></div>
@@ -145,30 +150,36 @@ function VendorDrawer({ v, focusDpa, onClose }: { v: VendorDetail; focusDpa: boo
             <div style={{ display: "contents" }}><dt>Baseline (system)</dt><dd><Pill tone={RISK_TONE[v.riskBaseline]} dot={false}>{v.riskBaseline}</Pill></dd></div>
           </dl>
 
-          <div className="row" style={{ gap: 8, marginTop: 8 }}>
-            {!editRisk ? (
-              <button className="btn ghost sm" onClick={() => { setEditRisk(true); setNewRating(v.riskRating); }}>Override risk rating…</button>
-            ) : (
-              <div className="stack" style={{ gap: 6, width: "100%" }}>
-                <div className="row" style={{ gap: 6 }}>
-                  <select className="input sm" value={newRating} onChange={(e) => setNewRating(e.target.value)} style={{ width: 130 }}>
-                    {RISKS.map((r) => <option key={r} value={r}>{r}</option>)}
-                  </select>
-                  <input className="input sm" placeholder="Reason (required)" value={reason} onChange={(e) => setReason(e.target.value)} style={{ flex: 1 }} />
-                </div>
-                <div className="row" style={{ gap: 6 }}>
-                  <button className="btn primary sm" disabled={pending || newRating === v.riskRating || !reason.trim()} onClick={saveRisk}>{pending ? "Saving…" : "Save override"}</button>
-                  <button className="btn ghost sm" onClick={() => { setEditRisk(false); setReason(""); }}>Cancel</button>
-                </div>
-                <span className="cell-sub">Every override is logged: who, from, to, and why.</span>
+          {!editRisk ? (
+            <button className="link-action" onClick={() => { setEditRisk(true); setNewRating(v.riskRating); }}>Override risk rating…</button>
+          ) : (
+            <div className="stack" style={{ gap: 6, marginTop: 8 }}>
+              <div className="row" style={{ gap: 6 }}>
+                <select className="input sm" value={newRating} onChange={(e) => setNewRating(e.target.value)} style={{ width: 130 }}>
+                  {RISKS.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+                <input className="input sm" placeholder="Reason (required)" value={reason} onChange={(e) => setReason(e.target.value)} style={{ flex: 1 }} />
               </div>
-            )}
-          </div>
+              <div className="row" style={{ gap: 6 }}>
+                <button className="btn primary sm" disabled={pending || newRating === v.riskRating || !reason.trim()} onClick={saveRisk}>{pending ? "Saving…" : "Save override"}</button>
+                <button className="btn ghost sm" onClick={() => { setEditRisk(false); setReason(""); }}>Cancel</button>
+              </div>
+              <span className="cell-sub">Every override is logged: who, from, to, and why.</span>
+            </div>
+          )}
           {v.overrideHistory.length > 0 && (
-            <div className="stack" style={{ gap: 4, marginTop: 8 }}>
+            <div className="stack" style={{ gap: 8, marginTop: 10 }}>
               {v.overrideHistory.map((o, i) => (
-                <div key={i} className="cell-sub">
-                  {o.by} changed {o.from} → {o.to} · {o.reason} · {o.at.slice(0, 10)}
+                <div key={i} className="log-entry">
+                  <span className="log-avatar">{initials(o.by)}</span>
+                  <div className="cell-stack" style={{ flex: 1 }}>
+                    <span>
+                      <span className="cell-primary">{o.by}</span>{" "}
+                      <span className="cell-sub">changed rating</span>{" "}
+                      <span className="pill-transition"><Pill tone={RISK_TONE[o.from]} dot={false}>{o.from}</Pill><span className="arrow">→</span><Pill tone={RISK_TONE[o.to]} dot={false}>{o.to}</Pill></span>
+                    </span>
+                    <span className="cell-sub">{o.reason} · {o.at.slice(0, 10)}</span>
+                  </div>
                 </div>
               ))}
             </div>
@@ -176,7 +187,7 @@ function VendorDrawer({ v, focusDpa, onClose }: { v: VendorDetail; focusDpa: boo
           <ActionError result={result} />
 
           {/* Purpose & PII mapping */}
-          <div className="section-label">Purpose &amp; PII mapping</div>
+          <h3 className="drawer-section">Purpose &amp; PII mapping</h3>
           {v.mappings.length === 0 ? (
             <p className="cell-sub" style={{ margin: 0 }}>No purposes mapped — this vendor is not cleared to touch personal data.</p>
           ) : (
@@ -186,7 +197,9 @@ function VendorDrawer({ v, focusDpa, onClose }: { v: VendorDetail; focusDpa: boo
                 <tbody>
                   {v.mappings.map((m, i) => (
                     <tr key={i}>
-                      <td>{m.locked ? <span className="lock-inline"><Lock size={12} /> {m.purposeName}</span> : m.purposeName}</td>
+                      <td>{m.locked ? (
+                        <InfoTip align="left" text="Policy-locked — only DPO/Legal can edit"><span className="lock-inline"><Lock size={12} /> {m.purposeName}</span></InfoTip>
+                      ) : m.purposeName}</td>
                       <td className="cell-sub" style={{ textTransform: "capitalize" }}>{m.piiTypes.join(", ") || "—"}</td>
                       <td className="cell-sub">{m.activityName ?? "—"}</td>
                     </tr>
@@ -197,7 +210,7 @@ function VendorDrawer({ v, focusDpa, onClose }: { v: VendorDetail; focusDpa: boo
           )}
 
           {/* DPA & contract */}
-          <div className="section-label" style={{ outline: focusDpa ? "2px solid var(--accent)" : undefined, outlineOffset: 4, borderRadius: 4 }}>DPA &amp; contract</div>
+          <h3 className="drawer-section" style={focusDpa ? { outline: "2px solid var(--accent)", outlineOffset: 4, borderRadius: 4 } : undefined}>DPA &amp; contract</h3>
           {v.dpa.status === "not_on_file" ? (
             <Pill tone="gray">No DPA on file</Pill>
           ) : (
@@ -209,12 +222,12 @@ function VendorDrawer({ v, focusDpa, onClose }: { v: VendorDetail; focusDpa: boo
             </dl>
           )}
 
-          {/* Cross-links */}
-          <div className="section-label">Assessment history</div>
-          <Link href="/vendor-risk/assessments" className="btn ghost sm">Open this vendor&rsquo;s assessment →</Link>
-
-          <div className="section-label">Sub-processor disclosures</div>
-          <Link href="/vendor-risk/sub-processors" className="btn ghost sm">View sub-processor disclosures →</Link>
+          {/* Related */}
+          <h3 className="drawer-section">Related</h3>
+          <div className="related-links">
+            <Link href="/vendor-risk/assessments" className="related-link">Open this vendor&rsquo;s assessment →</Link>
+            <Link href="/vendor-risk/sub-processors" className="related-link">View sub-processor disclosures →</Link>
+          </div>
         </div>
       </aside>
     </div>
