@@ -2278,3 +2278,7 @@ tr.cross-entity > td {
 }
 .lock-inline svg { color: var(--text-4); }
 .dtable tr.add-row td { background: var(--bg-page); }
+
+/* Clickable table rows (List + Detail Drawer pattern) */
+.dtable tr.clickable { cursor: pointer; }
+.dtable tr.clickable:hover { background: var(--bg-row-hover); }

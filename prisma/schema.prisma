@@ -470,6 +470,7 @@ model PurposeTag {
   dataFlowConnections DataFlowConnection[]
   notices            Notice[] @relation("NoticePurpose")
   activityElements   ActivityElement[] @relation("ElementPurpose")
+  vendorMappings     VendorPurposeMapping[] @relation("VendorPurpose")
 }
 
 /// A record of processing activity, entered by hand for data no scanner can
@@ -655,6 +656,66 @@ model NoticeVariant {
   notice Notice @relation(fields: [noticeId], references: [id])
 
   @@unique([noticeId, language])
+}
+
+// ---------------------------------------------------------------------------
+// Vendor Risk (TPRM) — the Fiduciary's relationship with every vendor and
+// sub-processor who touches personal data on its behalf. Governance authority
+// (final risk classification, DPA sign-off) stays with Legal/DPO; the vendor
+// carries the disclosure and evidence obligations.
+// ---------------------------------------------------------------------------
+
+/// The single source of truth for a vendor relationship — replacing the
+/// spreadsheet-and-Drive-folder it lived in. Risk rating has a system-suggested
+/// BASELINE (by category) and a final rating a human owns; every manual override
+/// of the baseline is logged with who/from/to/why (riskOverrideHistoryJson).
+model Vendor {
+  id       String @id @default(cuid())
+  name     String @unique
+  category String
+
+  /// low | medium | high | critical — the final, human-owned rating.
+  riskRating String
+  /// low | medium | high | critical — the system suggestion by category.
+  riskBaseline String
+  /// [{ from, to, by, reason, at }] — audit of every manual override.
+  riskOverrideHistoryJson String @default("[]")
+
+  ownerName      String?
+  onboardedAt    DateTime?
+  lastReviewedAt DateTime?
+
+  // DPA & contract
+  dpaName    String?
+  dpaScope   String?
+  dpaSignedAt  DateTime?
+  dpaExpiresAt DateTime?
+  /// active | expired | not_on_file — "expiring" is DERIVED from dpaExpiresAt
+  /// proximity, never stored, so it can never go stale.
+  dpaStatus String @default("not_on_file")
+  dpaDocLink String?
+
+  createdAt DateTime @default(now())
+
+  purposeMappings VendorPurposeMapping[]
+}
+
+/// One Purpose → PII-types → processing-activity row for a vendor. This is the
+/// query surface that makes "which vendors touch Aadhaar" answerable without a
+/// manual contract trace.
+model VendorPurposeMapping {
+  id           String  @id @default(cuid())
+  vendorId     String
+  purposeTagId String?
+  purposeName  String
+  /// string[] of PII categories handled for this purpose.
+  piiTypesJson String  @default("[]")
+  activityName String?
+
+  vendor     Vendor      @relation(fields: [vendorId], references: [id])
+  purposeTag PurposeTag? @relation("VendorPurpose", fields: [purposeTagId], references: [id])
+
+  @@index([vendorId])
 }
 
 /// A saved "My Dashboard" layout. Keyed by ROLE, not by person: customization
