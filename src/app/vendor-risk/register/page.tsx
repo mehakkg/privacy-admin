@@ -30,7 +30,11 @@ export default async function VendorRegisterPage({
   const now = Date.now();
 
   const vendors = await db.vendor.findMany({
-    include: { purposeMappings: { include: { purposeTag: true } } },
+    include: {
+      purposeMappings: { include: { purposeTag: true } },
+      processors: { select: { id: true, name: true, processorScope: true } },
+      portalAccess: true,
+    },
     orderBy: { name: "asc" },
   });
 
@@ -60,6 +64,8 @@ export default async function VendorRegisterPage({
         activityName: m.activityName,
       })),
       overrideHistory: (JSON.parse(v.riskOverrideHistoryJson || "[]") as VendorDetail["overrideHistory"]),
+      linkedProcessors: v.processors.map((p) => ({ id: p.id, name: p.name, activity: p.processorScope })),
+      portal: v.portalAccess ? { contactName: v.portalAccess.contactName, email: v.portalAccess.email, provisionedAt: fmt(v.portalAccess.provisionedAt) ?? "—" } : null,
     };
   });
 

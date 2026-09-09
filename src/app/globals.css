@@ -2343,3 +2343,26 @@ h3.drawer-section.first { margin-top: 0; padding-top: 0; border-top: 0; }
 
 /* Flagged (undisclosed) disclosure rows — instantly distinct from approved ones */
 .dtable tr.flagged-row, .dtable tr.flagged-row:hover { background: var(--red-bg); }
+
+/* ===========================================================================
+   TPRM integration — toggle switch, score card, linked chip
+   =========================================================================== */
+.switch {
+  width: 40px; height: 22px; border-radius: 999px; border: 0; padding: 0;
+  background: var(--border-strong); position: relative; cursor: pointer; flex-shrink: 0; transition: background 0.15s;
+}
+.switch.on { background: var(--accent); }
+.switch:disabled { opacity: 0.6; cursor: default; }
+.switch-knob { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: left 0.15s; }
+.switch.on .switch-knob { left: 20px; }
+
+.tprm-card { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-page); padding: 12px 14px; }
+.tprm-card.broken { border-color: var(--red-border, var(--red)); }
+.tprm-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+.tprm-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-4); }
+
+.tprm-chip {
+  display: inline-flex; align-items: center; gap: 4px; margin-top: 6px;
+  font-size: 11.5px; padding: 2px 8px; border-radius: 999px;
+  background: var(--accent-50); color: var(--accent-600); border: 1px solid var(--accent-100);
+}

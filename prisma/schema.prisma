@@ -198,9 +198,20 @@ model DataProcessor {
   /// JSON: [{ ok, detail?, at }] — check history over time.
   healthHistoryJson String @default("[]")
 
+  /// When the TPRM integration is on, a Privacy Processor record holds only a
+  /// reference back to the TPRM Vendor — name, category, DPA and risk are pulled
+  /// live via this id, never copied as editable Privacy-side fields.
+  vendorId String?
+  /// Genuinely Privacy-owned, processing-activity-specific detail captured at
+  /// import (NOT vendor-level data): the contract scope and retention terms tied
+  /// to this particular processing relationship.
+  processorScope String?
+  retentionTerms String?
+
   locations  DataLocation[]
   executions ExecutionRecord[]
   activityElements ActivityElement[]
+  vendor     Vendor? @relation(fields: [vendorId], references: [id])
 }
 
 /// Discovered location of a principal's data. Exactly one of systemId or
@@ -701,6 +712,34 @@ model Vendor {
   assessments     VendorAssessment[]
   subProcessorDisclosures SubProcessorDisclosure[]
   documents       SubProcessorDocument[]
+  processors      DataProcessor[]
+  portalAccess    VendorPortalAccess?
+}
+
+/// Platform integration flags (singleton). When `tprmEnabled` is on, Vendors are
+/// created and managed only in TPRM, and Privacy's Processor records import a
+/// reference (Vendor ID) instead of creating vendor-level data of their own.
+model IntegrationConfig {
+  id          String  @id @default("singleton")
+  tprmEnabled Boolean @default(false)
+  updatedAt   DateTime @updatedAt
+  updatedBy   String?
+}
+
+/// Data-Processor portal access, provisioned FROM the TPRM Vendor record — one
+/// login per real-world vendor (the @unique on vendorId enforces exactly that).
+/// Multiple named users are a Vendor-scoped grant, never separate logins.
+model VendorPortalAccess {
+  id            String   @id @default(cuid())
+  vendorId      String   @unique
+  contactName   String
+  email         String
+  /// string[] of Processor record ids / purposes this access may see.
+  scopeJson     String   @default("[]")
+  provisionedAt DateTime @default(now())
+  provisionedBy String?
+
+  vendor Vendor @relation(fields: [vendorId], references: [id])
 }
 
 /// A vendor's disclosure that it wants to bring in its own subcontractor to touch

@@ -6,6 +6,7 @@ import { X, Lock } from "lucide-react";
 import { Pill, InfoTip, type PillTone } from "@/components/ui";
 import { ActionError } from "@/components/actions";
 import { overrideVendorRiskAction } from "@/app/actions/vendorRisk";
+import { provisionPortalAccessAction, revokePortalAccessAction } from "@/app/actions/integration";
 import { useRouter } from "next/navigation";
 import type { ActionResult } from "@/app/actions/requests";
 
@@ -25,6 +26,8 @@ export interface VendorDetail {
   dpa: { name: string | null; scope: string | null; signedAt: string | null; expiresAt: string | null; status: string; daysToExpiry: number | null; docLink: string | null };
   mappings: VendorMapping[];
   overrideHistory: VendorOverride[];
+  linkedProcessors: { id: string; name: string; activity: string | null }[];
+  portal: { contactName: string; email: string; provisionedAt: string } | null;
 }
 
 const RISK_TONE: Record<string, PillTone> = { low: "gray", medium: "yellow", high: "orange", critical: "red" };
@@ -113,6 +116,62 @@ function initials(name: string): string {
   return name.split(/\s+/).map((p) => p.replace(/[^A-Za-z]/g, "").charAt(0)).filter(Boolean).slice(0, 2).join("").toUpperCase() || "?";
 }
 
+/** Screen 4b — one Data-Processor portal login per vendor, provisioned here. */
+function PortalAccess({ vendorId, portal, scopeOptions }: { vendorId: string; portal: VendorDetail["portal"]; scopeOptions: { id: string; name: string }[] }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [result, setResult] = useState<ActionResult | null>(null);
+  const [form, setForm] = useState(false);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [scope, setScope] = useState<string[]>(scopeOptions.map((s) => s.id));
+
+  const run = (op: () => Promise<ActionResult>, after?: () => void) =>
+    start(async () => { const r = await op(); setResult(r); if (r.ok) { after?.(); router.refresh(); } });
+
+  if (portal) {
+    return (
+      <div style={{ marginTop: 12 }}>
+        <div className="log-entry">
+          <span className="log-avatar">{initials(portal.contactName)}</span>
+          <div className="cell-stack" style={{ flex: 1 }}>
+            <span className="cell-primary">{portal.contactName} · portal access</span>
+            <span className="cell-sub">{portal.email} · since {portal.provisionedAt}</span>
+          </div>
+          <button className="btn ghost xs" disabled={pending} onClick={() => run(() => revokePortalAccessAction(vendorId))}>Revoke</button>
+        </div>
+        <ActionError result={result} />
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      {!form ? (
+        <button className="link-action" onClick={() => setForm(true)}>Provision Processor Portal Access…</button>
+      ) : (
+        <div className="stack" style={{ gap: 6 }}>
+          <input className="input sm" placeholder="Contact name" value={name} onChange={(e) => setName(e.target.value)} />
+          <input className="input sm" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          {scopeOptions.length > 0 && (
+            <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+              {scopeOptions.map((s) => (
+                <button key={s.id} className={`btn xs ${scope.includes(s.id) ? "primary" : "ghost"}`} onClick={() => setScope((sc) => sc.includes(s.id) ? sc.filter((x) => x !== s.id) : [...sc, s.id])}>{s.name}</button>
+              ))}
+            </div>
+          )}
+          <div className="row" style={{ gap: 6 }}>
+            <button className="btn primary sm" disabled={pending || !name.trim() || !email.trim()} onClick={() => run(() => provisionPortalAccessAction(vendorId, name, email, scope), () => setForm(false))}>Provision access</button>
+            <button className="btn ghost sm" onClick={() => setForm(false)}>Cancel</button>
+          </div>
+          <span className="cell-sub">One login per vendor. Multiple people are a scoped grant under this vendor, not separate logins.</span>
+          <ActionError result={result} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function VendorDrawer({ v, focusDpa, onClose }: { v: VendorDetail; focusDpa: boolean; onClose: () => void }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -186,6 +245,9 @@ function VendorDrawer({ v, focusDpa, onClose }: { v: VendorDetail; focusDpa: boo
           )}
           <ActionError result={result} />
 
+          {/* Screen 4b — Provision Processor Portal Access (one login per vendor) */}
+          <PortalAccess vendorId={v.id} portal={v.portal} scopeOptions={v.linkedProcessors} />
+
           {/* Purpose & PII mapping */}
           <h3 className="drawer-section">Purpose &amp; PII mapping</h3>
           {v.mappings.length === 0 ? (
@@ -220,6 +282,22 @@ function VendorDrawer({ v, focusDpa, onClose }: { v: VendorDetail; focusDpa: boo
               <div style={{ display: "contents" }}><dt>Signed</dt><dd>{v.dpa.signedAt ?? "—"}</dd></div>
               <div style={{ display: "contents" }}><dt>Expiry</dt><dd><span className="row" style={{ gap: 6 }}>{v.dpa.expiresAt ?? "—"} <Pill tone={dpa.tone}>{dpa.text}</Pill></span></dd></div>
             </dl>
+          )}
+
+          {/* Screen 4a — Linked Processor Records (reverse visibility) */}
+          <h3 className="drawer-section">Linked Processor Records ({v.linkedProcessors.length})</h3>
+          {v.linkedProcessors.length === 0 ? (
+            <p className="cell-sub" style={{ margin: 0 }}>No linked Processor records.</p>
+          ) : (
+            <div className="stack" style={{ gap: 6 }}>
+              {v.linkedProcessors.map((p) => (
+                <div key={p.id} className="row" style={{ justifyContent: "space-between" }}>
+                  <Link href="/integrations/data-processors" className="row-link">{p.name}</Link>
+                  <span className="cell-sub">{p.activity ?? "—"}</span>
+                </div>
+              ))}
+              <span className="cell-sub">Offboarding this vendor affects the records above.</span>
+            </div>
           )}
 
           {/* Related */}

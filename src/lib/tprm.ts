@@ -47,3 +47,25 @@ export const ASSESSMENT_QUESTIONS: Question[] = [
 ];
 
 export const ASSESSMENT_SECTIONS = [...new Set(ASSESSMENT_QUESTIONS.map((q) => q.section))];
+
+/**
+ * The TPRM-side summary a Privacy screen pulls live via a Vendor ID — the score
+ * card shown identically on a Processor detail and a ROPA Processor field.
+ * Everything here is a read-only mirror of TPRM data.
+ */
+export interface TprmSummary {
+  vendorId: string;
+  vendorName: string;
+  riskRating: string;
+  /** null means the assessment is still pending review in TPRM. */
+  score: number | null;
+  status: "verified" | "pending" | "none";
+  openFindings: number;
+  latestFinding: string | null;
+  lastSynced: string;
+  /** the linked Vendor no longer exists in TPRM. */
+  broken?: boolean;
+}
+
+const SCORE_BY_RATING: Record<string, number> = { low: 95, medium: 82, high: 62, critical: 40 };
+export function ratingScore(rating: string): number { return SCORE_BY_RATING[rating] ?? 70; }

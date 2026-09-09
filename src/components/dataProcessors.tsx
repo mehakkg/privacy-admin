@@ -7,6 +7,8 @@ import { ListDetail, type Column } from "@/components/ListDetail";
 import { Notice, Pill, formatDate } from "@/components/ui";
 import { ActionError } from "@/components/actions";
 import { addDpaReferenceAction, requestDpaUpdateAction } from "@/app/actions/integrations";
+import { TprmScoreCard } from "@/components/tprmScoreCard";
+import type { TprmSummary } from "@/lib/tprm";
 import type { ActionResult } from "@/app/actions/requests";
 import type { PillTone } from "@/components/ui";
 
@@ -32,6 +34,9 @@ export interface ProcessorRow {
   lastInstructionAt: Date | null;
   instructions: InstructionEntry[];
   subProcessors: SubProcessor[];
+  /** Set when this Processor record is imported from a TPRM Vendor. */
+  vendorId?: string | null;
+  tprm?: TprmSummary | null;
 }
 
 const CHANNEL_LABEL: Record<string, string> = { email: "Email", portal: "Portal", sftp: "SFTP" };
@@ -132,7 +137,13 @@ function ProcessorDrawer({ processor }: { processor: ProcessorRow }) {
       <div>
         <h3 style={{ margin: 0, fontSize: 15 }}>{processor.name}</h3>
         <div className="cell-sub">Contact via {CHANNEL_LABEL[processor.contactChannel] ?? processor.contactChannel}</div>
+        {processor.tprm && !processor.tprm.broken && (
+          <span className="tprm-chip">Linked to TPRM Vendor: {processor.tprm.vendorName}</span>
+        )}
       </div>
+
+      {/* SCREEN 3 — TPRM Assessment panel: a read-only mirror pulled via Vendor ID. */}
+      {processor.tprm && <TprmScoreCard s={processor.tprm} />}
 
       {/* DPA status block. */}
       {processor.dpaStatus === "draft" ? (
