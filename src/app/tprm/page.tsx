@@ -21,7 +21,7 @@ const RISK_COLOR: Record<string, string> = { low: "var(--green)", medium: "var(-
 export default async function TprmDashboardPage() {
   const now = Date.now();
 
-  const [processors, escalations, disclosures, assessments, elements] = await Promise.all([
+  const [processors, escalations, disclosures, assessments, flows] = await Promise.all([
     db.dataProcessor.findMany({
       include: {
         executions: { include: { request: true } },
@@ -32,7 +32,9 @@ export default async function TprmDashboardPage() {
     db.escalation.findMany({ where: { targetRole: "legal", status: "open" } }),
     db.subProcessorDisclosure.findMany({ include: { primaryVendor: true } }),
     db.vendorAssessment.findMany(),
-    db.activityElement.findMany({ include: { purposeTag: true } }),
+    // Flow-map connections already carry processor → PII categories → purpose —
+    // the right source for the mind-map, far richer than the vendor links alone.
+    db.dataFlowConnection.findMany({ where: { processorId: { not: null } }, include: { purposeTag: true } }),
   ]);
 
   const daysToExpiry = (d: Date | null) => (d ? Math.ceil((d.getTime() - now) / DAY) : null);
@@ -91,23 +93,25 @@ export default async function TprmDashboardPage() {
     .map((p) => ({ p, reqs: [...new Set(p.executions.filter((e) => e.request && !CLOSED.has(e.request.status)).map((e) => e.request!.referenceCode))] }))
     .filter((x) => x.reqs.length > 0);
 
-  // --- Mind-map (processor → purpose → PII, via linked vendor mappings) ------
-  const mindMap: MindMapProcessor[] = processors
-    .filter((p) => p.vendor && p.vendor.purposeMappings.length > 0)
-    .map((p) => ({ id: p.id, name: p.name, links: p.vendor!.purposeMappings.map((m) => ({ purpose: m.purposeName, pii: decodeList(m.piiTypesJson) })) }));
-  // Fall back to activity-element mappings if no vendor links exist yet.
-  if (mindMap.length === 0) {
-    const byProc = new Map<string, MindMapProcessor>();
-    for (const el of elements) {
-      if (!el.processorId) continue;
-      const proc = processors.find((p) => p.id === el.processorId);
-      if (!proc) continue;
-      const entry = byProc.get(proc.id) ?? { id: proc.id, name: proc.name, links: [] };
-      entry.links.push({ purpose: el.purposeTag?.name ?? "Unassigned", pii: [] });
-      byProc.set(proc.id, entry);
-    }
-    mindMap.push(...byProc.values());
+  // --- Mind-map (processor → purpose → PII) ---------------------------------
+  // Primary source: flow-map connections that name a processor and carry data
+  // categories. Enriched with any linked-vendor purpose/PII mappings.
+  const procName = new Map(processors.map((p) => [p.id, p.name]));
+  const byProc = new Map<string, MindMapProcessor>();
+  const add = (id: string, name: string, purpose: string, pii: string[]) => {
+    const entry = byProc.get(id) ?? { id, name, links: [] };
+    entry.links.push({ purpose, pii });
+    byProc.set(id, entry);
+  };
+  for (const f of flows) {
+    if (!f.processorId) continue;
+    add(f.processorId, procName.get(f.processorId) ?? "Processor", f.purposeTag?.name ?? "Unassigned", decodeList(f.dataCategoriesJson));
   }
+  for (const p of processors) {
+    if (!p.vendor) continue;
+    for (const m of p.vendor.purposeMappings) add(p.id, p.name, m.purposeName, decodeList(m.piiTypesJson));
+  }
+  const mindMap: MindMapProcessor[] = [...byProc.values()];
 
   // --- Action Needed --------------------------------------------------------
   const alerts: { severity: "red" | "yellow"; text: string; href: string; cta: string }[] = [];
