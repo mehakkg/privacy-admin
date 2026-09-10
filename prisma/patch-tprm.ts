@@ -140,11 +140,44 @@ async function seedDisclosures() {
   console.log("patch-tprm: disclosures seeded.");
 }
 
+/** Additive processor portfolio for the TPRM Dashboard demo (draft-DPA +
+ *  unreachable, and an active/compliant one) plus one Legal-routed escalation. */
+async function seedPortfolio() {
+  const now = Date.now();
+  await prisma.dataProcessor.upsert({
+    where: { name: "MarketPulse Analytics" },
+    update: {},
+    create: {
+      name: "MarketPulse Analytics", dpaId: "DPA-DRAFT-MP", dpaScopeJson: "[]", contactChannel: "email",
+      dpaStatus: "draft", riskClassification: "high", healthStatus: "unreachable",
+      unreachableSinceAt: new Date(now - 60 * 60 * 60 * 1000),
+    },
+  });
+  await prisma.dataProcessor.upsert({
+    where: { name: "CloudSupport Ticketing" },
+    update: {},
+    create: {
+      name: "CloudSupport Ticketing", dpaId: "DPA-2026-0143", dpaScopeJson: JSON.stringify(["support", "contact"]), contactChannel: "portal",
+      dpaStatus: "active", riskClassification: "medium", healthStatus: "responsive",
+      contractDate: d("2026-01-15"), dpaExpiresAt: d("2027-01-15"),
+    },
+  });
+
+  const existing = await prisma.escalation.findFirst({ where: { referenceCode: "ESC-2026-0035" } });
+  if (!existing) {
+    await prisma.escalation.create({
+      data: { type: "dpa_update", sourceRole: "legal", targetRole: "legal", status: "open", referenceCode: "ESC-2026-0035", reason: "DPA update request — MarketPulse Analytics", contextJson: JSON.stringify({ processor: "MarketPulse Analytics" }) },
+    });
+  }
+  console.log("patch-tprm: portfolio ensured.");
+}
+
 async function main() {
   if (!process.env.DATABASE_URL) { console.log("patch-tprm: no DATABASE_URL, skipping."); return; }
   await seedVendors();
   await seedAssessments();
   await seedDisclosures();
+  await seedPortfolio();
 }
 
 main()

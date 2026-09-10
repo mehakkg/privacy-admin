@@ -18,7 +18,7 @@ import { SidebarNav, type NavEntry } from "@/components/SidebarNav";
  * built in this pass are listed but inert, so the shape of the module stays
  * legible without pretending the screens exist.
  */
-function navGroups(openRequests: number): NavEntry[] {
+function navGroups(openRequests: number, role: string): NavEntry[] {
   return [
     // The permanent landing surface — a summary, not a work queue, so it sits
     // above the six sections as its own item.
@@ -28,6 +28,11 @@ function navGroups(openRequests: number): NavEntry[] {
       href: "/dashboard",
       ready: true,
     },
+    // Legal/Procurement's dedicated home — role-scoped, appears only while acting
+    // as Legal, the same role-switching pattern as every other scoped screen.
+    ...(role === "legal"
+      ? [{ key: "tprm-dashboard", label: "TPRM Dashboard", href: "/tprm", ready: true } as NavEntry]
+      : []),
 
     // Six sections below Dashboard. Each is a page-group; anything deeper than a
     // page is a tab INSIDE that page, never a third sidebar level. Fiduciary
@@ -197,7 +202,7 @@ export async function Shell({
             <span className="sidebar-logo-sub">DPDP compliance</span>
           </div>
         </div>
-        <SidebarNav groups={navGroups(openRequests)} active={active} />
+        <SidebarNav groups={navGroups(openRequests, session.role)} active={active} />
       </aside>
 
       <div className="main">
