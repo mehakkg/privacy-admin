@@ -40,7 +40,7 @@ function navGroups(openRequests: number): NavEntry[] {
       href: "/discovery/sources",
       ready: true,
       children: [
-        { href: "/discovery/sources", label: "Sources", ready: true },
+        { href: "/data-map/sources", label: "Sources", ready: true },
         { href: "/data-map/processing-activities", label: "Processing activities", ready: true },
         { href: "/discovery/inventory", label: "Data inventory", ready: true },
         { href: "/discovery/triage", label: "Review queue", ready: true },

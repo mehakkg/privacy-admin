@@ -14,12 +14,7 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-async function main() {
-  if (!process.env.DATABASE_URL) {
-    console.log("patch-datamap: no DATABASE_URL, skipping.");
-    return;
-  }
-
+async function seedActivities() {
   const purposes = await prisma.purposeTag.findMany({ select: { id: true, name: true } });
   const purposeId = (name: string) => purposes.find((p) => p.name === name)?.id ?? null;
   if (purposes.length === 0) {
@@ -53,6 +48,38 @@ async function main() {
   });
 
   console.log("patch-datamap: Loan Application activity + elements seeded.");
+}
+
+/**
+ * Additive source demo — ensures each of the four Source statuses is represented
+ * without touching existing seeded sources. Upsert-by-name with an empty update
+ * is a no-op when the row already exists.
+ */
+async function seedSources() {
+  const rows = [
+    // Never scanned — approved for scope, no scan yet.
+    { name: "Data Warehouse — Snowflake", kind: "cloud_storage", dpoApprovedForScanning: true, scanStatus: "pending", connectionState: "connected", lastScanned: null as Date | null },
+    // Awaiting approval — connected but not DPO-approved.
+    { name: "Legacy Loan Archive", kind: "file_share", dpoApprovedForScanning: false, scanStatus: "pending", connectionState: "connected", lastScanned: null as Date | null },
+    // Last scan failed.
+    { name: "Marketing Automation", kind: "saas", dpoApprovedForScanning: true, scanStatus: "failed", connectionState: "connected", lastScanned: new Date("2026-08-20") },
+    // Current.
+    { name: "Finance File Share", kind: "file_share", dpoApprovedForScanning: true, scanStatus: "scanned", connectionState: "connected", lastScanned: new Date("2026-08-28") },
+  ];
+  for (const r of rows) {
+    await prisma.discoverySource.upsert({
+      where: { name: r.name },
+      update: {}, // never disturb an existing source
+      create: { name: r.name, kind: r.kind, dpoApprovedForScanning: r.dpoApprovedForScanning, scanStatus: r.scanStatus, connectionState: r.connectionState, lastScanned: r.lastScanned },
+    });
+  }
+  console.log("patch-datamap: demo sources ensured.");
+}
+
+async function main() {
+  if (!process.env.DATABASE_URL) { console.log("patch-datamap: no DATABASE_URL, skipping."); return; }
+  await seedActivities();
+  await seedSources();
 }
 
 main()
