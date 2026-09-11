@@ -24,6 +24,7 @@ const VALID_ROLES: readonly ActorRole[] = [
   "dpo",
   "ciso",
   "grievance_officer",
+  "legal",
 ];
 
 export async function getCurrentRole(): Promise<ActorRole> {

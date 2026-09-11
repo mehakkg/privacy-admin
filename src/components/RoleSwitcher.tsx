@@ -13,7 +13,7 @@ import { ROLE_LABEL, type ActorRole } from "@/lib/domain";
  * watch the same mutation be refused as Admin. In a real deployment this is
  * replaced by the session's actual role and the switcher disappears.
  */
-const ROLES: ActorRole[] = ["admin", "dpo", "grievance_officer", "ciso"];
+const ROLES: ActorRole[] = ["admin", "dpo", "grievance_officer", "ciso", "legal"];
 
 export function RoleSwitcher({ current }: { current: ActorRole }) {
   const router = useRouter();
