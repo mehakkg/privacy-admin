@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
-import { Card, PageHead, Pill, formatDate, type PillTone } from "@/components/ui";
+import { Card, Chip, PageHead, Pill, formatDate, type PillTone } from "@/components/ui";
 import { ReviewClassification } from "@/components/reviewClassification";
 import { ASSESSMENT_QUESTIONS, ASSESSMENT_SECTIONS } from "@/lib/tprm";
 
@@ -25,8 +25,8 @@ export default async function AssessmentReviewPage({ params }: { params: Promise
         title={a.vendor.name}
         subtitle={
           <span className="row" style={{ gap: 8 }}>
-            <span className="cell-sub">{a.templateName}</span>
             <Pill tone={VENDOR_TONE[a.vendorStatus]}>{a.vendorStatus.replace("_", " ")}</Pill>
+            <Chip>{a.templateName}</Chip>
             <span className="cell-sub">assigned {formatDate(a.assignedAt)}</span>
           </span>
         }

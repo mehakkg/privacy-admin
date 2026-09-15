@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { getCurrentRole } from "@/lib/session";
 import { Shell } from "@/components/Shell";
-import { Card, PageHead, Pill } from "@/components/ui";
+import { Card, Chip, PageHead, Pill } from "@/components/ui";
 import {
   NoticeMeta,
   NoticeContentEditor,
@@ -79,9 +79,9 @@ export default async function NoticeDetailPage({
               {notice.status}
             </Pill>
             {notice.approvalState !== "none" && <Pill tone="blue">awaiting DPO</Pill>}
+            {notice.fiduciary && <Chip>{notice.fiduciary.name}</Chip>}
+            {catLabel && <Chip>{catLabel}</Chip>}
             <span className="mono cell-sub">{notice.currentVersion}</span>
-            {notice.fiduciary && <span className="cell-sub">· {notice.fiduciary.name}</span>}
-            {catLabel && <span className="cell-sub">· {catLabel}</span>}
             <span className="cell-sub">· {regions.length ? `${regions.length} region(s)` : "not published"}</span>
             {notice.supersededBy && <span className="cell-sub">· superseded by {notice.supersededBy.name}</span>}
           </span>

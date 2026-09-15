@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
-import { Card, KeyValue, Notice, PageHead, Pill, formatDate, formatDateTime } from "@/components/ui";
+import { Card, Chip, KeyValue, Notice, PageHead, Pill, formatDate, formatDateTime } from "@/components/ui";
 import { sourceStatus, SOURCE_STATUS_LABEL, SOURCE_STATUS_TONE, SOURCE_KIND_LABEL } from "@/lib/sources";
 
 export const dynamic = "force-dynamic";
@@ -66,7 +66,8 @@ export default async function SourceDetailPage({
         subtitle={
           <span className="row" style={{ gap: 8 }}>
             <Pill tone={SOURCE_STATUS_TONE[status]}>{SOURCE_STATUS_LABEL[status]}</Pill>
-            <span className="cell-sub">{SOURCE_KIND_LABEL[source.kind] ?? source.kind} · {source._count.fields} fields (DLP)</span>
+            <Chip>{SOURCE_KIND_LABEL[source.kind] ?? source.kind}</Chip>
+            <span className="cell-sub">{source._count.fields} fields (DLP)</span>
           </span>
         }
       />
