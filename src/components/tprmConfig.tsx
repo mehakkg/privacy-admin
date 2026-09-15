@@ -12,7 +12,7 @@ import {
 import type { ActionResult } from "@/app/actions/requests";
 
 const RISKS = ["low", "medium", "high", "critical"];
-const RISK_TONE: Record<string, PillTone> = { low: "gray", medium: "yellow", high: "orange", critical: "red" };
+const RISK_TONE: Record<string, PillTone> = { low: "gray", medium: "yellow", high: "red", critical: "red" };
 
 export interface RuleRow { id: string; categoryPattern: string; baselineRating: string }
 export interface QuestionRow { id: string; section: string; label: string }

@@ -32,7 +32,7 @@ export interface VendorDetail {
   portal: { contactName: string; email: string; provisionedAt: string } | null;
 }
 
-const RISK_TONE: Record<string, PillTone> = { low: "gray", medium: "yellow", high: "orange", critical: "red" };
+const RISK_TONE: Record<string, PillTone> = { low: "gray", medium: "yellow", high: "red", critical: "red" };
 const RISKS = ["low", "medium", "high", "critical"];
 
 /** DPA status, with "expiring" derived from proximity — never a stored flag. */

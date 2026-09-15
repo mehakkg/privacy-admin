@@ -9,7 +9,7 @@ import { ActionError } from "@/components/actions";
 import { setTprmIntegrationAction, importProcessorFromVendorAction } from "@/app/actions/integration";
 import type { ActionResult } from "@/app/actions/requests";
 
-const RISK_TONE: Record<string, PillTone> = { low: "gray", medium: "yellow", high: "orange", critical: "red" };
+const RISK_TONE: Record<string, PillTone> = { low: "gray", medium: "yellow", high: "red", critical: "red" };
 interface VendorOpt { id: string; name: string; category: string; riskRating: string }
 
 function useRun() {

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Pill, type PillTone } from "@/components/ui";
 import type { TprmSummary } from "@/lib/tprm";
 
-const RISK_TONE: Record<string, PillTone> = { low: "gray", medium: "yellow", high: "orange", critical: "red" };
+const RISK_TONE: Record<string, PillTone> = { low: "gray", medium: "yellow", high: "red", critical: "red" };
 
 /**
  * TPRM score/findings summary — built once, referenced from the Processor detail

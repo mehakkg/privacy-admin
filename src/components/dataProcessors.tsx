@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ListDetail, type Column } from "@/components/ListDetail";
-import { Notice, Pill, formatDate } from "@/components/ui";
+import { Notice, Pill, Chip, formatDate } from "@/components/ui";
 import { ActionError } from "@/components/actions";
 import { addDpaReferenceAction, requestDpaUpdateAction } from "@/app/actions/integrations";
 import { TprmScoreCard } from "@/components/tprmScoreCard";
@@ -82,7 +82,7 @@ export function DataProcessorsTable({ rows }: { rows: ProcessorRow[] }) {
           <span className="mono cell-sub">{r.dpaId}</span>
         ),
     },
-    { key: "channel", header: "Contact", width: 90, render: (r) => <span className="cell-sub">{CHANNEL_LABEL[r.contactChannel] ?? r.contactChannel}</span> },
+    { key: "channel", header: "Contact", width: 90, render: (r) => <Chip>{CHANNEL_LABEL[r.contactChannel] ?? r.contactChannel}</Chip> },
     {
       key: "status",
       header: "Status",

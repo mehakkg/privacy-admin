@@ -10,7 +10,7 @@ const VENDOR_TONE: Record<string, PillTone> = { not_started: "gray", in_progress
 const VENDOR_LABEL: Record<string, string> = { not_started: "Not started", in_progress: "In progress", submitted: "Submitted" };
 const REVIEW_TONE: Record<string, PillTone> = { pending: "gray", partial: "yellow", verified: "green" };
 const REVIEW_LABEL: Record<string, string> = { pending: "Pending", partial: "Partially complete", verified: "Fully verified" };
-const RISK_TONE: Record<string, PillTone> = { low: "gray", medium: "yellow", high: "orange", critical: "red" };
+const RISK_TONE: Record<string, PillTone> = { low: "gray", medium: "yellow", high: "red", critical: "red" };
 
 /**
  * SCREEN 2.1 — Assessments Queue. The full risk-assessment lifecycle per vendor:

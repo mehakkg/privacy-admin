@@ -11,7 +11,7 @@ import type { ActionResult } from "@/app/actions/requests";
 
 interface VendorOpt { id: string; name: string; category: string; baseline: string }
 export interface TemplateOpt { id: string; name: string; forTiers: string[]; description: string }
-const RISK_TONE: Record<string, "gray" | "yellow" | "orange" | "red"> = { low: "gray", medium: "yellow", high: "orange", critical: "red" };
+const RISK_TONE: Record<string, "gray" | "yellow" | "orange" | "red"> = { low: "gray", medium: "yellow", high: "red", critical: "red" };
 const STEP_NAMES = ["Vendor", "Baseline", "Template", "Review"];
 
 /**

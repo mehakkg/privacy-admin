@@ -8,7 +8,7 @@ import { finalizeClassificationAction, reopenAssessmentAction } from "@/app/acti
 import { RISKS } from "@/lib/tprm";
 import type { ActionResult } from "@/app/actions/requests";
 
-const RISK_TONE: Record<string, "gray" | "yellow" | "orange" | "red"> = { low: "gray", medium: "yellow", high: "orange", critical: "red" };
+const RISK_TONE: Record<string, "gray" | "yellow" | "orange" | "red"> = { low: "gray", medium: "yellow", high: "red", critical: "red" };
 
 /**
  * SCREEN 2.4 — Assessment Review & Classification (Legal's side). Legal reads the
