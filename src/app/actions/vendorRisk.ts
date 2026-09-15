@@ -8,6 +8,63 @@ import type { TxClient } from "@/lib/tx";
 import type { ActionResult } from "@/app/actions/requests";
 
 const RATINGS = new Set(["low", "medium", "high", "critical"]);
+const MAPPING_EDITORS = new Set(["legal", "dpo"]);
+
+/**
+ * Add a Purpose → PII mapping to a vendor. Only Legal/DPO may edit these — they
+ * are what the /tprm mind-map and the undisclosed-transfer detector read from,
+ * so the people who own that relationship must be able to maintain it, not just
+ * inherit seeded rows. Follows the provision/revoke-portal-access pattern.
+ */
+export async function addPurposeMappingAction(
+  vendorId: string,
+  purposeTagId: string,
+  piiTypes: string[],
+  activityName?: string,
+): Promise<ActionResult> {
+  const { actor, role } = await getSession();
+  if (!MAPPING_EDITORS.has(role)) return { ok: false, error: "Only Legal or the DPO can edit purpose mappings.", errorKind: "ForbiddenError" };
+  if (!purposeTagId) return { ok: false, error: "Pick a purpose.", errorKind: "ValidationError" };
+  if (!piiTypes.length) return { ok: false, error: "Select at least one PII type.", errorKind: "ValidationError" };
+  try {
+    await audited(
+      { actor, action: "vendor.purpose_mapping_added", targetType: "Vendor", targetId: vendorId, payload: { purposeTagId, piiTypes, activityName } },
+      async (tx: TxClient) => {
+        const pt = await tx.purposeTag.findUnique({ where: { id: purposeTagId } });
+        return tx.vendorPurposeMapping.create({
+          data: { vendorId, purposeTagId, purposeName: pt?.name ?? "Purpose", piiTypesJson: JSON.stringify(piiTypes), activityName: activityName?.trim() || null },
+        });
+      },
+    );
+    revalidatePath("/vendor-risk/register", "layout");
+    return { ok: true };
+  } catch (error) {
+    const e = error as Error;
+    return { ok: false, error: e.message, errorKind: e.name };
+  }
+}
+
+/** Remove a purpose mapping. Legal/DPO only, and never a policy-locked row (one
+ *  tied to an approved PurposeTag) — that guard holds server-side too. */
+export async function removePurposeMappingAction(mappingId: string): Promise<ActionResult> {
+  const { actor, role } = await getSession();
+  if (!MAPPING_EDITORS.has(role)) return { ok: false, error: "Only Legal or the DPO can edit purpose mappings.", errorKind: "ForbiddenError" };
+  try {
+    await audited(
+      { actor, action: "vendor.purpose_mapping_removed", targetType: "VendorPurposeMapping", targetId: mappingId, payload: {} },
+      async (tx: TxClient) => {
+        const m = await tx.vendorPurposeMapping.findUniqueOrThrow({ where: { id: mappingId } });
+        if (m.purposeTagId) throw Object.assign(new Error("This mapping is policy-locked and can't be removed here."), { name: "ForbiddenError" });
+        return tx.vendorPurposeMapping.delete({ where: { id: mappingId } });
+      },
+    );
+    revalidatePath("/vendor-risk/register", "layout");
+    return { ok: true };
+  } catch (error) {
+    const e = error as Error;
+    return { ok: false, error: e.message, errorKind: e.name };
+  }
+}
 
 /**
  * Override a vendor's risk rating. A human owns the rating — so every change off

@@ -4,6 +4,7 @@ import { Shell } from "@/components/Shell";
 import { CompactFilterBar } from "@/components/CompactFilterBar";
 import { PageHead, Stat } from "@/components/ui";
 import { VendorRegister, type VendorDetail } from "@/components/vendorRegister";
+import { getCurrentRole } from "@/lib/session";
 import { decodeList } from "@/lib/codec/json";
 
 export const dynamic = "force-dynamic";
@@ -29,14 +30,18 @@ export default async function VendorRegisterPage({
   const view = params.view === "dpa" ? "dpa" : "vendors";
   const now = Date.now();
 
-  const vendors = await db.vendor.findMany({
-    include: {
-      purposeMappings: { include: { purposeTag: true } },
-      processors: { select: { id: true, name: true, processorScope: true } },
-      portalAccess: true,
-    },
-    orderBy: { name: "asc" },
-  });
+  const [vendors, approvedPurposes, role] = await Promise.all([
+    db.vendor.findMany({
+      include: {
+        purposeMappings: { include: { purposeTag: true } },
+        processors: { select: { id: true, name: true, processorScope: true } },
+        portalAccess: true,
+      },
+      orderBy: { name: "asc" },
+    }),
+    db.purposeTag.findMany({ where: { status: "approved" }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    getCurrentRole(),
+  ]);
 
   let details: VendorDetail[] = vendors.map((v) => {
     const piiSet = new Set<string>();
@@ -58,6 +63,7 @@ export default async function VendorRegisterPage({
         status: v.dpaStatus, daysToExpiry, docLink: v.dpaDocLink,
       },
       mappings: v.purposeMappings.map((m) => ({
+        id: m.id,
         purposeName: m.purposeTag?.name ?? m.purposeName,
         locked: Boolean(m.purposeTagId),
         piiTypes: decodeList(m.piiTypesJson),
@@ -131,7 +137,7 @@ export default async function VendorRegisterPage({
         />
       )}
 
-      <VendorRegister vendors={details} view={view} />
+      <VendorRegister vendors={details} view={view} purposes={approvedPurposes} role={role} />
     </Shell>
   );
 }

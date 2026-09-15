@@ -67,12 +67,44 @@ export default async function TprmDashboardPage() {
   const allExec = processors.flatMap((p) => p.executions);
   const verified = allExec.filter((e) => e.status === "verified").length;
   const failed = allExec.filter((e) => e.status === "failed").length;
-  const slaPct = verified + failed ? Math.round((verified / (verified + failed)) * 100) : 100;
+  const slaPct = verified + failed ? Math.round((verified / (verified + failed)) * 100) : 100; // aggregate, kept as the top-level number
+
+  // Per-vendor, per-obligation clock. An obligation is late when an instruction
+  // was dispatched but not acknowledged within the contractual window, or failed
+  // outright — labelled by what it actually is (deletion ack, access ack, …),
+  // not collapsed into one failure count.
+  const ACK_WINDOW = 7; // contractual acknowledgment window, days
+  const obligationLabel = (reqType?: string, mode?: string) =>
+    reqType === "erasure" ? "deletion acknowledgment"
+    : reqType === "access" ? "access acknowledgment"
+    : reqType === "correction" ? "correction acknowledgment"
+    : reqType === "nomination" ? "nomination acknowledgment"
+    : mode === "processor_instruction" ? "instruction acknowledgment"
+    : "evidence submission";
   const breaching = processors
-    .map((p) => ({ p, f: p.executions.filter((e) => e.status === "failed").length }))
-    .filter((x) => x.f > 0)
-    .sort((a, b) => b.f - a.f)
-    .map((x) => ({ name: x.p.name, note: `${x.f} failed instruction${x.f === 1 ? "" : "s"}`, tone: "red" as const, href: "/integrations/data-processors" }));
+    .map((p) => {
+      const breaches = p.executions.flatMap((e) => {
+        const obligation = obligationLabel(e.request?.type, e.mode);
+        if (e.status === "failed") return [{ obligation, overdueDays: 0, failed: true }];
+        const acknowledged = e.status === "verified" || Boolean(e.confirmedAt);
+        if (!acknowledged && e.dispatchedAt) {
+          const overdueDays = Math.floor((now - e.dispatchedAt.getTime()) / DAY) - ACK_WINDOW;
+          if (overdueDays > 0) return [{ obligation, overdueDays, failed: false }];
+        }
+        return [];
+      });
+      return { p, breaches };
+    })
+    .filter((x) => x.breaches.length > 0)
+    .map((x) => {
+      const worst = [...x.breaches].sort((a, b) => (b.overdueDays - a.overdueDays) || (Number(b.failed) - Number(a.failed)))[0];
+      const note =
+        (worst.failed && worst.overdueDays === 0 ? `failed on ${worst.obligation}` : `${worst.overdueDays} day${worst.overdueDays === 1 ? "" : "s"} overdue on ${worst.obligation}`) +
+        (x.breaches.length > 1 ? ` (+${x.breaches.length - 1} more)` : "");
+      return { name: x.p.name, note, tone: "red" as const, href: "/integrations/data-processors", sortKey: worst.failed ? 10000 : worst.overdueDays };
+    })
+    .sort((a, b) => b.sortKey - a.sortKey)
+    .map(({ name, note, tone, href }) => ({ name, note, tone, href }));
 
   // --- Assessment lifecycle -------------------------------------------------
   const pendingResponse = assessments.filter((a) => a.vendorStatus !== "submitted").length;

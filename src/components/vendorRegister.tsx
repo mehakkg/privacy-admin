@@ -2,15 +2,17 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { X, Lock } from "lucide-react";
+import { X, Lock, Plus, Trash2 } from "lucide-react";
 import { Pill, InfoTip, type PillTone } from "@/components/ui";
 import { ActionError } from "@/components/actions";
-import { overrideVendorRiskAction } from "@/app/actions/vendorRisk";
+import { overrideVendorRiskAction, addPurposeMappingAction, removePurposeMappingAction } from "@/app/actions/vendorRisk";
 import { provisionPortalAccessAction, revokePortalAccessAction } from "@/app/actions/integration";
+import { DATA_CATEGORIES, DATA_CATEGORY_LABEL } from "@/lib/domain";
 import { useRouter } from "next/navigation";
 import type { ActionResult } from "@/app/actions/requests";
 
-export interface VendorMapping { purposeName: string; locked: boolean; piiTypes: string[]; activityName: string | null }
+export interface VendorMapping { id: string; purposeName: string; locked: boolean; piiTypes: string[]; activityName: string | null }
+export interface Opt { id: string; name: string }
 export interface VendorOverride { from: string; to: string; by: string; reason: string; at: string }
 export interface VendorDetail {
   id: string;
@@ -42,7 +44,7 @@ export function dpaLabel(status: string, days: number | null): { text: string; t
   return { text: status, tone: "gray" };
 }
 
-export function VendorRegister({ vendors, view }: { vendors: VendorDetail[]; view: "vendors" | "dpa" }) {
+export function VendorRegister({ vendors, view, purposes = [], role = "admin" }: { vendors: VendorDetail[]; view: "vendors" | "dpa"; purposes?: Opt[]; role?: string }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const open = vendors.find((v) => v.id === openId) ?? null;
 
@@ -107,13 +109,98 @@ export function VendorRegister({ vendors, view }: { vendors: VendorDetail[]; vie
         )}
       </div>
 
-      {open && <VendorDrawer v={open} focusDpa={view === "dpa"} onClose={() => setOpenId(null)} />}
+      {open && <VendorDrawer v={open} focusDpa={view === "dpa"} purposes={purposes} role={role} onClose={() => setOpenId(null)} />}
     </div>
   );
 }
 
 function initials(name: string): string {
   return name.split(/\s+/).map((p) => p.replace(/[^A-Za-z]/g, "").charAt(0)).filter(Boolean).slice(0, 2).join("").toUpperCase() || "?";
+}
+
+/**
+ * Purpose & PII mapping — read-only for most roles, editable by Legal/DPO via an
+ * inline-add row (this platform's table-with-inline-add convention, not a modal).
+ * Policy-locked rows (tied to an approved PurposeTag) never expose a delete
+ * control, for any role.
+ */
+function PurposeMappings({ vendorId, mappings, purposes, canEdit }: { vendorId: string; mappings: VendorMapping[]; purposes: Opt[]; canEdit: boolean }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [result, setResult] = useState<ActionResult | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [purposeId, setPurposeId] = useState("");
+  const [pii, setPii] = useState<string[]>([]);
+  const [activity, setActivity] = useState("");
+
+  const run = (op: () => Promise<ActionResult>, after?: () => void) =>
+    start(async () => { const r = await op(); setResult(r); if (r.ok) { after?.(); router.refresh(); } });
+  const reset = () => { setAdding(false); setPurposeId(""); setPii([]); setActivity(""); };
+
+  return (
+    <div>
+      {mappings.length === 0 ? (
+        <p className="cell-sub" style={{ margin: "0 0 8px" }}>No purposes mapped — this vendor is not cleared to touch personal data.</p>
+      ) : (
+        <div className="table-wrap">
+          <table className="dtable">
+            <thead><tr><th>Purpose</th><th>PII types</th><th>Activity</th>{canEdit && <th style={{ width: 40 }}></th>}</tr></thead>
+            <tbody>
+              {mappings.map((m) => (
+                <tr key={m.id}>
+                  <td>{m.locked ? (
+                    <InfoTip align="left" text="Policy-locked — only DPO/Legal can edit"><span className="lock-inline"><Lock size={12} /> {m.purposeName}</span></InfoTip>
+                  ) : m.purposeName}</td>
+                  <td className="cell-sub" style={{ textTransform: "capitalize" }}>{m.piiTypes.map((t) => DATA_CATEGORY_LABEL[t as keyof typeof DATA_CATEGORY_LABEL] ?? t).join(", ") || "—"}</td>
+                  <td className="cell-sub">{m.activityName ?? "—"}</td>
+                  {canEdit && (
+                    <td>{!m.locked && (
+                      <button className="icon-btn" disabled={pending} title="Remove mapping" aria-label="Remove mapping" onClick={() => run(() => removePurposeMappingAction(m.id))}><Trash2 size={14} /></button>
+                    )}</td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {canEdit && (
+        adding ? (
+          <div className="stack" style={{ gap: 6, marginTop: 8 }}>
+            <div className="row" style={{ gap: 6, alignItems: "flex-end" }}>
+              <label className="field" style={{ flex: 1 }}>
+                <span className="field-label">Purpose</span>
+                <select className="input sm" value={purposeId} onChange={(e) => setPurposeId(e.target.value)}>
+                  <option value="">Select an approved purpose…</option>
+                  {purposes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </label>
+              <label className="field" style={{ flex: 1 }}>
+                <span className="field-label">Activity (optional)</span>
+                <input className="input sm" value={activity} onChange={(e) => setActivity(e.target.value)} placeholder="e.g. Loan Application" />
+              </label>
+            </div>
+            <div>
+              <span className="field-label">PII types</span>
+              <div className="row" style={{ gap: 6, flexWrap: "wrap", marginTop: 4 }}>
+                {DATA_CATEGORIES.map((c) => (
+                  <button key={c} className={`btn xs ${pii.includes(c) ? "primary" : "ghost"}`} onClick={() => setPii((s) => s.includes(c) ? s.filter((x) => x !== c) : [...s, c])}>{DATA_CATEGORY_LABEL[c]}</button>
+                ))}
+              </div>
+            </div>
+            <div className="row" style={{ gap: 6 }}>
+              <button className="btn primary sm" disabled={pending || !purposeId || pii.length === 0} onClick={() => run(() => addPurposeMappingAction(vendorId, purposeId, pii, activity), reset)}>{pending ? "Saving…" : "Add mapping"}</button>
+              <button className="btn ghost sm" onClick={reset}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <button className="link-action" onClick={() => setAdding(true)}><Plus size={12} /> Add purpose mapping</button>
+        )
+      )}
+      <ActionError result={result} />
+    </div>
+  );
 }
 
 /** Screen 4b — one Data-Processor portal login per vendor, provisioned here. */
@@ -172,7 +259,7 @@ function PortalAccess({ vendorId, portal, scopeOptions }: { vendorId: string; po
   );
 }
 
-function VendorDrawer({ v, focusDpa, onClose }: { v: VendorDetail; focusDpa: boolean; onClose: () => void }) {
+function VendorDrawer({ v, focusDpa, purposes, role, onClose }: { v: VendorDetail; focusDpa: boolean; purposes: Opt[]; role: string; onClose: () => void }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [result, setResult] = useState<ActionResult | null>(null);
@@ -248,28 +335,10 @@ function VendorDrawer({ v, focusDpa, onClose }: { v: VendorDetail; focusDpa: boo
           {/* Screen 4b — Provision Processor Portal Access (one login per vendor) */}
           <PortalAccess vendorId={v.id} portal={v.portal} scopeOptions={v.linkedProcessors} />
 
-          {/* Purpose & PII mapping */}
+          {/* Purpose & PII mapping — editable by Legal/DPO */}
           <h3 className="drawer-section">Purpose &amp; PII mapping</h3>
-          {v.mappings.length === 0 ? (
-            <p className="cell-sub" style={{ margin: 0 }}>No purposes mapped — this vendor is not cleared to touch personal data.</p>
-          ) : (
-            <div className="table-wrap">
-              <table className="dtable">
-                <thead><tr><th>Purpose</th><th>PII types</th><th>Activity</th></tr></thead>
-                <tbody>
-                  {v.mappings.map((m, i) => (
-                    <tr key={i}>
-                      <td>{m.locked ? (
-                        <InfoTip align="left" text="Policy-locked — only DPO/Legal can edit"><span className="lock-inline"><Lock size={12} /> {m.purposeName}</span></InfoTip>
-                      ) : m.purposeName}</td>
-                      <td className="cell-sub" style={{ textTransform: "capitalize" }}>{m.piiTypes.join(", ") || "—"}</td>
-                      <td className="cell-sub">{m.activityName ?? "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <PurposeMappings vendorId={v.id} mappings={v.mappings} purposes={purposes} canEdit={role === "legal" || role === "dpo"} />
+
 
           {/* DPA & contract */}
           <h3 className="drawer-section" style={focusDpa ? { outline: "2px solid var(--accent)", outlineOffset: 4, borderRadius: 4 } : undefined}>DPA &amp; contract</h3>
