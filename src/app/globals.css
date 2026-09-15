@@ -26,32 +26,32 @@
   --bg: #ffffff;
   --bg-page: #fafbfc;
   --bg-sidebar: #ffffff;
-  --bg-hover: #f7f8f9;
-  --bg-row-hover: #fafafa;
-  --bg-selected: #eff6ff;
-  --bg-muted: #f5f6f7;
+  --bg-hover: #f3f4f6;
+  --bg-row-hover: #f9fafb;
+  --bg-selected: #eff4ff;
+  --bg-muted: #f3f4f6;
 
-  /* Borders */
-  --border: #e6e8ec;
+  /* Borders — design-system tokens (color.border / border.strong) */
+  --border: #e5e7eb;
   --border-soft: #eef0f3;
-  --border-strong: #d7dadf;
+  --border-strong: #d1d5db;
 
-  /* Text */
-  --text: #1a1d21;
-  --text-2: #4b5159;
-  --text-3: #7a818b;
-  --text-4: #9aa0aa;
+  /* Text — design-system neutrals (text.primary / secondary / muted) */
+  --text: #111827;
+  --text-2: #4b5563;
+  --text-3: #6b7280;
+  --text-4: #9ca3af;
   --text-link: #2563eb;
 
-  /* Status — light background, dark text */
-  --green: #1f9d55;
-  --green-bg: #e6f6ec;
-  --red: #d13438;
+  /* Status — design-system semantic colors (success/danger/warning/info) */
+  --green: #10b981;
+  --green-bg: #e7f7f1;
+  --red: #ef4444;
   --red-bg: #fdecec;
-  --yellow: #b27a00;
-  --yellow-bg: #fff4d9;
-  --blue: #0369a1;
-  --blue-bg: #e0f2fe;
+  --yellow: #f59e0b;
+  --yellow-bg: #fef3e0;
+  --blue: #3b82f6;
+  --blue-bg: #e7f0fe;
   --purple: #6b48d6;
   --purple-bg: #efeaff;
   --gray-bg: #eef0f3;
@@ -2470,3 +2470,50 @@ h3.drawer-section.first { margin-top: 0; padding-top: 0; border-top: 0; }
 
 /* Topbar — 64px, white, single bottom border (§4). */
 .topbar { height: 64px; min-height: 64px; background: #FFFFFF; border-bottom: 1px solid #E5E7EB; }
+
+/* ===========================================================================
+   DESIGN SYSTEM — component alignment (§6 Input, §7 Button, §13 Badge, Table).
+   Token colors above already propagate to pills/stats/buttons; these are the
+   geometry + restraint rules that don't come from tokens alone.
+   =========================================================================== */
+
+/* Inputs (§6): 40px, radius.input 8px, border.strong, NEUTRAL focus ring —
+   never blue (restraint rule / non-negotiable #1). Dense inline rows keep .sm. */
+.input { min-height: 40px; border-radius: var(--radius-md); border-color: var(--border-strong); }
+.input.sm { min-height: 34px; }
+textarea.input { min-height: 90px; }
+.input:focus, .input:focus-visible {
+  outline: none;
+  border-color: var(--text);
+  box-shadow: 0 0 0 3px rgba(17, 24, 39, 0.08);
+}
+.input.error, .input[aria-invalid="true"] { border-color: var(--red); }
+.input.error:focus { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12); }
+
+/* Checkbox / radio check state is neutral near-black, never blue (§6, #1). */
+input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
+
+/* Toggle ON is green (#10B981) — the one semantic colour in the form set (#8). */
+.switch.on { background: var(--green); }
+
+/* Table (§14): header is the only tinted surface — 11px/600 uppercase, .04em,
+   on #F3F4F6, with a bottom border. Body stays untinted. */
+.dtable thead th {
+  background: var(--bg-muted);
+  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Card / modal elevation (shadow.card / shadow.modal). */
+.card { border-color: var(--border); border-radius: var(--radius-md); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); }
+.modal { border-radius: var(--radius-lg); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15); }
+
+/* Buttons (§7): weight 500, primary/danger carry the semantic tokens already;
+   just lock the label weight and keep the compact 32px baseline. */
+.btn { font-weight: 500; }
+.btn.primary { color: #fff; }
+.btn.danger { color: #fff; }
