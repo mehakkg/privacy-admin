@@ -200,7 +200,7 @@ export async function Shell({
           <div className="sidebar-logo-mark">P</div>
           <div className="sidebar-logo-words">
             <span className="sidebar-logo-name">Privacy Admin</span>
-            <span className="sidebar-logo-sub">DPDP compliance</span>
+            <span className="sidebar-logo-sub">PRIVACY CONSOLE</span>
           </div>
         </div>
         <SidebarNav groups={navGroups(openRequests, session.role)} active={active} />
