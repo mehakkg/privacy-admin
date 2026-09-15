@@ -91,7 +91,7 @@ export function TriageReview({ rows }: { rows: TriageRow[] }) {
         <div className="cell-stack">
           <span className="mono cell-primary">{r.label}</span>
           {r.sourceName && <span className="cell-sub">{r.sourceName}</span>}
-          {r.driftFlag && <Pill tone="orange">Drift</Pill>}
+          {r.driftFlag && <Pill tone="yellow">Drift</Pill>}
         </div>
       ),
     },

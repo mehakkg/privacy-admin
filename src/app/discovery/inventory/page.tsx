@@ -220,7 +220,7 @@ export default async function InventoryPage({
                         {f.driftFlag && (
                           <>
                             {" "}
-                            <Pill tone="orange">Drift</Pill>
+                            <Pill tone="yellow">Drift</Pill>
                           </>
                         )}
                       </span>

@@ -131,7 +131,7 @@ export function DisclosureWizard({ vendors }: { vendors: { id: string; name: str
             </dl>
             <div style={{ margin: "10px 0" }}>
               <Notice tone="warn" title="Submitting places this engagement on hold">
-                Status becomes <Pill tone="orange">Held pending approval</Pill>. No data may flow to the sub-processor until Legal or the DPO approves — there is no way to activate it from your side.
+                Status becomes <Pill tone="yellow">Held pending approval</Pill>. No data may flow to the sub-processor until Legal or the DPO approves — there is no way to activate it from your side.
               </Notice>
             </div>
             <div className="wiz-actions">

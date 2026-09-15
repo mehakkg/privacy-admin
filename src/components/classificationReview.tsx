@@ -53,7 +53,7 @@ export function ClassificationReview({
 
   const statusOf = (r: ReviewRow) =>
     r.driftFlag
-      ? { label: "Drift", tone: "orange" as const }
+      ? { label: "Drift", tone: "yellow" as const }
       : r.confidence === "needs_review"
         ? { label: "Needs review", tone: "yellow" as const }
         : { label: "High confidence", tone: "green" as const };

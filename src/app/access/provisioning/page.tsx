@@ -133,7 +133,7 @@ export default async function ProvisioningPage({
           Every request is granted from a named least-privilege template — the
           product no longer leaves each grant as a manual, error-prone decision.
           Broadening beyond a template is possible, but it is the exception:{" "}
-          <Pill tone="orange">Broadened</Pill> marks it in the queue and a reason is
+          <Pill tone="yellow">Broadened</Pill> marks it in the queue and a reason is
           recorded against the grant.
         </p>
       </Card>

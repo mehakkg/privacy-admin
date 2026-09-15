@@ -230,7 +230,7 @@ function RoleEditorDrawer({ role }: { role: RoleRow }) {
                   >
                     {p}
                   </code>
-                  {isExcess && checked && <Pill tone="orange">added</Pill>}
+                  {isExcess && checked && <Pill tone="yellow">added</Pill>}
                 </label>
               );
             })}

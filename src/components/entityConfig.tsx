@@ -314,7 +314,7 @@ export function UserMappingTable({
                 <td>
                   {m.accessScope === "cross" ? (
                     <div className="cell-stack">
-                      <Pill tone="orange">Cross-entity</Pill>
+                      <Pill tone="yellow">Cross-entity</Pill>
                       <span className="cell-sub">
                         + {m.additionalEntities.join(", ")} · {m.justification}
                       </span>

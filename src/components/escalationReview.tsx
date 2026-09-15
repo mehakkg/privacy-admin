@@ -35,7 +35,7 @@ const TYPE_META: Record<string, { label: string; tone: PillTone }> = {
   retention_conflict: { label: "Retention conflict", tone: "yellow" },
   policy_ambiguity: { label: "Policy ambiguity", tone: "gray" },
   rule_request: { label: "Rule request", tone: "blue" },
-  rule_exception: { label: "Rule exception", tone: "orange" },
+  rule_exception: { label: "Rule exception", tone: "yellow" },
   purpose_request: { label: "Purpose request", tone: "blue" },
   dpa_update: { label: "DPA update", tone: "purple" },
   other: { label: "Other", tone: "gray" },

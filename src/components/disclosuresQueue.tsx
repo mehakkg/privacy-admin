@@ -28,8 +28,8 @@ export interface DisclosureRow {
 
 export const STATUS_META: Record<string, { label: string; tone: PillTone }> = {
   draft: { label: "Draft", tone: "gray" },
-  pending_disclosure: { label: "Pending disclosure", tone: "yellow" },
-  held_pending_approval: { label: "Held pending approval", tone: "orange" },
+  pending_disclosure: { label: "Pending disclosure", tone: "gray" },
+  held_pending_approval: { label: "Held pending approval", tone: "yellow" },
   active: { label: "Active", tone: "green" },
   flagged: { label: "Undisclosed — flagged", tone: "red" },
 };

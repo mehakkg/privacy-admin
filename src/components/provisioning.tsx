@@ -77,7 +77,7 @@ export function ProvisioningQueue({ rows }: { rows: ProvRequestRow[] }) {
       render: (r) => (
         <span className="row" style={{ gap: 6 }}>
           {r.roleRequested}
-          {r.broadenedJustification && <Pill tone="orange">Broadened</Pill>}
+          {r.broadenedJustification && <Pill tone="yellow">Broadened</Pill>}
         </span>
       ),
     },
@@ -164,7 +164,7 @@ function GrantDrawer({ request }: { request: ProvRequestRow }) {
                   <code className="field-chip" style={{ margin: 0 }}>
                     {level}
                   </code>
-                  {above && <Pill tone="orange">above template</Pill>}
+                  {above && <Pill tone="yellow">above template</Pill>}
                 </span>
               </div>
             );
