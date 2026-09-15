@@ -212,6 +212,7 @@ model DataProcessor {
   executions ExecutionRecord[]
   activityElements ActivityElement[]
   vendor     Vendor? @relation(fields: [vendorId], references: [id])
+  flowNodes  DataFlowNode[]
 }
 
 /// Discovered location of a principal's data. Exactly one of systemId or
@@ -1480,6 +1481,7 @@ model DiscoverySource {
   fields    ClassifiedField[]
   scanRuns  ScanRun[]
   ropaSuggestions RopaSuggestion[]
+  flowNodes DataFlowNode[]
 }
 
 /// One scan execution. Kept as history rather than overwriting the source's
@@ -1525,8 +1527,19 @@ model DataFlowNode {
   refHref  String?
   entityId String?
 
+  /// Typed links to the record this node stands for, so the flow map can render
+  /// the real profile inline instead of only linking out. Nullable: "touchpoint"
+  /// (and some "system") nodes have no backing record and stay refHref-only.
+  sourceRefId    String?
+  processorRefId String?
+  source    DiscoverySource? @relation(fields: [sourceRefId], references: [id])
+  processor DataProcessor?   @relation(fields: [processorRefId], references: [id])
+
   outgoing DataFlowConnection[] @relation("FlowFrom")
   incoming DataFlowConnection[] @relation("FlowTo")
+
+  @@index([sourceRefId])
+  @@index([processorRefId])
 }
 
 /// An edge. A connection with no purpose and no linked DPIA is `undisclosed` —

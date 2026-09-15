@@ -661,12 +661,31 @@ async function main() {
   });
 
   // -- Flow map nodes and edges (generated from the connected estate) ------
-  const flowNode = (id: string, label: string, nodeType: string, subtitle: string, refHref?: string) =>
-    prisma.dataFlowNode.create({ data: { id, label, nodeType, subtitle, refHref: refHref ?? null, entityId: "ent_meridian" } });
+  // refs: link the node to the real record it stands for, so the flow map can
+  // pull the live profile inline. Touchpoint nodes have no backing record.
+  const flowNode = (
+    id: string,
+    label: string,
+    nodeType: string,
+    subtitle: string,
+    refs?: { refHref?: string; sourceRefId?: string; processorRefId?: string },
+  ) =>
+    prisma.dataFlowNode.create({
+      data: {
+        id,
+        label,
+        nodeType,
+        subtitle,
+        refHref: refs?.refHref ?? null,
+        sourceRefId: refs?.sourceRefId ?? null,
+        processorRefId: refs?.processorRefId ?? null,
+        entityId: "ent_meridian",
+      },
+    });
 
-  await flowNode("fn_core", "Core Banking DB", "source", "PostgreSQL · 6 schemas", "/discovery/sources/src_core");
-  await flowNode("fn_share", "Finance File Share", "system", "Internal system", "/discovery/sources/src_share");
-  await flowNode("fn_cloudsupport", "CloudSupport Ticketing", "processor", "DPA-2026-0143");
+  await flowNode("fn_core", "Core Banking DB", "source", "PostgreSQL · 6 schemas", { refHref: "/discovery/sources/src_core", sourceRefId: "src_core" });
+  await flowNode("fn_share", "Finance File Share", "system", "Internal system", { refHref: "/discovery/sources/src_share", sourceRefId: "src_share" });
+  await flowNode("fn_cloudsupport", "CloudSupport Ticketing", "processor", "DPA-2026-0143", { refHref: "/vendor-risk/vendors", processorRefId: "proc_cloudsupport" });
   await flowNode("fn_portal", "Self-service portal", "touchpoint", "Data principal touchpoint");
   await flowNode("fn_branch", "Branch (assisted)", "touchpoint", "Data principal touchpoint");
 

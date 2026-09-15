@@ -1853,6 +1853,89 @@ button.profile:hover .profile-name {
   padding: 40px;
 }
 
+/* Graph / Table segmented toggle — neutral, one accent on the active segment. */
+.seg-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.seg-btn {
+  border: 0;
+  background: var(--bg);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+.seg-btn + .seg-btn {
+  border-left: 1px solid var(--border-strong);
+}
+.seg-btn.active {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
+/* Undisclosed alert rail — the flagged transfers, clickable into the drawer. */
+.flow-alert-rail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-soft);
+  background: color-mix(in srgb, var(--red) 6%, var(--bg));
+}
+.flow-alert-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--red);
+}
+.flow-alert-chip {
+  border: 1px solid color-mix(in srgb, var(--red) 45%, var(--border-strong));
+  background: var(--bg);
+  color: var(--text);
+  font-size: 11.5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.flow-alert-chip:hover,
+.flow-alert-chip.active {
+  border-color: var(--red);
+  background: color-mix(in srgb, var(--red) 10%, var(--bg));
+}
+
+/* Table view — full-height edge list, sibling to the drawer. */
+.flow-table-wrap {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  max-height: 620px;
+}
+.flow-table-wrap .row-selected {
+  background: var(--bg-muted);
+}
+
+/* Inline node profile — a quiet label/value list, no new palette. */
+.flow-profile {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+}
+.flow-profile dt {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.flow-profile dd {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text);
+  text-align: right;
+}
+
 /* Policy-locked table cell — quieter than the one column Admin owns. */
 .locked-cell {
   display: inline-flex;

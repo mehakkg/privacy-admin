@@ -81,6 +81,44 @@ async function main() {
   await seedActivities();
   await seedSources();
   await seedRopaSuggestions();
+  await backfillFlowNodeRefs();
+}
+
+/**
+ * Backfill the new DataFlowNode → source/processor links on databases that were
+ * seeded before those FKs existed. Idempotent: only touches nodes that still
+ * have neither FK, and resolves the target by the refHref id (sources) or by
+ * matching the node label to a processor name.
+ */
+async function backfillFlowNodeRefs() {
+  const nodes = await prisma.dataFlowNode.findMany({
+    where: { sourceRefId: null, processorRefId: null },
+    select: { id: true, label: true, nodeType: true, refHref: true },
+  });
+  if (nodes.length === 0) { console.log("patch-datamap: flow node refs present, skipping."); return; }
+  const [sources, processors] = await Promise.all([
+    prisma.discoverySource.findMany({ select: { id: true } }),
+    prisma.dataProcessor.findMany({ select: { id: true, name: true } }),
+  ]);
+  const sourceIds = new Set(sources.map((s) => s.id));
+  const procByName = new Map(processors.map((p) => [p.name, p.id]));
+  let linked = 0;
+  for (const n of nodes) {
+    // A source/system node links out via /discovery/sources/<id> — reuse that id.
+    const m = n.refHref?.match(/\/discovery\/sources\/([^/]+)$/);
+    if (m && sourceIds.has(m[1])) {
+      await prisma.dataFlowNode.update({ where: { id: n.id }, data: { sourceRefId: m[1] } });
+      linked++;
+      continue;
+    }
+    // A processor node is matched to its DataProcessor by exact name.
+    const pid = procByName.get(n.label);
+    if (pid) {
+      await prisma.dataFlowNode.update({ where: { id: n.id }, data: { processorRefId: pid } });
+      linked++;
+    }
+  }
+  console.log(`patch-datamap: backfilled ${linked} flow node ref(s).`);
 }
 
 /** Seed initial ROPA suggestions from approved classified fields, once. */

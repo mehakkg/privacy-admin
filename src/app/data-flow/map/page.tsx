@@ -1,12 +1,52 @@
-import Link from "next/link";
 import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
 import { CompactFilterBar } from "@/components/CompactFilterBar";
-import { Notice, PageHead, Stat } from "@/components/ui";
+import { PageHead, Stat, formatDate } from "@/components/ui";
 import { FlowCanvas, type FlowNode, type FlowEdge } from "@/components/FlowCanvas";
 import { decodeList } from "@/lib/codec/json";
+import { sourceStatus, SOURCE_STATUS_LABEL, SOURCE_KIND_LABEL } from "@/lib/sources";
 
 export const dynamic = "force-dynamic";
+
+type NodeWithRefs = Awaited<ReturnType<typeof loadNodes>>[number];
+function loadNodes() {
+  return db.dataFlowNode.findMany({ include: { source: true, processor: true } });
+}
+
+/**
+ * The real profile behind a node, pulled from its linked record — so viewing a
+ * source's status or a processor's DPA never means leaving this screen. Labels
+ * are reused verbatim from the Sources screen so the two never diverge.
+ * Touchpoint / unlinked nodes return null and the drawer simply omits the section.
+ */
+function buildProfile(n: NodeWithRefs): Record<string, string> | null {
+  if (n.processor) {
+    const p = n.processor;
+    return {
+      "DPA status": p.dpaStatus === "draft" ? "Draft — not yet valid" : "Active",
+      Risk: p.riskClassification ? p.riskClassification[0].toUpperCase() + p.riskClassification.slice(1) : "Not classified",
+      "DPA expires": p.dpaExpiresAt ? formatDate(p.dpaExpiresAt) : "—",
+      Health: p.healthStatus[0].toUpperCase() + p.healthStatus.slice(1),
+    };
+  }
+  if (n.source) {
+    const s = n.source;
+    return {
+      Status: SOURCE_STATUS_LABEL[sourceStatus(s)],
+      Kind: SOURCE_KIND_LABEL[s.kind] ?? s.kind,
+      "Last scanned": s.lastScanned ? formatDate(s.lastScanned) : "Never",
+    };
+  }
+  return null;
+}
+
+/** A record exists behind this node → offer a secondary "manage in full" link
+ *  for the editing that genuinely doesn't belong in a side drawer. */
+function manageLink(n: NodeWithRefs): { href: string; label: string } | null {
+  if (n.source) return { href: `/discovery/sources/${n.source.id}`, label: "Manage in Sources →" };
+  if (n.processor) return { href: "/vendor-risk/vendors", label: "Manage in Vendor Risk →" };
+  return null;
+}
 
 /**
  * SCREEN 1 — Flow Map.
@@ -23,13 +63,12 @@ export default async function FlowMapPage({
 }) {
   const params = await searchParams;
 
-  const [nodesRaw, edgesRaw, purposes, processors, entities, flaggedSubprocessors] = await Promise.all([
-    db.dataFlowNode.findMany(),
+  const [nodesRaw, edgesRaw, purposes, processors, entities] = await Promise.all([
+    loadNodes(),
     db.dataFlowConnection.findMany({ include: { purposeTag: true } }),
     db.purposeTag.findMany({ where: { status: "approved" }, orderBy: { name: "asc" } }),
     db.dataProcessor.findMany(),
     db.entity.findMany(),
-    db.subProcessorDisclosure.count({ where: { detected: true, flagStatus: { not: "resolved" } } }),
   ]);
 
   const procName = new Map(processors.map((p) => [p.id, p.name]));
@@ -39,7 +78,8 @@ export default async function FlowMapPage({
     label: n.label,
     nodeType: n.nodeType as FlowNode["nodeType"],
     subtitle: n.subtitle,
-    refHref: n.refHref,
+    profile: buildProfile(n),
+    manage: manageLink(n),
   }));
 
   let edges: FlowEdge[] = edgesRaw.map((e) => ({
@@ -81,15 +121,6 @@ export default async function FlowMapPage({
         title="Flow map"
         titleTip="Auto-generated from your connected sources and integrations. Undisclosed connections — detected transfers with no recorded purpose or DPIA — are flagged in red."
       />
-
-      {flaggedSubprocessors > 0 && (
-        <div style={{ marginBottom: 12 }}>
-          <Notice tone="danger" title="Undisclosed sub-processor transfer detected">
-            {flaggedSubprocessors} data destination{flaggedSubprocessors === 1 ? "" : "s"} match no registered vendor or approved sub-processor disclosure.{" "}
-            <Link href="/vendor-risk/sub-processor-disclosures/flagged" className="row-link">Review in Vendor Risk →</Link>
-          </Notice>
-        </div>
-      )}
 
       <div className="stat-row" style={{ marginBottom: 16 }}>
         <Stat label="Nodes" value={nodesRaw.length} />

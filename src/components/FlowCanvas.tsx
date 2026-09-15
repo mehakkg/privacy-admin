@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Pill } from "@/components/ui";
+import { Pill, Chip } from "@/components/ui";
 import { ActionError } from "@/components/actions";
 import {
   addConnectionAction,
@@ -17,7 +17,10 @@ export interface FlowNode {
   label: string;
   nodeType: "source" | "system" | "processor" | "touchpoint";
   subtitle: string | null;
-  refHref: string | null;
+  /** Real record data rendered inline in the drawer; null for unlinked nodes. */
+  profile: Record<string, string> | null;
+  /** Optional secondary "manage in full" link for out-of-drawer editing. */
+  manage: { href: string; label: string } | null;
 }
 export interface FlowEdge {
   id: string;
@@ -56,6 +59,35 @@ const NH = 54;
 const COL_W = 250;
 const ROW_H = 96;
 
+/**
+ * Undirected reachable set from a starting node — the full multi-hop trace, not
+ * just direct neighbours. Answers "which source, system and processor does this
+ * touchpoint ultimately connect to" in one selection.
+ */
+function connectedComponent(startId: string, edges: FlowEdge[]) {
+  const adj = new Map<string, { to: string; edgeId: string }[]>();
+  const link = (a: string, b: string, id: string) => {
+    const list = adj.get(a) ?? [];
+    list.push({ to: b, edgeId: id });
+    adj.set(a, list);
+  };
+  for (const e of edges) {
+    link(e.fromId, e.toId, e.id);
+    link(e.toId, e.fromId, e.id);
+  }
+  const nodeSet = new Set([startId]);
+  const edgeSet = new Set<string>();
+  const queue = [startId];
+  while (queue.length) {
+    const cur = queue.shift()!;
+    for (const { to, edgeId } of adj.get(cur) ?? []) {
+      edgeSet.add(edgeId);
+      if (!nodeSet.has(to)) { nodeSet.add(to); queue.push(to); }
+    }
+  }
+  return { nodeSet, edgeSet };
+}
+
 export function FlowCanvas({
   nodes,
   edges,
@@ -73,9 +105,43 @@ export function FlowCanvas({
   const [pending, start] = useTransition();
   const [result, setResult] = useState<ActionResult | null>(null);
   const [selected, setSelected] = useState<{ kind: "node" | "edge" | "add"; id: string } | null>(null);
+  const [view, setView] = useState<"graph" | "table">("graph");
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 20, y: 20 });
   const drag = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
+
+  // Per-node stats shown on the card itself, so risk reads at a glance.
+  const nodeStats = useMemo(() => {
+    const m = new Map<string, { flows: number; undisclosed: number }>();
+    for (const n of nodes) m.set(n.id, { flows: 0, undisclosed: 0 });
+    for (const e of edges) {
+      for (const id of [e.fromId, e.toId]) {
+        const s = m.get(id);
+        if (!s) continue;
+        s.flows += 1;
+        if (e.status === "undisclosed") s.undisclosed += 1;
+      }
+    }
+    return m;
+  }, [nodes, edges]);
+
+  // The highlighted path for the current selection: the whole component for a
+  // node, the two endpoints for an edge. null → nothing dimmed.
+  const highlight = useMemo(() => {
+    if (!selected) return null;
+    if (selected.kind === "node") return connectedComponent(selected.id, edges);
+    if (selected.kind === "edge") {
+      const e = edges.find((x) => x.id === selected.id);
+      if (!e) return null;
+      return { nodeSet: new Set([e.fromId, e.toId]), edgeSet: new Set([e.id]) };
+    }
+    return null;
+  }, [selected, edges]);
+  const nodeDim = (id: string) => (highlight && !highlight.nodeSet.has(id) ? 0.3 : 1);
+  const edgeDim = (id: string) => (highlight && !highlight.edgeSet.has(id) ? 0.18 : 1);
+  const onPath = (id: string) => Boolean(highlight?.nodeSet.has(id));
+
+  const undisclosedEdges = useMemo(() => edges.filter((e) => e.status === "undisclosed"), [edges]);
 
   // Deterministic layout: place each node in its type's column, stacked by order.
   const positions = useMemo(() => {
@@ -90,8 +156,6 @@ export function FlowCanvas({
     return map;
   }, [nodes]);
 
-  const width = 4 * COL_W + 60;
-  const height = Math.max(...Object.values(Object.fromEntries([...nodes].map((n) => [n.nodeType, 0]))), 1);
   const rows = Math.max(1, ...Array.from(new Set(nodes.map((n) => COLUMN[n.nodeType]))).map((c) => nodes.filter((n) => COLUMN[n.nodeType] === c).length));
   const canvasH = rows * ROW_H + 60;
 
@@ -139,27 +203,61 @@ export function FlowCanvas({
   return (
     <div className="flow-wrap">
       <div className="flow-toolbar">
-        <div className="flow-legend">
-          {(Object.keys(NODE_LABEL) as FlowNode["nodeType"][]).map((t) => (
-            <span key={t} className="flow-legend-item">
-              <span className="flow-legend-dot" style={{ background: NODE_TONE[t] }} />
-              {NODE_LABEL[t]}
+        {view === "graph" ? (
+          <div className="flow-legend">
+            {(Object.keys(NODE_LABEL) as FlowNode["nodeType"][]).map((t) => (
+              <span key={t} className="flow-legend-item">
+                <span className="flow-legend-dot" style={{ background: NODE_TONE[t] }} />
+                {NODE_LABEL[t]}
+              </span>
+            ))}
+            <span className="flow-legend-item">
+              <span className="flow-legend-line undisclosed" /> Undisclosed
             </span>
-          ))}
-          <span className="flow-legend-item">
-            <span className="flow-legend-line undisclosed" /> Undisclosed
-          </span>
-        </div>
+          </div>
+        ) : (
+          <span className="cell-sub">{edges.length} flow{edges.length === 1 ? "" : "s"} · click a row to inspect</span>
+        )}
         <div className="row" style={{ gap: 6 }}>
-          <button className="btn xs" onClick={() => setZoom((z) => Math.max(0.4, z - 0.15))}>−</button>
-          <button className="btn xs" onClick={() => setZoom((z) => Math.min(2, z + 0.15))}>+</button>
+          <div className="seg-toggle" role="tablist" aria-label="View">
+            <button className={`seg-btn${view === "graph" ? " active" : ""}`} onClick={() => setView("graph")}>Graph</button>
+            <button className={`seg-btn${view === "table" ? " active" : ""}`} onClick={() => setView("table")}>Table</button>
+          </div>
+          {view === "graph" && (
+            <>
+              <button className="btn xs" onClick={() => setZoom((z) => Math.max(0.4, z - 0.15))}>−</button>
+              <button className="btn xs" onClick={() => setZoom((z) => Math.min(2, z + 0.15))}>+</button>
+            </>
+          )}
           <button className="btn sm" onClick={() => setSelected({ kind: "add", id: "" })}>
             + Add connection
           </button>
         </div>
       </div>
 
+      {undisclosedEdges.length > 0 && (
+        <div className="flow-alert-rail">
+          <span className="flow-alert-label">
+            {undisclosedEdges.length} undisclosed transfer{undisclosedEdges.length === 1 ? "" : "s"} — no purpose or DPIA:
+          </span>
+          {undisclosedEdges.map((e) => {
+            const from = nodes.find((n) => n.id === e.fromId);
+            const to = nodes.find((n) => n.id === e.toId);
+            return (
+              <button
+                key={e.id}
+                className={`flow-alert-chip${selected?.kind === "edge" && selected.id === e.id ? " active" : ""}`}
+                onClick={() => setSelected({ kind: "edge", id: e.id })}
+              >
+                {from?.label ?? "?"} → {to?.label ?? "?"}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       <div className="flow-canvas-row">
+        {view === "graph" && (
         <div
           className="flow-canvas"
           onWheel={onWheel}
@@ -180,13 +278,14 @@ export function FlowCanvas({
                 const y2 = b.y + NH / 2;
                 const mx = (x1 + x2) / 2;
                 const und = e.status === "undisclosed";
+                const lit = onPath(e.fromId) && onPath(e.toId) && (!highlight || highlight.edgeSet.has(e.id));
                 return (
-                  <g key={e.id} className="flow-edge-hit" onClick={() => setSelected({ kind: "edge", id: e.id })} style={{ cursor: "pointer" }}>
+                  <g key={e.id} className="flow-edge-hit" opacity={edgeDim(e.id)} onClick={() => setSelected({ kind: "edge", id: e.id })} style={{ cursor: "pointer" }}>
                     <path
                       d={`M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`}
                       fill="none"
                       stroke={und ? "var(--red)" : "var(--border-strong)"}
-                      strokeWidth={und ? 2.2 : 1.6}
+                      strokeWidth={und ? 2.2 : lit ? 2.4 : 1.6}
                       strokeDasharray={und ? "7 5" : undefined}
                     />
                     {/* fat invisible hit line */}
@@ -203,35 +302,92 @@ export function FlowCanvas({
               {nodes.map((n) => {
                 const p = positions.get(n.id)!;
                 const isTouch = n.nodeType === "touchpoint";
+                const stat = nodeStats.get(n.id) ?? { flows: 0, undisclosed: 0 };
+                const lit = onPath(n.id);
+                const isSel = selected?.kind === "node" && selected.id === n.id;
                 return (
                   <g
                     key={n.id}
                     className="flow-node"
                     transform={`translate(${p.x},${p.y})`}
+                    opacity={nodeDim(n.id)}
                     onClick={() => setSelected({ kind: "node", id: n.id })}
                     style={{ cursor: "pointer" }}
                   >
+                    {/* path ring in the node's own type colour — no new palette */}
+                    {lit && highlight && (
+                      <rect
+                        x={-3} y={-3} width={NW + 6} height={NH + 6}
+                        rx={isTouch ? (NH + 6) / 2 : 11}
+                        fill="none" stroke={NODE_TONE[n.nodeType]} strokeWidth={1.5} opacity={0.4}
+                      />
+                    )}
                     <rect
                       width={NW}
                       height={NH}
                       rx={isTouch ? NH / 2 : 8}
                       fill="var(--bg)"
                       stroke={NODE_TONE[n.nodeType]}
-                      strokeWidth={selected?.id === n.id ? 2.5 : 1.5}
+                      strokeWidth={isSel ? 2.5 : 1.5}
                     />
                     <rect width={5} height={NH} rx={2} fill={NODE_TONE[n.nodeType]} />
                     <text x={16} y={22} fontSize={12.5} fontWeight={600} fill="var(--text)">
-                      {n.label.length > 20 ? n.label.slice(0, 19) + "…" : n.label}
+                      {n.label.length > 18 ? n.label.slice(0, 17) + "…" : n.label}
                     </text>
                     <text x={16} y={39} fontSize={10.5} fill="var(--text-3)">
-                      {(n.subtitle ?? "").slice(0, 24)}
+                      {(n.subtitle ?? "").slice(0, 22)}
                     </text>
+                    {/* stat badges — flow count, and undisclosed count if any */}
+                    <text x={NW - 10} y={20} fontSize={10} textAnchor="end" fill="var(--text-3)" className="mono">
+                      {stat.flows} flow{stat.flows === 1 ? "" : "s"}
+                    </text>
+                    {stat.undisclosed > 0 && (
+                      <text x={NW - 10} y={34} fontSize={10} textAnchor="end" fill="var(--red)" fontWeight={700} className="mono">
+                        {stat.undisclosed} undisclosed
+                      </text>
+                    )}
                   </g>
                 );
               })}
             </g>
           </svg>
         </div>
+        )}
+
+        {view === "table" && (
+          <div className="flow-table-wrap">
+            <table className="dtable">
+              <thead>
+                <tr><th>From</th><th>To</th><th>Categories</th><th>Purpose</th><th>DPIA</th><th>Processor</th><th>Status</th></tr>
+              </thead>
+              <tbody>
+                {edges.map((e) => {
+                  const from = nodes.find((n) => n.id === e.fromId);
+                  const to = nodes.find((n) => n.id === e.toId);
+                  const isSel = selected?.kind === "edge" && selected.id === e.id;
+                  return (
+                    <tr key={e.id} className={`clickable${isSel ? " row-selected" : ""}`} onClick={() => setSelected({ kind: "edge", id: e.id })}>
+                      <td className="cell-primary">{from?.label ?? "—"}</td>
+                      <td>{to?.label ?? "—"}</td>
+                      <td>
+                        <span className="row" style={{ gap: 4, flexWrap: "wrap" }}>
+                          {e.categories.length ? e.categories.map((c) => <code key={c} className="field-chip">{c}</code>) : <span className="muted">—</span>}
+                        </span>
+                      </td>
+                      <td>{e.purpose ? <Chip>{e.purpose}</Chip> : <span className="muted">—</span>}</td>
+                      <td className="mono cell-sub">{e.dpiaRef ?? "—"}</td>
+                      <td className="cell-sub">{e.processorName ?? "—"}</td>
+                      <td>{e.status === "undisclosed" ? <Pill tone="red">Undisclosed</Pill> : <Pill tone="green" dot={false}>Documented</Pill>}</td>
+                    </tr>
+                  );
+                })}
+                {edges.length === 0 && (
+                  <tr><td colSpan={7}><div className="empty"><p style={{ margin: 0 }}>No flows match these filters.</p></div></td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {selected && (
           <aside className="flow-drawer">
@@ -242,6 +398,19 @@ export function FlowCanvas({
                   <h3 style={{ margin: "8px 0 2px", fontSize: 15 }}>{selNode.label}</h3>
                   <div className="cell-sub">{selNode.subtitle}</div>
                 </div>
+                {selNode.profile && (
+                  <div>
+                    <div className="section-label">Profile</div>
+                    <dl className="flow-profile">
+                      {Object.entries(selNode.profile).map(([k, v]) => (
+                        <div key={k} style={{ display: "contents" }}>
+                          <dt>{k}</dt>
+                          <dd>{v}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+                )}
                 <div>
                   <div className="section-label">Flows</div>
                   <ul style={{ margin: 0, paddingLeft: 16 }}>
@@ -258,9 +427,9 @@ export function FlowCanvas({
                     })}
                   </ul>
                 </div>
-                {selNode.refHref && (
-                  <Link href={selNode.refHref} className="btn sm">
-                    Open detail page
+                {selNode.manage && (
+                  <Link href={selNode.manage.href} className="row-link" style={{ fontSize: 12.5 }}>
+                    {selNode.manage.label}
                   </Link>
                 )}
                 <button className="btn ghost sm" onClick={() => setSelected(null)}>Close</button>
