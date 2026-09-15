@@ -716,6 +716,45 @@ model Vendor {
   portalAccess    VendorPortalAccess?
 }
 
+// ---------------------------------------------------------------------------
+// TPRM Configuration — the hardcoded templates and baseline logic in
+// src/lib/tprm.ts, lifted into editable, policy-locked (DPO/Legal) storage.
+// Seeded from the same defaults, so day-one behaviour is unchanged.
+// ---------------------------------------------------------------------------
+
+model QuestionnaireTemplate {
+  id          String  @id @default(cuid())
+  name        String
+  /// comma-separated Risk values (low,medium,high,critical) this template fits.
+  forTiers    String
+  description String
+  active      Boolean @default(true)
+  createdAt   DateTime @default(now())
+
+  questions TemplateQuestion[]
+}
+
+model TemplateQuestion {
+  id         String @id @default(cuid())
+  templateId String
+  section    String
+  label      String
+  sortOrder  Int
+
+  template QuestionnaireTemplate @relation(fields: [templateId], references: [id])
+
+  @@index([templateId])
+}
+
+/// Category → baseline-risk rules. First match wins (sortOrder ascending), the
+/// same precedence the old if/else chain in baselineForCategory relied on.
+model RiskAppetiteRule {
+  id              String @id @default(cuid())
+  categoryPattern String
+  baselineRating  String
+  sortOrder       Int
+}
+
 /// Platform integration flags (singleton). When `tprmEnabled` is on, Vendors are
 /// created and managed only in TPRM, and Privacy's Processor records import a
 /// reference (Vendor ID) instead of creating vendor-level data of their own.

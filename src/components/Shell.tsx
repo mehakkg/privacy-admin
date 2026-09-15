@@ -106,6 +106,7 @@ function navGroups(openRequests: number, role: string): NavEntry[] {
         { href: "/vendor-risk/register", label: "Vendor register", ready: true },
         { href: "/vendor-risk/assessments", label: "Assessments", ready: true },
         { href: "/vendor-risk/sub-processor-disclosures", label: "Sub-processor disclosures", ready: true },
+        { href: "/vendor-risk/configuration", label: "Configuration", ready: true },
       ],
     },
     {

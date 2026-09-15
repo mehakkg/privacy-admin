@@ -172,12 +172,47 @@ async function seedPortfolio() {
   console.log("patch-tprm: portfolio ensured.");
 }
 
+/** Lift the hardcoded TPRM config (src/lib/tprm.ts) into editable storage. */
+async function seedConfig() {
+  const QUESTIONS = [
+    { section: "Data handling", label: "What categories of personal data will you process on our behalf?", sortOrder: 1 },
+    { section: "Data handling", label: "Where is the data stored and processed (region/country)?", sortOrder: 2 },
+    { section: "Data handling", label: "Do you use any sub-processors? If so, name them and their role.", sortOrder: 3 },
+    { section: "Data handling", label: "What is your data retention and deletion policy for our data?", sortOrder: 4 },
+    { section: "Security & compliance", label: "Which security certifications do you hold (ISO 27001, SOC 2, etc.)?", sortOrder: 5 },
+    { section: "Security & compliance", label: "How is data encrypted, at rest and in transit?", sortOrder: 6 },
+    { section: "Security & compliance", label: "What is your breach-notification SLA to customers?", sortOrder: 7 },
+  ];
+  if ((await prisma.questionnaireTemplate.count()) === 0) {
+    const templates = [
+      { name: "Standard SaaS Vendor v3", forTiers: "low,medium", description: "Baseline diligence for low/medium-risk SaaS vendors." },
+      { name: "High-Risk Financial Partner v2", forTiers: "high,critical", description: "Deep diligence for financial and lending partners handling KYC/financial data." },
+      { name: "Cloud Storage v1", forTiers: "high", description: "Hosting and storage vendors — data residency, encryption, sub-processors." },
+    ];
+    for (const t of templates) {
+      await prisma.questionnaireTemplate.create({ data: { ...t, questions: { create: QUESTIONS } } });
+    }
+  }
+  if ((await prisma.riskAppetiteRule.count()) === 0) {
+    const rules = [
+      { categoryPattern: "payment|lending|bank|credit|financial|underwrit", baselineRating: "high", sortOrder: 1 },
+      { categoryPattern: "cloud|hosting|storage|infra|data ?centre|data ?center", baselineRating: "high", sortOrder: 2 },
+      { categoryPattern: "health|biometric|children|minor", baselineRating: "critical", sortOrder: 3 },
+      { categoryPattern: "support|marketing|analytics|saas|crm|email", baselineRating: "medium", sortOrder: 4 },
+      { categoryPattern: "office|supplies|stationery|facilit|logistics|travel", baselineRating: "low", sortOrder: 5 },
+    ];
+    await prisma.riskAppetiteRule.createMany({ data: rules });
+  }
+  console.log("patch-tprm: configuration seeded.");
+}
+
 async function main() {
   if (!process.env.DATABASE_URL) { console.log("patch-tprm: no DATABASE_URL, skipping."); return; }
   await seedVendors();
   await seedAssessments();
   await seedDisclosures();
   await seedPortfolio();
+  await seedConfig();
 }
 
 main()

@@ -16,14 +16,35 @@ export const RISKS: Risk[] = ["low", "medium", "high", "critical"];
  * suggestion for how rigorous the questionnaire should be; the final rating is
  * set by a human on the review screen.
  */
-export function baselineForCategory(category: string): Risk {
+export interface RiskRule { categoryPattern: string; baselineRating: string }
+
+/**
+ * The category → baseline rules, as ordered data (first match wins). These are
+ * the DEFAULTS the RiskAppetiteRule table is seeded from; once configured, the
+ * DB rows are passed in via `rules`. Kept here so day-one behaviour is identical
+ * and so anything still calling the sync `baselineForCategory` keeps working.
+ */
+export const DEFAULT_RISK_RULES: RiskRule[] = [
+  { categoryPattern: "payment|lending|bank|credit|financial|underwrit", baselineRating: "high" },
+  { categoryPattern: "cloud|hosting|storage|infra|data ?centre|data ?center", baselineRating: "high" },
+  { categoryPattern: "health|biometric|children|minor", baselineRating: "critical" },
+  { categoryPattern: "support|marketing|analytics|saas|crm|email", baselineRating: "medium" },
+  { categoryPattern: "office|supplies|stationery|facilit|logistics|travel", baselineRating: "low" },
+];
+
+/** First-match-wins over the given rules; "medium" is the fallback. */
+export function resolveBaseline(category: string, rules: RiskRule[]): Risk {
   const c = category.toLowerCase();
-  if (/payment|lending|bank|credit|financial|underwrit/.test(c)) return "high";
-  if (/cloud|hosting|storage|infra|data ?centre|data ?center/.test(c)) return "high";
-  if (/health|biometric|children|minor/.test(c)) return "critical";
-  if (/support|marketing|analytics|saas|crm|email/.test(c)) return "medium";
-  if (/office|supplies|stationery|facilit|logistics|travel/.test(c)) return "low";
+  for (const r of rules) {
+    try { if (new RegExp(r.categoryPattern, "i").test(c)) return (RISKS as string[]).includes(r.baselineRating) ? (r.baselineRating as Risk) : "medium"; }
+    catch { /* a malformed pattern just doesn't match */ }
+  }
   return "medium";
+}
+
+/** Back-compat sync helper: resolves against the built-in defaults. */
+export function baselineForCategory(category: string): Risk {
+  return resolveBaseline(category, DEFAULT_RISK_RULES);
 }
 
 export interface Template { id: string; name: string; forTiers: Risk[]; description: string }
