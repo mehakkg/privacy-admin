@@ -80,6 +80,27 @@ async function main() {
   if (!process.env.DATABASE_URL) { console.log("patch-datamap: no DATABASE_URL, skipping."); return; }
   await seedActivities();
   await seedSources();
+  await seedRopaSuggestions();
+}
+
+/** Seed initial ROPA suggestions from approved classified fields, once. */
+async function seedRopaSuggestions() {
+  if ((await prisma.ropaSuggestion.count()) > 0) { console.log("patch-datamap: ropa suggestions present, skipping."); return; }
+  const fields = await prisma.classifiedField.findMany({
+    where: { reviewState: "approved" },
+    select: { id: true, sourceId: true, purposeTagId: true, dataSubjectType: true },
+  });
+  const groups = new Map<string, { sourceId: string; purposeTagId: string | null; dataSubjectType: string | null; fieldIds: string[] }>();
+  for (const f of fields) {
+    const key = `${f.sourceId}|${f.purposeTagId ?? ""}|${f.dataSubjectType ?? ""}`;
+    const g = groups.get(key) ?? { sourceId: f.sourceId, purposeTagId: f.purposeTagId, dataSubjectType: f.dataSubjectType, fieldIds: [] };
+    g.fieldIds.push(f.id);
+    groups.set(key, g);
+  }
+  for (const g of groups.values()) {
+    await prisma.ropaSuggestion.create({ data: { sourceId: g.sourceId, purposeTagId: g.purposeTagId, dataSubjectType: g.dataSubjectType, fieldIdsJson: JSON.stringify([...g.fieldIds].sort()), status: "pending" } });
+  }
+  console.log(`patch-datamap: seeded ${groups.size} ROPA suggestions.`);
 }
 
 main()

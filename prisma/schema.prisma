@@ -482,6 +482,7 @@ model PurposeTag {
   notices            Notice[] @relation("NoticePurpose")
   activityElements   ActivityElement[] @relation("ElementPurpose")
   vendorMappings     VendorPurposeMapping[] @relation("VendorPurpose")
+  ropaSuggestions    RopaSuggestion[]
 }
 
 /// A record of processing activity, entered by hand for data no scanner can
@@ -753,6 +754,31 @@ model RiskAppetiteRule {
   categoryPattern String
   baselineRating  String
   sortOrder       Int
+}
+
+/// An AI-suggested RoPA register entry: a grouping of approved ClassifiedField
+/// rows by (source, purpose, subject type). A read+review layer over data that
+/// already exists — accepting one creates a real ProcessingActivity; a re-run
+/// never resurrects an accepted/dismissed grouping unless its field set changes.
+model RopaSuggestion {
+  id              String @id @default(cuid())
+  sourceId        String
+  purposeTagId    String?
+  dataSubjectType String?
+  /// JSON string[] of ClassifiedField ids that make up this grouping.
+  fieldIdsJson    String @default("[]")
+  generatedAt     DateTime @default(now())
+  /// pending | accepted | dismissed
+  status          String @default("pending")
+  dismissedReason String?
+  /// The ProcessingActivity created when accepted.
+  activityId      String?
+
+  source     DiscoverySource @relation(fields: [sourceId], references: [id])
+  purposeTag PurposeTag?     @relation(fields: [purposeTagId], references: [id])
+
+  @@index([status])
+  @@index([sourceId])
 }
 
 /// Platform integration flags (singleton). When `tprmEnabled` is on, Vendors are
@@ -1453,6 +1479,7 @@ model DiscoverySource {
 
   fields    ClassifiedField[]
   scanRuns  ScanRun[]
+  ropaSuggestions RopaSuggestion[]
 }
 
 /// One scan execution. Kept as history rather than overwriting the source's
