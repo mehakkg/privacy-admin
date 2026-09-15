@@ -5,11 +5,13 @@ import { CompactFilterBar } from "@/components/CompactFilterBar";
 import { SetupStrip } from "@/components/SetupStrip";
 import {
   Citation,
+  Chip,
   CompletionPill,
   Notice,
   PageHead,
   BadgeWithDetail,
   Pill,
+  type PillTone,
   Stat,
   formatDate,
 } from "@/components/ui";
@@ -28,6 +30,17 @@ import {
   type RequestType,
 } from "@/lib/domain";
 import { DPRR_FULFILMENT_PERIOD } from "@/lib/dpdp/statute";
+
+// Every status is a pill (§13), never bare text.
+const REQUEST_STATUS_TONE: Record<string, PillTone> = {
+  received: "gray",
+  identity_review: "blue",
+  retention_review: "yellow",
+  executing: "blue",
+  awaiting_confirmation: "yellow",
+  closed: "green",
+  rejected: "red",
+};
 
 export const dynamic = "force-dynamic";
 
@@ -198,9 +211,7 @@ export default async function RequestQueuePage({
                   <div className="cell-sub">{formatDate(request.receivedAt)}</div>
                 </td>
                 <td>
-                  <Pill tone={request.type === "erasure" ? "orange" : "blue"} dot={false}>
-                    {REQUEST_TYPE_LABEL[request.type as RequestType]}
-                  </Pill>
+                  <Chip>{REQUEST_TYPE_LABEL[request.type as RequestType]}</Chip>
                 </td>
                 <td>
                   <div className="cell-stack">
@@ -231,7 +242,9 @@ export default async function RequestQueuePage({
                 </td>
                 <td>
                   <div className="cell-stack">
-                    <span>{REQUEST_STATUS_LABEL[request.status as RequestStatus]}</span>
+                    <Pill tone={REQUEST_STATUS_TONE[request.status] ?? "gray"} dot={false}>
+                      {REQUEST_STATUS_LABEL[request.status as RequestStatus]}
+                    </Pill>
                     {!posture.clear && (
                       <BadgeWithDetail
                         tone="yellow"

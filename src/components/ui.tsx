@@ -33,6 +33,16 @@ export function Pill({
 }
 
 /**
+ * Chip — a non-status attribute (§13). Rounded-rect, neutral, no dot. Use for a
+ * bounded attribute like a category, type, or tag; a *status* uses <Pill> with a
+ * semantic tone instead. The rule: every status is a pill, every non-status
+ * attribute is a chip — never bare colored text.
+ */
+export function Chip({ children }: { children: ReactNode }) {
+  return <span className="attr-chip">{children}</span>;
+}
+
+/**
  * The single rendering of completion state in the product.
  *
  * Three states, never two. "Partially complete" is a first-class outcome with

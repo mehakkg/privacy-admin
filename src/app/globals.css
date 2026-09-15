@@ -2517,3 +2517,11 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 .btn { font-weight: 500; }
 .btn.primary { color: #fff; }
 .btn.danger { color: #fff; }
+
+/* Attribute chip (§13) — non-status attribute: rounded-rect, neutral, no dot. */
+.attr-chip {
+  display: inline-flex; align-items: center;
+  padding: 2px 8px; border-radius: var(--radius);
+  background: var(--bg-muted); color: var(--text-2);
+  font-size: 12px; font-weight: 500; white-space: nowrap;
+}

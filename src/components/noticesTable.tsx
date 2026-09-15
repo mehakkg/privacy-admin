@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { MoreHorizontal, Pencil, Clock, Copy, Archive, RotateCcw, Trash2 } from "lucide-react";
-import { Pill } from "@/components/ui";
+import { Pill, Chip } from "@/components/ui";
 import { ActionError } from "@/components/actions";
 import {
   duplicateNoticeAction,
@@ -236,7 +236,7 @@ export function NoticesTable({ rows }: { rows: NoticeRow[] }) {
                   {n.supersededByName && <div className="cell-sub">↳ superseded by {n.supersededByName}</div>}
                 </td>
                 <td className="cell-sub">{n.fiduciaryName ?? <span className="muted">—</span>}</td>
-                <td className="cell-sub">{n.dataCategoryLabel ?? <span className="muted">—</span>}</td>
+                <td>{n.dataCategoryLabel ? <Chip>{n.dataCategoryLabel}</Chip> : <span className="muted">—</span>}</td>
                 <td className="cell-sub">{n.purposeName ?? <span className="muted">—</span>}</td>
                 <td className="mono cell-sub">{n.version}</td>
                 <td>

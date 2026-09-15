@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { X, Lock, Plus, Trash2 } from "lucide-react";
-import { Pill, InfoTip, type PillTone } from "@/components/ui";
+import { Pill, Chip, InfoTip, type PillTone } from "@/components/ui";
 import { ActionError } from "@/components/actions";
 import { overrideVendorRiskAction, addPurposeMappingAction, removePurposeMappingAction } from "@/app/actions/vendorRisk";
 import { provisionPortalAccessAction, revokePortalAccessAction } from "@/app/actions/integration";
@@ -62,7 +62,7 @@ export function VendorRegister({ vendors, view, purposes = [], role = "admin" }:
                 return (
                   <tr key={v.id} className="clickable" onClick={() => setOpenId(v.id)}>
                     <td><span className="row-link">{v.name}</span></td>
-                    <td className="cell-sub">{v.category}</td>
+                    <td><Chip>{v.category}</Chip></td>
                     <td><Pill tone={RISK_TONE[v.riskRating]}>{v.riskRating}</Pill></td>
                     <td className="cell-sub">{v.purposesCount}</td>
                     <td className="cell-sub">{v.piiCount}</td>
