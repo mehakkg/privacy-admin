@@ -136,9 +136,55 @@ async function main() {
   if (!process.env.DATABASE_URL) { console.log("patch-datamap: no DATABASE_URL, skipping."); return; }
   await backfillGovernanceAttrs();
   await seedActivities();
+  await seedPurposeSegments();
   await seedSources();
   await seedRopaSuggestions();
   await backfillFlowNodeRefs();
+}
+
+/**
+ * Purpose-first demo. Seeds ONE activity built the new way (Activity → Purpose
+ * segment → fields) so the restructured table has real content: two purposes each
+ * with their own processor/retention, and the same field (PAN Number) linked under
+ * both purposes so it renders as two rows. The older pa_loan / pa_marketing keep
+ * their element-first rows and surface under the "Unassigned — legacy" grouping,
+ * demonstrating the migration state. Seeded once.
+ */
+async function seedPurposeSegments() {
+  if ((await prisma.activityPurpose.count()) > 0) { console.log("patch-datamap: purpose segments present, skipping."); return; }
+  const purposes = await prisma.purposeTag.findMany({ select: { id: true, name: true } });
+  const pid = (name: string) => purposes.find((p) => p.name === name)?.id ?? null;
+  const regulatory = pid("Regulatory compliance");
+  const marketing = pid("Marketing communication");
+  if (!regulatory || !marketing) { console.log("patch-datamap: purposes missing, skipping segments."); return; }
+  const hasEmailProc = (await prisma.dataProcessor.count({ where: { id: "proc_email" } })) > 0;
+  const entity = await prisma.entity.findFirst({ where: { id: "ent_meridian" }, select: { id: true } });
+
+  await prisma.processingActivity.upsert({
+    where: { id: "pa_retail" },
+    update: {},
+    create: { id: "pa_retail", activity: "Retail Loan Origination", origin: "manual", lifecycleState: "active", entityId: entity?.id ?? null, description: "Onboarding and servicing of retail loan customers." },
+  });
+
+  // Purpose 1 — Regulatory compliance (internal), fields PAN + Aadhaar.
+  const seg1 = await prisma.activityPurpose.create({ data: { id: "seg_retail_reg", activityId: "pa_retail", purposeTagId: regulatory, processorId: null, requestState: "none" } });
+  await prisma.activityPurposeElement.createMany({ data: [
+    { activityPurposeId: seg1.id, fieldName: "PAN Number" },
+    { activityPurposeId: seg1.id, fieldName: "Aadhaar Number" },
+  ] });
+
+  // Purpose 2 — Marketing (US email processor → cross-border), fields PAN (same
+  // field, different purpose → two rows) + Email Address.
+  const seg2 = await prisma.activityPurpose.create({ data: { id: "seg_retail_mkt", activityId: "pa_retail", purposeTagId: marketing, processorId: hasEmailProc ? "proc_email" : null, requestState: "none" } });
+  await prisma.activityPurposeElement.createMany({ data: [
+    { activityPurposeId: seg2.id, fieldName: "PAN Number" },
+    { activityPurposeId: seg2.id, fieldName: "Email Address" },
+  ] });
+
+  // A deliberately-deferred purpose segment, to show the "Decide later" state.
+  await prisma.activityPurpose.create({ data: { id: "seg_retail_defer", activityId: "pa_retail", purposeTagId: null, processorId: null, requestState: "none" } });
+
+  console.log("patch-datamap: purpose-first demo activity seeded.");
 }
 
 /**

@@ -218,6 +218,7 @@ model DataProcessor {
   activityElements ActivityElement[]
   vendor     Vendor? @relation(fields: [vendorId], references: [id])
   flowNodes  DataFlowNode[]
+  activityPurposes ActivityPurpose[] @relation("SegmentProcessor")
 }
 
 /// Discovered location of a principal's data. Exactly one of systemId or
@@ -513,6 +514,7 @@ model PurposeTag {
   activityElements   ActivityElement[] @relation("ElementPurpose")
   vendorMappings     VendorPurposeMapping[] @relation("VendorPurpose")
   ropaSuggestions    RopaSuggestion[]
+  activityPurposes   ActivityPurpose[] @relation("SegmentPurpose")
 }
 
 /// A record of processing activity, entered by hand for data no scanner can
@@ -552,9 +554,51 @@ model ProcessingActivity {
   purposeTag PurposeTag? @relation(fields: [purposeTagId], references: [id])
   entity     Entity?     @relation(fields: [entityId], references: [id])
   elements   ActivityElement[]
+  purposeSegments ActivityPurpose[]
 
   @@index([purposeTagId])
   @@index([entityId])
+}
+
+/// PURPOSE-FIRST STRUCTURE. A purpose segment under an activity: you declare WHY
+/// (the purpose) before WHAT (the elements). Retention + legal basis come from the
+/// referenced PurposeTag (DPO-owned); the Processor now lives HERE, per purpose,
+/// not on the element. `purposeTagId` null = "Decide later" (segment exists, no
+/// purpose chosen yet). `requestState` = requested while a proposed purpose (or
+/// its processor) awaits the DPO.
+model ActivityPurpose {
+  id         String @id @default(cuid())
+  activityId String
+  purposeTagId String?
+  processorId  String?
+  /// none | requested
+  requestState String @default("none")
+  createdAt    DateTime @default(now())
+
+  activity   ProcessingActivity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  purposeTag PurposeTag?        @relation("SegmentPurpose", fields: [purposeTagId], references: [id])
+  processor  DataProcessor?     @relation("SegmentProcessor", fields: [processorId], references: [id])
+  elements   ActivityPurposeElement[]
+
+  @@index([activityId])
+  @@index([purposeTagId])
+}
+
+/// The many-to-many linkage of a data field UNDER a purpose segment. The same
+/// field (e.g. PAN Number) can be linked under multiple purposes in one activity —
+/// each linkage is its own row, independently removable, and carries its purpose's
+/// own retention/processor.
+model ActivityPurposeElement {
+  id String @id @default(cuid())
+  activityPurposeId String
+  /// The field name (also the Data Inventory field path when linked to one).
+  fieldName String
+  classifiedFieldId String?
+  createdAt DateTime @default(now())
+
+  activityPurpose ActivityPurpose @relation(fields: [activityPurposeId], references: [id], onDelete: Cascade)
+
+  @@index([activityPurposeId])
 }
 
 /// One PII element within a Processing Activity. Purpose and Processor attach

@@ -280,6 +280,8 @@ export async function approvePurposeAction(purposeId: string): Promise<ActionRes
         if (p.linkedElementId) {
           await tx.activityElement.updateMany({ where: { id: p.linkedElementId }, data: { purposeTagId: purpose.id, requestState: "none" } });
         }
+        // Purpose-first: clear the pending state on every segment using this purpose.
+        await tx.activityPurpose.updateMany({ where: { purposeTagId: purposeId }, data: { requestState: "none" } });
         return purpose;
       },
     );
@@ -309,6 +311,9 @@ export async function rejectPurposeAction(purposeId: string, reason: string): Pr
         if (p.linkedElementId) {
           await tx.activityElement.updateMany({ where: { id: p.linkedElementId, requestState: "requested" }, data: { requestState: "none" } });
         }
+        // Purpose-first: a segment whose proposed purpose was rejected reverts to
+        // "Decide later" (purpose cleared) so the elements stay but need a new purpose.
+        await tx.activityPurpose.updateMany({ where: { purposeTagId: purposeId }, data: { purposeTagId: null, requestState: "none" } });
         return tx.purposeTag.update({ where: { id: purposeId }, data: { status: "rejected", rejectionReason: reason.trim() } });
       },
     );
@@ -321,103 +326,129 @@ export async function rejectPurposeAction(purposeId: string, reason: string): Pr
   }
 }
 
-export interface NewElementInput {
-  name: string;
-  /** none = leave unassigned; existing = request an approved purpose; propose = propose a new one. */
-  purposeMode: "none" | "existing" | "propose";
+// -- PURPOSE-FIRST structure: Activity → Purpose segment → Elements ----------
+
+export interface ProposedPurposeFull { name: string; description: string; legalBasis: string; retention: string }
+export interface NewElementLink { name: string; classifiedFieldId?: string | null }
+export interface NewSegmentInput {
+  /** existing = use an approved purpose; propose = propose a new one; none = "Decide later". */
+  purposeMode: "existing" | "propose" | "none";
   existingPurposeTagId?: string | null;
+  proposed?: ProposedPurposeFull | null;
+  /** Processor for THIS purpose (moved from the element). Null = internal. */
   processorId?: string | null;
-  proposed?: ProposedPurpose | null;
+  elements: NewElementLink[];
 }
 
-/** Shared: attach a purpose choice to a freshly-created element inside a tx. */
-async function attachElementPurpose(
-  tx: TxClient,
-  activityName: string,
-  elementId: string,
-  elementName: string,
-  el: NewElementInput,
-  actorLabel: string,
-) {
-  if (el.purposeMode === "existing" && el.existingPurposeTagId) {
-    await tx.escalation.create({
-      data: {
-        type: "purpose_request", sourceRole: "admin", targetRole: "dpo",
-        reason: `Assign approved purpose to “${elementName}” in ${activityName}`,
-        contextJson: JSON.stringify({ elementId, elementName, activity: activityName, existingPurposeTagId: el.existingPurposeTagId, processorId: el.processorId ?? null }),
-      },
-    });
-    await tx.activityElement.update({ where: { id: elementId }, data: { requestState: "requested" } });
-  } else if (el.purposeMode === "propose" && el.proposed) {
-    await tx.purposeTag.create({
-      data: {
-        name: el.proposed.name.trim(), description: el.proposed.description.trim(), status: "pending_dpo_approval",
-        approvedBy: "—", approvedAt: new Date(), lawfulBasis: el.proposed.legalBasis,
-        proposedBy: actorLabel, proposedAt: new Date(), linkedElementId: elementId,
-      },
-    });
-    await tx.activityElement.update({ where: { id: elementId }, data: { requestState: "requested" } });
+function validateSegment(seg: NewSegmentInput): string | null {
+  if (seg.purposeMode === "existing" && !seg.existingPurposeTagId) return "Pick a purpose, or propose one, or choose Decide later.";
+  if (seg.purposeMode === "propose") {
+    const p = seg.proposed;
+    if (!p?.name.trim() || !p?.description.trim() || !(LEGAL_BASES as readonly string[]).includes(p?.legalBasis ?? "")) return "Complete the proposed purpose (name, description, legal basis).";
+    if (!p.retention.trim()) return "A proposed purpose needs a retention period.";
   }
+  return null;
 }
 
-/** Add one element to an existing activity, with its purpose choice attached in
- *  the same modal (existing request / new-purpose proposal / leave unassigned). */
-export async function addElementWithPurposeAction(activityId: string, el: NewElementInput): Promise<ActionResult> {
+/** Create one purpose segment (+ its element links) under an activity, inside a tx. */
+async function createSegment(tx: TxClient, activityId: string, seg: NewSegmentInput, actorLabel: string) {
+  let purposeTagId: string | null = null;
+  let requestState = "none";
+  if (seg.purposeMode === "existing") {
+    purposeTagId = seg.existingPurposeTagId ?? null;
+  } else if (seg.purposeMode === "propose" && seg.proposed) {
+    const purpose = await tx.purposeTag.create({
+      data: {
+        name: seg.proposed.name.trim(), description: seg.proposed.description.trim(), status: "pending_dpo_approval",
+        approvedBy: "—", approvedAt: new Date(), lawfulBasis: seg.proposed.legalBasis, retention: seg.proposed.retention.trim() || null,
+        proposedBy: actorLabel, proposedAt: new Date(),
+      },
+    });
+    purposeTagId = purpose.id;
+    requestState = "requested"; // purpose (and its processor/retention) await the DPO
+  }
+  const segment = await tx.activityPurpose.create({ data: { activityId, purposeTagId, processorId: seg.processorId ?? null, requestState } });
+  for (const el of seg.elements) {
+    if (!el.name.trim()) continue;
+    await tx.activityPurposeElement.create({ data: { activityPurposeId: segment.id, fieldName: el.name.trim(), classifiedFieldId: el.classifiedFieldId ?? null } });
+  }
+  return segment;
+}
+
+/**
+ * Add Activity, purpose-first: create the activity, then one or more PURPOSE
+ * segments, each carrying its processor and its elements — you declare why before
+ * what. Committed in one transaction so the new row lands already grouped.
+ */
+export async function createActivityWithPurposesAction(input: {
+  name: string;
+  entityId?: string | null;
+  description?: string | null;
+  segments: NewSegmentInput[];
+}): Promise<ActionResult> {
   const { actor } = await getSession();
-  if (!el.name.trim()) return { ok: false, error: "Name the element.", errorKind: "ValidationError" };
-  if (el.purposeMode === "existing" && !el.existingPurposeTagId) return { ok: false, error: "Pick a purpose, or choose to propose one.", errorKind: "ValidationError" };
-  if (el.purposeMode === "propose" && (!el.proposed?.name.trim() || !el.proposed?.description.trim() || !(LEGAL_BASES as readonly string[]).includes(el.proposed?.legalBasis ?? ""))) {
-    return { ok: false, error: "Complete the proposed purpose.", errorKind: "ValidationError" };
+  if (!input.name.trim()) return { ok: false, error: "Name the activity.", errorKind: "ValidationError" };
+  for (const seg of input.segments) {
+    const err = validateSegment(seg);
+    if (err) return { ok: false, error: err, errorKind: "ValidationError" };
   }
   return run(() =>
     audited(
-      { actor, action: "activity.element_added", targetType: "ActivityElement", targetId: el.name.trim(), payload: { activityId, purposeMode: el.purposeMode } },
+      { actor, action: "activity.created", targetType: "ProcessingActivity", targetId: input.name.trim(), payload: { purposes: input.segments.length } },
       async (tx: TxClient) => {
-        const activity = await tx.processingActivity.findUniqueOrThrow({ where: { id: activityId } });
-        const element = await tx.activityElement.create({ data: { activityId, elementName: el.name.trim() } });
-        await attachElementPurpose(tx, activity.activity, element.id, el.name.trim(), el, actor.label);
-        return element;
+        const activity = await tx.processingActivity.create({
+          data: { activity: input.name.trim(), entityId: input.entityId || null, description: input.description?.trim() || null, origin: "manual", lifecycleState: "active" },
+        });
+        for (const seg of input.segments) await createSegment(tx, activity.id, seg, actor.label);
+        return activity;
       },
     ),
   );
 }
 
-/**
- * Add Activity, the guided way: create the activity AND its first element(s) in
- * one continuous action, each element optionally carrying a purpose request
- * (existing) or a new-purpose proposal — all in a single transaction so the new
- * row lands in the table already showing its correct rollup state.
- */
-export async function createActivityWithElementsAction(input: {
-  name: string;
-  entityId?: string | null;
-  description?: string | null;
-  elements: NewElementInput[];
-}): Promise<ActionResult> {
+/** Add a purpose segment (+ its elements) to an existing activity. */
+export async function addPurposeSegmentAction(activityId: string, seg: NewSegmentInput): Promise<ActionResult> {
   const { actor } = await getSession();
-  if (!input.name.trim()) return { ok: false, error: "Name the activity.", errorKind: "ValidationError" };
-  for (const el of input.elements) {
-    if (!el.name.trim()) return { ok: false, error: "Every element needs a name.", errorKind: "ValidationError" };
-    if (el.purposeMode === "existing" && !el.existingPurposeTagId) return { ok: false, error: `Pick a purpose for “${el.name.trim()}”, or choose to propose one.`, errorKind: "ValidationError" };
-    if (el.purposeMode === "propose") {
-      if (!el.proposed?.name.trim() || !el.proposed?.description.trim() || !(LEGAL_BASES as readonly string[]).includes(el.proposed?.legalBasis ?? "")) {
-        return { ok: false, error: `Complete the proposed purpose for “${el.name.trim()}”.`, errorKind: "ValidationError" };
-      }
-    }
-  }
+  const err = validateSegment(seg);
+  if (err) return { ok: false, error: err, errorKind: "ValidationError" };
   return run(() =>
     audited(
-      { actor, action: "activity.created", targetType: "ProcessingActivity", targetId: input.name.trim(), payload: { elements: input.elements.length } },
-      async (tx: TxClient) => {
-        const activity = await tx.processingActivity.create({
-          data: { activity: input.name.trim(), entityId: input.entityId || null, description: input.description?.trim() || null, origin: "manual", lifecycleState: "active" },
-        });
-        for (const el of input.elements) {
-          const element = await tx.activityElement.create({ data: { activityId: activity.id, elementName: el.name.trim() } });
-          await attachElementPurpose(tx, activity.activity, element.id, el.name.trim(), el, actor.label);
-        }
-        return activity;
-      },
+      { actor, action: "activity.purpose_added", targetType: "ProcessingActivity", targetId: activityId, payload: { purposeMode: seg.purposeMode } },
+      (tx: TxClient) => createSegment(tx, activityId, seg, actor.label),
+    ),
+  );
+}
+
+/** Link one more element/field under an existing purpose segment. */
+export async function addElementToPurposeAction(segmentId: string, el: NewElementLink): Promise<ActionResult> {
+  const { actor } = await getSession();
+  if (!el.name.trim()) return { ok: false, error: "Name the field.", errorKind: "ValidationError" };
+  return run(() =>
+    audited(
+      { actor, action: "activity.element_linked", targetType: "ActivityPurposeElement", targetId: el.name.trim(), payload: { segmentId } },
+      (tx: TxClient) => tx.activityPurposeElement.create({ data: { activityPurposeId: segmentId, fieldName: el.name.trim(), classifiedFieldId: el.classifiedFieldId ?? null } }),
+    ),
+  );
+}
+
+/** Remove one element linkage (does not touch the underlying field record). */
+export async function removePurposeElementAction(linkId: string): Promise<ActionResult> {
+  const { actor } = await getSession();
+  return run(() =>
+    audited(
+      { actor, action: "activity.element_unlinked", targetType: "ActivityPurposeElement", targetId: linkId, payload: {} },
+      (tx: TxClient) => tx.activityPurposeElement.delete({ where: { id: linkId } }),
+    ),
+  );
+}
+
+/** Remove a whole purpose segment (and its element linkages) from an activity. */
+export async function removePurposeSegmentAction(segmentId: string): Promise<ActionResult> {
+  const { actor } = await getSession();
+  return run(() =>
+    audited(
+      { actor, action: "activity.purpose_removed", targetType: "ActivityPurpose", targetId: segmentId, payload: {} },
+      (tx: TxClient) => tx.activityPurpose.delete({ where: { id: segmentId } }),
     ),
   );
 }

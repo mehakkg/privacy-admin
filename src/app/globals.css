@@ -2935,3 +2935,53 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
   padding: 12px;
   background: var(--bg-muted);
 }
+
+/* ===================== Processing Activities: purpose-first blocks ===================== */
+.pa-activity {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  overflow: hidden;
+}
+.pa-activity-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  background: var(--bg-muted);
+  border-bottom: 1px solid var(--border);
+}
+.pa-segment {
+  border-bottom: 1px solid var(--border-soft);
+  padding: 10px 14px 12px;
+}
+.pa-segment:last-child { border-bottom: 0; }
+.pa-segment.legacy {
+  background: color-mix(in srgb, var(--yellow) 5%, var(--bg));
+}
+.pa-segment-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 8px;
+}
+.pa-elements {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-left: 14px;
+  border-left: 2px solid var(--border);
+  margin-left: 2px;
+}
+.pa-el-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
