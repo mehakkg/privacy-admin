@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
 import { Card, GovernanceBanner, PageHead, Pill, formatDate } from "@/components/ui";
@@ -10,6 +11,15 @@ import { RoleDefinitions } from "@/components/access/roleDefinitions";
 import type { RoleView } from "@/components/access/roleDetailDrawer";
 
 export const dynamic = "force-dynamic";
+
+const TABS = [
+  { key: "purposes", label: "Specified purposes" },
+  { key: "notices", label: "Notice versions" },
+  { key: "cookies", label: "Cookie categories" },
+  { key: "rules", label: "Protection rules" },
+  { key: "roles", label: "Role definitions" },
+] as const;
+type Tab = (typeof TABS)[number]["key"];
 
 /**
  * Governance-owned objects, read-only (acceptance criterion 6).
@@ -26,7 +36,13 @@ export const dynamic = "force-dynamic";
  * The DPO and CISO modules do not exist in this build; these rows come from the
  * seed, which stands in for them.
  */
-export default async function GovernancePage() {
+export default async function GovernancePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>;
+}) {
+  const params = await searchParams;
+  const tab: Tab = (TABS as readonly { key: string }[]).some((t) => t.key === params.tab) ? (params.tab as Tab) : "purposes";
   const role = await getCurrentRole();
   const isDpo = role === "dpo";
   const [purposes, notices, cookies, rules, roles] = await Promise.all([
@@ -54,7 +70,16 @@ export default async function GovernancePage() {
         subtitle="Governance objects Admin implements but does not author. Shown here so the technical work can be checked against what was actually approved."
       />
 
+      <nav className="stepper" style={{ marginBottom: 16 }}>
+        {TABS.map((t) => (
+          <Link key={t.key} href={`/governance?tab=${t.key}`} className={`step${t.key === tab ? " active" : ""}`}>
+            <span className="step-label">{t.label}</span>
+          </Link>
+        ))}
+      </nav>
+
       <div className="stack">
+        {tab === "purposes" && (
         <Card title="Specified purposes">
           {isDpo ? (
             <div className="notice policy" style={{ marginBottom: 12 }}>
@@ -84,7 +109,9 @@ export default async function GovernancePage() {
             />
           </div>
         </Card>
+        )}
 
+        {tab === "notices" && (
         <Card title="Notice versions">
           <GovernanceBanner
             owner={ROLE_LABEL[GOVERNANCE_OWNER.NoticeVersion]}
@@ -125,7 +152,9 @@ export default async function GovernancePage() {
             </table>
           </div>
         </Card>
+        )}
 
+        {tab === "cookies" && (
         <Card title="Cookie categories">
           <GovernanceBanner
             owner={ROLE_LABEL[GOVERNANCE_OWNER.CookieCategory]}
@@ -160,7 +189,9 @@ export default async function GovernancePage() {
             </table>
           </div>
         </Card>
+        )}
 
+        {tab === "rules" && (
         <Card title="Protection rules">
           <GovernanceBanner
             owner={ROLE_LABEL[GOVERNANCE_OWNER.ProtectionRule]}
@@ -202,13 +233,16 @@ export default async function GovernancePage() {
             </table>
           </div>
         </Card>
+        )}
 
+        {tab === "roles" && (
         <Card title="Role definitions">
           <GovernanceBanner owner="the Data Protection Officer / CISO" object="Role definitions" />
           <div style={{ marginTop: 12 }}>
             <RoleDefinitions roles={roleViews} />
           </div>
         </Card>
+        )}
       </div>
     </Shell>
   );
