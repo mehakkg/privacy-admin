@@ -2,9 +2,11 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
 import { Notice, PageHead } from "@/components/ui";
+import { CompactFilterBar } from "@/components/CompactFilterBar";
 import { ProcessingActivitiesTable, type ActivityRow, type PurposeSegment, type SegElement } from "@/components/processingActivities";
 import { EntitiesTable, type EntityRow } from "@/components/entityConfig";
 import { decodeObject } from "@/lib/codec/json";
+import { segmentComplete, purposeRollup } from "@/lib/processingActivity";
 
 export const dynamic = "force-dynamic";
 
@@ -23,10 +25,11 @@ function matchKey(name: string): string {
 export default async function ProcessingActivitiesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; assign?: string }>;
+  searchParams: Promise<{ tab?: string; assign?: string; status?: string; q?: string }>;
 }) {
   const params = await searchParams;
   const tab = params.tab === "fiduciaries" ? "fiduciaries" : "activities";
+  const term = (params.q ?? "").trim().toLowerCase();
 
   const [activities, purposes, processors, entities, fields] = await Promise.all([
     db.processingActivity.findMany({
@@ -75,6 +78,14 @@ export default async function ProcessingActivitiesPage({
     legacyElements: a.elements.map((e) => ({ id: e.id, elementName: e.elementName, purposeName: e.purposeTag?.name ?? null })),
   }));
 
+  // Compact Filter Bar: search + rollup severity filter, so incomplete activities
+  // are triageable without scrolling past every one.
+  const rollKind = (a: ActivityRow) => purposeRollup(a.segments.map((s) => ({ complete: segmentComplete(s) })), a.legacyElements.length > 0).kind;
+  const filteredRows = activityRows.filter((a) =>
+    (!params.status || rollKind(a) === params.status) &&
+    (!term || a.activity.toLowerCase().includes(term)),
+  );
+
   const nameById = new Map(entities.map((e) => [e.id, e.name]));
   const entityRows: EntityRow[] = entities.map((e) => ({
     id: e.id,
@@ -100,14 +111,28 @@ export default async function ProcessingActivitiesPage({
       </nav>
 
       {tab === "activities" ? (
-        <ProcessingActivitiesTable
-          activities={activityRows}
-          purposes={purposes}
-          processors={processors}
-          entities={entities.map((e) => ({ id: e.id, name: e.name }))}
-          inventoryFields={fields.map((f) => ({ id: f.id, path: f.fieldPath }))}
-          assignField={params.assign ?? null}
-        />
+        <>
+          <CompactFilterBar
+            basePath="/data-map/processing-activities"
+            searchKey="q"
+            searchPlaceholder="Search activities…"
+            facets={[
+              { key: "status", label: "Status", options: [
+                { value: "none", label: "No purposes only" },
+                { value: "partial", label: "Partially assigned" },
+                { value: "fully", label: "Fully assigned" },
+              ] },
+            ]}
+          />
+          <ProcessingActivitiesTable
+            activities={filteredRows}
+            purposes={purposes}
+            processors={processors}
+            entities={entities.map((e) => ({ id: e.id, name: e.name }))}
+            inventoryFields={fields.map((f) => ({ id: f.id, path: f.fieldPath }))}
+            assignField={params.assign ?? null}
+          />
+        </>
       ) : (
         <>
           <div style={{ marginBottom: 12 }}>

@@ -87,6 +87,21 @@ export interface Rollup {
   tone: "green" | "yellow" | "gray";
 }
 
+// -- Purpose-first rollup ----------------------------------------------------
+// A segment is complete when its purpose is approved, has a retention, and is not
+// awaiting the DPO. Rollup severity reuses the product's red/amber/green chips:
+// no purposes = red (critical), partial = amber, fully = green.
+export function segmentComplete(s: { purposeStatus: string | null; retention: string | null; requestState: string }): boolean {
+  return s.purposeStatus === "approved" && Boolean(s.retention) && s.requestState === "none";
+}
+
+export interface PurposeRollup { kind: "none" | "partial" | "fully"; label: string; tone: "red" | "yellow" | "green" }
+export function purposeRollup(segments: { complete: boolean }[], hasLegacy: boolean): PurposeRollup {
+  if (segments.length === 0 && !hasLegacy) return { kind: "none", label: "No purposes", tone: "red" };
+  if (!hasLegacy && segments.every((s) => s.complete)) return { kind: "fully", label: "Fully assigned", tone: "green" };
+  return { kind: "partial", label: "Partially assigned", tone: "yellow" };
+}
+
 export function rollup(elements: RollupInput[]): Rollup {
   const total = elements.length;
   const assigned = elements.filter((e) => e.purposeAssigned && e.hasRetention).length;

@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Lock, Plus, ExternalLink, X, AlertTriangle, Globe, Trash2, ChevronRight } from "lucide-react";
+import { Lock, Plus, ExternalLink, X, AlertTriangle, Globe, Trash2, ChevronRight, MoreHorizontal } from "lucide-react";
 import { Pill, Chip } from "@/components/ui";
 import { Modal } from "@/components/Modal";
 import { ActionError } from "@/components/actions";
@@ -15,7 +15,7 @@ import {
 } from "@/app/actions/dataMap";
 import {
   lawfulBasisLabel, jurisdictionLabel, isCrossBorderUnreviewed,
-  LIFECYCLE_LABEL, type LifecycleState,
+  LIFECYCLE_LABEL, type LifecycleState, segmentComplete, purposeRollup,
 } from "@/lib/processingActivity";
 import { PurposeSelector, purposeChoiceValid, type PurposeChoice, type Opt } from "@/components/access/purposeSelector";
 import type { ActionResult } from "@/app/actions/requests";
@@ -25,13 +25,13 @@ export interface SegElement { id: string; fieldName: string; inventory: InvInfo 
 export interface PurposeSegment {
   id: string;
   purposeName: string | null;
-  purposeStatus: string | null; // approved | pending_dpo_approval | rejected | null
+  purposeStatus: string | null;
   legalBasis: string | null;
   retention: string | null;
   processorName: string | null;
   processorJurisdiction: string | null;
   processorHasDpa: boolean;
-  requestState: string; // none | requested
+  requestState: string;
   elements: SegElement[];
 }
 export interface LegacyElement { id: string; elementName: string; purposeName: string | null }
@@ -46,19 +46,8 @@ export interface ActivityRow {
 }
 export interface InventoryField { id: string; path: string }
 
-/** A segment's completeness for the rollup: an approved purpose with a retention,
- *  not awaiting the DPO. */
-function segmentComplete(s: PurposeSegment): boolean {
-  return s.purposeStatus === "approved" && Boolean(s.retention) && s.requestState === "none";
-}
-function activityRollup(a: ActivityRow): { label: string; tone: "green" | "yellow" | "gray" } {
-  const hasLegacy = a.legacyElements.length > 0;
-  const total = a.segments.length + (hasLegacy ? 1 : 0);
-  const done = a.segments.filter(segmentComplete).length; // legacy never counts as done
-  if (total === 0) return { label: "No purposes", tone: "gray" };
-  if (done === total) return { label: "Fully assigned", tone: "green" };
-  if (done === 0) return { label: "Unassigned", tone: "gray" };
-  return { label: `Partially assigned (${done}/${total})`, tone: "yellow" };
+function rollupOf(a: ActivityRow) {
+  return purposeRollup(a.segments.map((s) => ({ complete: segmentComplete(s) })), a.legacyElements.length > 0);
 }
 
 function useRun() {
@@ -77,11 +66,10 @@ function choiceToSegment(choice: PurposeChoice, elements: { name: string; classi
 }
 
 /**
- * PROCESSING ACTIVITIES — purpose-first. Activity → Purpose segment(s) → Elements
- * scoped to that purpose. Retention + legal basis are DPO-owned on the purpose;
- * the Processor lives on the purpose too (not the element). The same field linked
- * under two purposes shows as two rows. Legacy (element-first) data surfaces under
- * an "Unassigned" grouping for deliberate re-assignment.
+ * PROCESSING ACTIVITIES — collapsed List + Detail Drawer. Each activity is one
+ * row (name, severity rollup chip, entity, lifecycle, primary "Add purpose", and a
+ * ⋯ menu for the rest); clicking the row opens the drawer with the nested
+ * Purpose → Retention/Processor → Elements hierarchy. Purpose-first throughout.
  */
 export function ProcessingActivitiesTable({
   activities, purposes, processors, entities, inventoryFields, assignField = null,
@@ -94,41 +82,55 @@ export function ProcessingActivitiesTable({
   assignField?: string | null;
 }) {
   const { pending, result, run } = useRun();
+  const [openFor, setOpenFor] = useState<string | null>(null);
   const [addActivityOpen, setAddActivityOpen] = useState(false);
   const [addPurposeFor, setAddPurposeFor] = useState<{ id: string; name: string } | null>(null);
   const [addElementFor, setAddElementFor] = useState<{ segId: string; purposeName: string | null } | null>(null);
   const [inventoryFor, setInventoryFor] = useState<SegElement | null>(null);
   const [assigning, setAssigning] = useState<string | null>(assignField);
 
+  const openActivity = activities.find((a) => a.id === openFor) ?? null;
+
   return (
     <div>
-      <div className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
-        <span className="cell-sub">{activities.length} activit{activities.length === 1 ? "y" : "ies"} · Declare the <strong>purpose</strong> first; fields are added under it. Retention, legal basis &amp; processor belong to the purpose and are DPO-approved.</span>
+      <div className="row" style={{ justifyContent: "flex-end", marginBottom: 12 }}>
         <button className="btn primary sm" onClick={() => setAddActivityOpen(true)}><Plus size={14} /> Add activity</button>
       </div>
 
-      <div className="stack" style={{ gap: 14 }}>
+      <div className="stack" style={{ gap: 8 }}>
         {activities.map((a) => (
-          <ActivityBlock
+          <ActivityListRow
             key={a.id}
             a={a}
-            entities={entities}
             pending={pending}
+            onOpen={() => setOpenFor(a.id)}
             onLifecycle={(v) => run(() => setLifecycleStateAction(a.id, v))}
             onArchive={() => run(() => requestArchiveAction(a.id))}
-            onEntity={(v) => run(() => setEntityAction(a.id, v))}
             onAddPurpose={() => setAddPurposeFor({ id: a.id, name: a.activity })}
-            onAddElement={(segId, purposeName) => setAddElementFor({ segId, purposeName })}
-            onRemoveElement={(linkId) => run(() => removePurposeElementAction(linkId))}
-            onRemoveSegment={(segId) => run(() => removePurposeSegmentAction(segId))}
-            onInventory={(el) => setInventoryFor(el)}
           />
         ))}
         {activities.length === 0 && (
-          <div className="empty" style={{ padding: 32 }}>No processing activities yet. Add one — you&rsquo;ll declare its purpose first, then the fields under it.</div>
+          <div className="empty" style={{ padding: 32 }}>No processing activities match. Add one — you&rsquo;ll declare its purpose first.</div>
         )}
       </div>
       <ActionError result={result} />
+
+      {openActivity && (
+        <ActivityDrawer
+          a={openActivity}
+          entities={entities}
+          pending={pending}
+          onClose={() => setOpenFor(null)}
+          onLifecycle={(v) => run(() => setLifecycleStateAction(openActivity.id, v))}
+          onEntity={(v) => run(() => setEntityAction(openActivity.id, v))}
+          onArchive={() => run(() => requestArchiveAction(openActivity.id))}
+          onAddPurpose={() => setAddPurposeFor({ id: openActivity.id, name: openActivity.activity })}
+          onAddElement={(segId, purposeName) => setAddElementFor({ segId, purposeName })}
+          onRemoveElement={(linkId) => run(() => removePurposeElementAction(linkId))}
+          onRemoveSegment={(segId) => run(() => removePurposeSegmentAction(segId))}
+          onInventory={(el) => setInventoryFor(el)}
+        />
+      )}
 
       {addActivityOpen && (
         <AddActivityModal
@@ -163,81 +165,158 @@ export function ProcessingActivitiesTable({
   );
 }
 
-function ActivityBlock({
-  a, entities, pending, onLifecycle, onArchive, onEntity, onAddPurpose, onAddElement, onRemoveElement, onRemoveSegment, onInventory,
+function KebabMenu({ items }: { items: { label: string; onClick: () => void; disabled?: boolean; title?: string }[] }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+  return (
+    <div className="kebab" ref={ref} onClick={(e) => e.stopPropagation()}>
+      <button className="kebab-btn" onClick={() => setOpen((o) => !o)} aria-label="More actions"><MoreHorizontal size={16} /></button>
+      {open && (
+        <div className="kebab-menu">
+          {items.map((it, i) => (
+            <button key={i} className="kebab-item" disabled={it.disabled} title={it.title} onClick={() => { setOpen(false); it.onClick(); }}>{it.label}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ActivityListRow({
+  a, pending, onOpen, onLifecycle, onArchive, onAddPurpose,
+}: {
+  a: ActivityRow; pending: boolean;
+  onOpen: () => void; onLifecycle: (v: string) => void; onArchive: () => void; onAddPurpose: () => void;
+}) {
+  const roll = rollupOf(a);
+  const archived = a.lifecycleState === "archived";
+  const hasRequested = a.segments.some((s) => s.requestState === "requested");
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
+
+  return (
+    <div className={`pa-row${roll.kind === "none" ? " muted" : ""}`} onClick={onOpen} role="button" tabIndex={0}
+      onKeyDown={(e) => { if (e.key === "Enter") onOpen(); }}>
+      <div className="pa-row-main">
+        <ChevronRight size={15} className="muted pa-row-caret" />
+        <span className="pa-row-name">{a.activity}</span>
+        <Pill tone={roll.tone}>{roll.label}</Pill>
+      </div>
+
+      <div className="pa-row-actions" onClick={stop}>
+        {a.entityName ? (
+          <span className="cell-sub pa-entity">{a.entityName}</span>
+        ) : (
+          <button className="entity-warn" onClick={onOpen} title="No Fiduciary assigned"><AlertTriangle size={12} /> Assign entity →</button>
+        )}
+        <select className="input xs" value={archived ? "archived" : a.lifecycleState} disabled={pending || archived} onChange={(e) => onLifecycle(e.target.value)} style={{ width: 128 }} title={archived ? "Archived — a DPO ruling is required to reopen" : "Lifecycle"}>
+          {(["active", "under_review"] as LifecycleState[]).map((s) => <option key={s} value={s}>{LIFECYCLE_LABEL[s]}</option>)}
+          {archived && <option value="archived">{LIFECYCLE_LABEL.archived}</option>}
+        </select>
+        <button className="btn sm" onClick={onAddPurpose}><Plus size={13} /> Add purpose</button>
+        <KebabMenu items={[
+          { label: "Request archive", onClick: onArchive, disabled: pending || archived || hasRequested, title: hasRequested ? "A purpose is awaiting a DPO ruling" : undefined },
+        ]} />
+      </div>
+    </div>
+  );
+}
+
+function ActivityDrawer({
+  a, entities, pending, onClose, onLifecycle, onEntity, onArchive, onAddPurpose, onAddElement, onRemoveElement, onRemoveSegment, onInventory,
 }: {
   a: ActivityRow; entities: Opt[]; pending: boolean;
-  onLifecycle: (v: string) => void; onArchive: () => void; onEntity: (v: string) => void;
+  onClose: () => void; onLifecycle: (v: string) => void; onEntity: (v: string) => void; onArchive: () => void;
   onAddPurpose: () => void;
   onAddElement: (segId: string, purposeName: string | null) => void;
   onRemoveElement: (linkId: string) => void;
   onRemoveSegment: (segId: string) => void;
   onInventory: (el: SegElement) => void;
 }) {
-  const roll = activityRollup(a);
+  const roll = rollupOf(a);
   const archived = a.lifecycleState === "archived";
   const hasRequested = a.segments.some((s) => s.requestState === "requested");
 
   return (
-    <div className="pa-activity">
-      <div className="pa-activity-head">
-        <div className="stack" style={{ gap: 4 }}>
-          <span className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-            <strong style={{ fontSize: 14 }}>{a.activity}</strong>
-            <Pill tone={roll.tone}>{roll.label}</Pill>
-            {a.lifecycleState === "under_review" && <Pill tone="yellow">Under review</Pill>}
-          </span>
-          <span className="cell-sub">{a.entityName ?? "Unassigned entity"}</span>
+    <div className="drawer-backdrop" onClick={onClose}>
+      <aside className="drawer-panel" style={{ background: "var(--bg)", width: "min(620px, 96vw)" }} onClick={(e) => e.stopPropagation()}>
+        <div className="drawer-head drawer-sticky">
+          <span className="row" style={{ gap: 8, flexWrap: "wrap" }}><strong>{a.activity}</strong><Pill tone={roll.tone}>{roll.label}</Pill></span>
+          <button className="icon-btn" onClick={onClose} aria-label="Close"><X size={16} /></button>
         </div>
-        <div className="row" style={{ gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-          <select className="input xs" value={archived ? "archived" : a.lifecycleState} disabled={pending || archived} onChange={(e) => onLifecycle(e.target.value)} style={{ width: 130 }} title={archived ? "Archived — a DPO ruling is required to reopen" : undefined}>
-            {(["active", "under_review"] as LifecycleState[]).map((s) => <option key={s} value={s}>{LIFECYCLE_LABEL[s]}</option>)}
-            {archived && <option value="archived">{LIFECYCLE_LABEL.archived}</option>}
-          </select>
-          <select className="input xs" value={a.entityId ?? ""} disabled={pending} onChange={(e) => onEntity(e.target.value)} style={{ width: 150 }}>
-            <option value="">Unassigned entity</option>
-            {entities.map((en) => <option key={en.id} value={en.id}>{en.name}</option>)}
-          </select>
-          {!archived && (
-            <span title={hasRequested ? "A purpose is still awaiting a DPO ruling — resolve it before requesting archive." : "Archiving needs DPO approval"}>
-              <button className="btn ghost xs" disabled={pending || hasRequested} onClick={onArchive}>Request archive →</button>
-            </span>
-          )}
-          <button className="btn sm" onClick={onAddPurpose}><Plus size={13} /> Add purpose</button>
-        </div>
-      </div>
-
-      {a.segments.map((seg) => (
-        <PurposeSegmentBlock key={seg.id} seg={seg} pending={pending} onAddElement={() => onAddElement(seg.id, seg.purposeName)} onRemoveElement={onRemoveElement} onRemoveSegment={() => onRemoveSegment(seg.id)} onInventory={onInventory} />
-      ))}
-
-      {a.legacyElements.length > 0 && (
-        <div className="pa-segment legacy">
-          <div className="pa-segment-head">
-            <span className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-              <Pill tone="yellow">Unassigned — legacy element, needs purpose</Pill>
-              <span className="cell-sub">These fields predate the purpose-first structure. Re-add them under a purpose, then remove them here.</span>
-            </span>
-          </div>
-          <div className="pa-elements">
-            {a.legacyElements.map((el) => (
-              <div key={el.id} className="pa-el-row">
-                <span className="cell-primary">{el.elementName}</span>
-                <span className="cell-sub">{el.purposeName ? `was: ${el.purposeName}` : "no purpose"}</span>
+        <div className="drawer-body">
+          <div className="row" style={{ gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
+            <div className="stack" style={{ gap: 3 }}>
+              <span className="section-label">Lifecycle</span>
+              <select className="input xs" value={archived ? "archived" : a.lifecycleState} disabled={pending || archived} onChange={(e) => onLifecycle(e.target.value)} style={{ width: 150 }}>
+                {(["active", "under_review"] as LifecycleState[]).map((s) => <option key={s} value={s}>{LIFECYCLE_LABEL[s]}</option>)}
+                {archived && <option value="archived">{LIFECYCLE_LABEL.archived}</option>}
+              </select>
+            </div>
+            <div className="stack" style={{ gap: 3 }}>
+              <span className="section-label">Entity (Fiduciary)</span>
+              <select className={`input xs${a.entityId ? "" : " warn-select"}`} value={a.entityId ?? ""} disabled={pending} onChange={(e) => onEntity(e.target.value)} style={{ width: 180 }}>
+                <option value="">⚠ Unassigned entity</option>
+                {entities.map((en) => <option key={en.id} value={en.id}>{en.name}</option>)}
+              </select>
+            </div>
+            {!archived && (
+              <div className="stack" style={{ gap: 3 }}>
+                <span className="section-label">&nbsp;</span>
+                <span title={hasRequested ? "A purpose is awaiting a DPO ruling" : "Archiving needs DPO approval"}>
+                  <button className="btn ghost xs" disabled={pending || hasRequested} onClick={onArchive}>Request archive →</button>
+                </span>
               </div>
-            ))}
+            )}
           </div>
-        </div>
-      )}
 
-      {a.segments.length === 0 && a.legacyElements.length === 0 && (
-        <div className="pa-segment"><div className="cell-sub" style={{ padding: "6px 2px" }}>No purposes yet. Add a purpose to begin mapping fields under it.</div></div>
-      )}
+          {a.segments.length === 0 && a.legacyElements.length === 0 ? (
+            <div className="empty" style={{ padding: 28, textAlign: "center" }}>
+              <p style={{ margin: "0 0 4px", fontWeight: 500 }}>No purposes yet</p>
+              <p className="cell-sub" style={{ margin: "0 0 14px" }}>Declare a purpose first — retention, legal basis and processor attach to it — then add the fields processed under it.</p>
+              <button className="btn primary" onClick={onAddPurpose}><Plus size={14} /> Add purpose</button>
+            </div>
+          ) : (
+            <>
+              {a.segments.map((seg) => (
+                <PurposeCard key={seg.id} seg={seg} pending={pending}
+                  onAddElement={() => onAddElement(seg.id, seg.purposeName)}
+                  onRemoveElement={onRemoveElement} onRemoveSegment={() => onRemoveSegment(seg.id)} onInventory={onInventory} />
+              ))}
+
+              {a.legacyElements.length > 0 && (
+                <div className="pp-card legacy">
+                  <div className="pp-head">
+                    <Pill tone="yellow">Unassigned — legacy element, needs purpose</Pill>
+                  </div>
+                  <p className="cell-sub" style={{ margin: "0 0 8px" }}>These fields predate the purpose-first structure. Re-add them under a purpose above, then remove them here.</p>
+                  <div className="pp-elements">
+                    {a.legacyElements.map((el) => (
+                      <div key={el.id} className="pp-el-row">
+                        <span className="cell-primary">{el.elementName}</span>
+                        <span className="cell-sub">{el.purposeName ? `was: ${el.purposeName}` : "no purpose"}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <button className="btn" style={{ marginTop: 14 }} onClick={onAddPurpose}><Plus size={14} /> Add another purpose</button>
+            </>
+          )}
+        </div>
+      </aside>
     </div>
   );
 }
 
-function PurposeSegmentBlock({
+/** Level 1 (purpose header) → Level 2 (retention/processor) → Level 3 (elements). */
+function PurposeCard({
   seg, pending, onAddElement, onRemoveElement, onRemoveSegment, onInventory,
 }: {
   seg: PurposeSegment; pending: boolean;
@@ -245,37 +324,45 @@ function PurposeSegmentBlock({
 }) {
   const deferred = !seg.purposeName;
   const crossBorder = isCrossBorderUnreviewed(seg.processorJurisdiction);
+  const dpoOwned = !deferred;
+
   return (
-    <div className="pa-segment">
-      <div className="pa-segment-head">
-        <div className="stack" style={{ gap: 4 }}>
-          <span className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-            {deferred ? (
-              <Pill tone="gray">Decide later — no purpose yet</Pill>
-            ) : (
-              <span className="lock-inline" title="Purpose is DPO-owned"><Lock size={12} /> {seg.purposeName}</span>
-            )}
-            {seg.legalBasis && <Chip>{lawfulBasisLabel(seg.legalBasis)}</Chip>}
-            {seg.requestState === "requested" && <Pill tone="blue">Requested — awaiting DPO</Pill>}
-            {seg.purposeStatus === "rejected" && <Pill tone="red">Purpose rejected</Pill>}
-          </span>
-          <span className="row" style={{ gap: 14, flexWrap: "wrap" }}>
-            <span className="cell-sub">Retention: {seg.retention ? <span className="lock-inline"><Lock size={11} /> {seg.retention}</span> : (deferred ? "—" : <span style={{ color: "var(--yellow)" }}>not set</span>)}</span>
-            <span className="cell-sub">Processor: <SegProcessor seg={seg} crossBorder={crossBorder} /></span>
-          </span>
-        </div>
-        <button className="icon-btn xs" disabled={pending} onClick={onRemoveSegment} title="Remove this purpose segment" aria-label="Remove purpose"><Trash2 size={14} /></button>
+    <div className="pp-card">
+      {/* Level 1 — Purpose header */}
+      <div className="pp-head">
+        <span className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          {dpoOwned && <span title="DPO-owned purpose" style={{ display: "inline-flex" }}><Lock size={13} className="muted" /></span>}
+          <span className="pp-title">{deferred ? "Decide later — no purpose yet" : seg.purposeName}</span>
+          {seg.legalBasis && <Chip>{lawfulBasisLabel(seg.legalBasis)}</Chip>}
+          {seg.requestState === "requested" && <Pill tone="blue">Requested — awaiting DPO</Pill>}
+          {seg.purposeStatus === "rejected" && <Pill tone="red">Purpose rejected</Pill>}
+        </span>
+        <button className="icon-btn xs" disabled={pending} onClick={onRemoveSegment} title="Remove this purpose" aria-label="Remove purpose"><Trash2 size={14} /></button>
       </div>
 
-      <div className="pa-elements">
+      {/* Level 2 — Purpose metadata: two clean fields, lock on the label only */}
+      <div className="pp-meta">
+        <div className="pp-meta-field">
+          <span className="pp-meta-label">Retention {dpoOwned && seg.retention && <span title="DPO-set" style={{ display: "inline-flex" }}><Lock size={11} className="muted" /></span>}</span>
+          <span className="pp-meta-value">{seg.retention ? seg.retention : (deferred ? "—" : <span style={{ color: "var(--yellow)" }}>Not set</span>)}</span>
+        </div>
+        <div className="pp-meta-field">
+          <span className="pp-meta-label">Processor</span>
+          <span className="pp-meta-value"><SegProcessor seg={seg} crossBorder={crossBorder} /></span>
+        </div>
+      </div>
+
+      {/* Level 3 — Elements under this purpose */}
+      <div className="pp-elements">
         {seg.elements.map((el) => (
-          <div key={el.id} className="pa-el-row">
+          <div key={el.id} className="pp-el-row">
+            <ChevronRight size={12} className="muted" />
             <button className="linklike cell-primary" onClick={() => onInventory(el)} title="View this field's Data Inventory record">{el.fieldName}</button>
             {el.inventory && <Chip>{el.inventory.sensitivityTier}</Chip>}
-            <button className="icon-btn xs" disabled={pending} style={{ marginLeft: "auto" }} onClick={() => onRemoveElement(el.id)} title="Unlink this field from the purpose" aria-label="Remove element"><Trash2 size={13} /></button>
+            <button className="icon-btn xs" disabled={pending} style={{ marginLeft: "auto" }} onClick={() => onRemoveElement(el.id)} title="Unlink this field" aria-label="Remove element"><Trash2 size={13} /></button>
           </div>
         ))}
-        {seg.elements.length === 0 && <div className="cell-sub" style={{ padding: "4px 2px" }}>No fields under this purpose yet.</div>}
+        {seg.elements.length === 0 && <div className="pp-empty">No fields under this purpose yet</div>}
         <button className="btn ghost xs" onClick={onAddElement} style={{ alignSelf: "flex-start", marginTop: 4 }}><Plus size={12} /> Add element</button>
       </div>
     </div>
@@ -285,7 +372,7 @@ function PurposeSegmentBlock({
 function SegProcessor({ seg, crossBorder }: { seg: PurposeSegment; crossBorder: boolean }) {
   if (!seg.processorName) return <span className="cell-sub">Internal</span>;
   return (
-    <span className="row" style={{ gap: 6, alignItems: "center", display: "inline-flex" }}>
+    <span className="row" style={{ gap: 6, alignItems: "center", display: "inline-flex", flexWrap: "wrap" }}>
       {seg.processorHasDpa ? (
         <Link href="/vendor-risk/register" className="row-link" title="Open the Vendor Risk (TPRM) record">{seg.processorName} <ExternalLink size={11} /></Link>
       ) : (
@@ -385,8 +472,6 @@ function SegmentBuilder({
   );
 }
 
-/** ADD ACTIVITY — purpose-first, continuous modal: activity, then purpose
- *  segment(s) each with their fields, "Add another purpose" repeatable. */
 function AddActivityModal({
   purposes, processors, entities, inventoryFields, pending, onClose, onSubmit,
 }: {
@@ -468,7 +553,6 @@ function AddActivityModal({
   );
 }
 
-/** ADD PURPOSE — one purpose segment (+ its fields) onto an existing activity. */
 function AddPurposeModal({
   activity, purposes, processors, inventoryFields, pending, onClose, onSubmit,
 }: {
@@ -492,7 +576,6 @@ function AddPurposeModal({
   );
 }
 
-/** ADD ELEMENT — one field under an existing purpose segment. */
 function AddElementModal({
   purposeName, inventoryFields, pending, onClose, onSubmit,
 }: {
@@ -517,7 +600,6 @@ function AddElementModal({
   );
 }
 
-/** Item 10 — land an unassigned inventory field onto an activity. */
 function AssignModal({
   fieldName, activities, pending, onClose, onSubmit,
 }: {

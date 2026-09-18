@@ -180,9 +180,8 @@ async function seedPurposeSegments() {
     { activityPurposeId: seg2.id, fieldName: "PAN Number" },
     { activityPurposeId: seg2.id, fieldName: "Email Address" },
   ] });
-
-  // A deliberately-deferred purpose segment, to show the "Decide later" state.
-  await prisma.activityPurpose.create({ data: { id: "seg_retail_defer", activityId: "pa_retail", purposeTagId: null, processorId: null, requestState: "none" } });
+  // Both purposes are approved + carry retention + not awaiting DPO, so this
+  // activity rolls up to "Fully assigned" (green).
 
   console.log("patch-datamap: purpose-first demo activity seeded.");
 }
