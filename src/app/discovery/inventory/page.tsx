@@ -214,7 +214,19 @@ export default async function InventoryPage({
                 <tr key={f.id}>
                   <td>
                     <div className="cell-stack">
-                      <span className="mono cell-primary">{f.fieldPath}</span>
+                      {f.purposeTag ? (
+                        <span className="mono cell-primary">{f.fieldPath}</span>
+                      ) : (
+                        // Untagged → link straight into the assign-to-Activity flow,
+                        // closing the loop with the Processing Activities register.
+                        <Link
+                          href={`/data-map/processing-activities?assign=${encodeURIComponent(f.fieldPath)}`}
+                          className="mono cell-primary row-link"
+                          title="No purpose yet — assign this field to a Processing Activity"
+                        >
+                          {f.fieldPath} →
+                        </Link>
+                      )}
                       <span className="cell-sub">
                         {f.overriddenType ?? f.detectedType}
                         {f.driftFlag && (

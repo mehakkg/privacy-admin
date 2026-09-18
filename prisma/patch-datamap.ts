@@ -21,33 +21,89 @@ async function seedActivities() {
     console.log("patch-datamap: not seeded yet, skipping.");
     return;
   }
-  const processor = await prisma.dataProcessor.findFirst({ select: { id: true, name: true } });
 
-  // Upsert the activity by a stable id.
+  // Which optional records actually exist on this DB (fresh vs. long-lived).
+  const entity = await prisma.entity.findFirst({ where: { id: "ent_meridian" }, select: { id: true } });
+  const entityId = entity?.id ?? null;
+  const hasSms = (await prisma.dataProcessor.count({ where: { id: "proc_smsdraft" } })) > 0;
+  const hasEmail = (await prisma.dataProcessor.count({ where: { id: "proc_email" } })) > 0;
+
+  // Two anchor activities, upserted by stable id. Lifecycle/entity set on create
+  // and refreshed on update so a pre-existing row picks up the new columns.
   await prisma.processingActivity.upsert({
     where: { id: "pa_loan" },
-    update: {},
-    create: { id: "pa_loan", activity: "Loan Application", origin: "manual" },
+    update: { lifecycleState: "active", entityId },
+    create: { id: "pa_loan", activity: "Loan Application", origin: "manual", lifecycleState: "active", entityId },
+  });
+  await prisma.processingActivity.upsert({
+    where: { id: "pa_marketing" },
+    update: { lifecycleState: "active", entityId },
+    create: { id: "pa_marketing", activity: "Marketing Campaigns", origin: "manual", lifecycleState: "active", entityId },
   });
 
-  const existing = await prisma.activityElement.count({ where: { activityId: "pa_loan" } });
-  if (existing > 0) {
-    console.log("patch-datamap: Loan Application already has elements, leaving it alone.");
-    return;
+  // Element reconciliation runs ONCE (guarded on the marker element). It replaces
+  // any earlier element set on these two activities so a long-lived demo DB moves
+  // to the state that exercises every new column, then leaves it alone forever.
+  const alreadyReconciled = (await prisma.activityElement.count({ where: { id: "ae_device" } })) > 0;
+  if (!alreadyReconciled) {
+    await prisma.activityElement.deleteMany({ where: { activityId: { in: ["pa_loan", "pa_marketing"] } } });
+    const el = (data: {
+      id: string; activityId: string; elementName: string; purposeTagId: string | null;
+      processorId: string | null; subjectType: string | null; requestState: string;
+    }) => prisma.activityElement.create({ data });
+
+    // Loan Application → 2 of 3 assigned (partial), one still awaiting DPO (blocks archive).
+    await el({ id: "ae_pan", activityId: "pa_loan", elementName: "PAN Number", purposeTagId: purposeId("Regulatory compliance"), processorId: null, subjectType: "customer", requestState: "none" });
+    await el({ id: "ae_phone", activityId: "pa_loan", elementName: "Phone Number", purposeTagId: purposeId("Marketing communication"), processorId: hasSms ? "proc_smsdraft" : null, subjectType: "customer", requestState: "none" }); // proc_smsdraft = draft DPA → "No DPA on file"
+    await el({ id: "ae_income", activityId: "pa_loan", elementName: "Income Details", purposeTagId: null, processorId: null, subjectType: "customer", requestState: "requested" });
+
+    // Marketing Campaigns → fully assigned; one cross-border, one full-lawful-chain internal.
+    await el({ id: "ae_email", activityId: "pa_marketing", elementName: "Email Address", purposeTagId: purposeId("Marketing communication"), processorId: hasEmail ? "proc_email" : null, subjectType: "customer", requestState: "none" }); // proc_email = US → cross-border
+    await el({ id: "ae_device", activityId: "pa_marketing", elementName: "Device fingerprint", purposeTagId: purposeId("Fraud prevention"), processorId: null, subjectType: "customer", requestState: "none" }); // internal, legitimate use, 365 days
+    console.log("patch-datamap: processing-activity demo elements reconciled.");
   }
 
-  await prisma.activityElement.createMany({
-    data: [
-      // KYC — internal, no processor. (Regulatory compliance is the seeded KYC purpose.)
-      { activityId: "pa_loan", elementName: "PAN Number", purposeTagId: purposeId("Regulatory compliance"), processorId: null, subjectType: "customer", requestState: "none" },
-      // Deliberately unassigned — the Request flow's live target.
-      { activityId: "pa_loan", elementName: "Phone Number", purposeTagId: null, processorId: null, subjectType: "customer", requestState: "none" },
-      // Assigned to a purpose and shared with a processor.
-      { activityId: "pa_loan", elementName: "Income Details", purposeTagId: purposeId("Account servicing"), processorId: processor?.id ?? null, subjectType: "customer", requestState: "none" },
-    ],
-  });
+  await seedElementHistory();
+  console.log("patch-datamap: processing activities ensured.");
+}
 
-  console.log("patch-datamap: Loan Application activity + elements seeded.");
+/**
+ * One ruled purpose-request escalation for the Device fingerprint element, so its
+ * "View history" timeline has a real request→approval to show (who requested,
+ * who approved, prior values, timestamps). Seeded once.
+ */
+async function seedElementHistory() {
+  if ((await prisma.activityElement.count({ where: { id: "ae_device" } })) === 0) return;
+  const existing = await prisma.escalation.findFirst({ where: { type: "purpose_request", contextJson: { contains: "ae_device" } }, select: { id: true } });
+  if (existing) return;
+  const dpo = await prisma.actor.findFirst({ where: { role: "dpo" }, select: { id: true } });
+  const now = Date.now();
+  await prisma.escalation.create({
+    data: {
+      type: "purpose_request",
+      sourceRole: "admin",
+      targetRole: "dpo",
+      referenceCode: "ESC-2026-0042",
+      reason: "New purpose “Fraud prevention” for “Device fingerprint” in Marketing Campaigns",
+      contextJson: JSON.stringify({
+        elementId: "ae_device",
+        elementName: "Device fingerprint",
+        activity: "Marketing Campaigns",
+        existingPurposeTagId: null,
+        proposedPurposeName: "Fraud prevention",
+        processorId: null,
+        proposedRetention: "365 days",
+        proposedLawfulBasis: "legitimate_use",
+      }),
+      status: "ruled",
+      ruling: "approve_override",
+      rulingRationale: "Legitimate-use basis accepted for fraud prevention; 365-day retention approved.",
+      ruledByActorId: dpo?.id ?? null,
+      ruledAt: new Date(now - 1000 * 60 * 60 * 24 * 12),
+      createdAt: new Date(now - 1000 * 60 * 60 * 24 * 14),
+    },
+  });
+  console.log("patch-datamap: seeded element history escalation for ae_device.");
 }
 
 /**
@@ -78,10 +134,52 @@ async function seedSources() {
 
 async function main() {
   if (!process.env.DATABASE_URL) { console.log("patch-datamap: no DATABASE_URL, skipping."); return; }
+  await backfillGovernanceAttrs();
   await seedActivities();
   await seedSources();
   await seedRopaSuggestions();
   await backfillFlowNodeRefs();
+}
+
+/**
+ * Backfill the DPO-owned attributes the Processing Activities register now reads
+ * — retention + lawful basis on each approved purpose, and jurisdiction on each
+ * processor — onto DBs seeded before those columns existed. Matched by the stable
+ * seed name; only fills a value that is still null, so a human edit is never
+ * overwritten. Also ensures the draft-DPA demo processor exists.
+ */
+async function backfillGovernanceAttrs() {
+  const purposeAttrs: Record<string, { retention: string; lawfulBasis: string }> = {
+    "Account servicing": { retention: "Account relationship + 8 years", lawfulBasis: "contractual" },
+    "Regulatory compliance": { retention: "5 years after relationship ends", lawfulBasis: "legitimate_use" },
+    "Fraud prevention": { retention: "365 days", lawfulBasis: "legitimate_use" },
+    "Marketing communication": { retention: "Until consent withdrawn", lawfulBasis: "consent" },
+    "Service improvement": { retention: "180 days", lawfulBasis: "legitimate_use" },
+    "Grievance redressal": { retention: "3 years from closure", lawfulBasis: "legitimate_use" },
+  };
+  for (const [name, a] of Object.entries(purposeAttrs)) {
+    await prisma.purposeTag.updateMany({
+      where: { name, OR: [{ retention: null }, { lawfulBasis: null }] },
+      data: { retention: a.retention, lawfulBasis: a.lawfulBasis },
+    });
+  }
+
+  const jurisdictions: Record<string, string> = {
+    "Sendwave (email delivery)": "US",
+    "Metriq Analytics": "IN",
+    "Chitra Print & Mail": "IN",
+  };
+  for (const [name, j] of Object.entries(jurisdictions)) {
+    await prisma.dataProcessor.updateMany({ where: { name, jurisdiction: null }, data: { jurisdiction: j } });
+  }
+
+  // The draft-DPA processor drives the "No DPA on file" state; ensure it exists.
+  if ((await prisma.dataProcessor.count({ where: { id: "proc_smsdraft" } })) === 0) {
+    await prisma.dataProcessor.create({
+      data: { id: "proc_smsdraft", name: "PingText SMS", dpaId: "DPA-2026-DRAFT-07", dpaScopeJson: JSON.stringify(["contact"]), contactChannel: "portal", dpaStatus: "draft", jurisdiction: "IN" },
+    });
+  }
+  console.log("patch-datamap: governance attributes backfilled.");
 }
 
 /**

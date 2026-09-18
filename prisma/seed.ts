@@ -201,6 +201,9 @@ async function main() {
       dpaScopeJson: list(["marketing", "contact"]),
       contactChannel: "email",
       dpaExpiresAt: new Date("2027-03-31T00:00:00.000Z"),
+      // US-based → outside India and off the notified allowlist: the flow using
+      // this processor flags "Cross-border — unreviewed".
+      jurisdiction: "US",
     },
   });
   const analyticsVendor = await prisma.dataProcessor.create({
@@ -211,6 +214,7 @@ async function main() {
       dpaScopeJson: list(["behavioural", "contact"]),
       contactChannel: "portal",
       dpaExpiresAt: new Date("2026-12-31T00:00:00.000Z"),
+      jurisdiction: "IN",
     },
   });
   const printVendor = await prisma.dataProcessor.create({
@@ -221,6 +225,20 @@ async function main() {
       dpaScopeJson: list(["contact", "identity"]),
       contactChannel: "sftp",
       dpaExpiresAt: new Date("2027-06-30T00:00:00.000Z"),
+      jurisdiction: "IN",
+    },
+  });
+  // A processor whose DPA is still in draft — no valid contract on file. Used to
+  // demonstrate the "No DPA on file" warning state on a Processing Activity flow.
+  await prisma.dataProcessor.create({
+    data: {
+      id: "proc_smsdraft",
+      name: "PingText SMS",
+      dpaId: "DPA-2026-DRAFT-07",
+      dpaScopeJson: list(["contact"]),
+      contactChannel: "portal",
+      dpaStatus: "draft",
+      jurisdiction: "IN",
     },
   });
 
@@ -550,12 +568,12 @@ async function main() {
   // -- Governance-owned objects (seeded only; read-only to Admin) -----------
   await prisma.purposeTag.createMany({
     data: [
-      { id: "pt_servicing", name: "Account servicing", description: "Operating and servicing the customer's accounts.", status: "approved", approvedBy: dpo.name, approvedAt: daysAgo(200) },
-      { id: "pt_regulatory", name: "Regulatory compliance", description: "Meeting KYC, AML and reporting obligations.", status: "approved", approvedBy: dpo.name, approvedAt: daysAgo(200) },
-      { id: "pt_fraud", name: "Fraud prevention", description: "Detecting and preventing fraudulent transactions.", status: "approved", approvedBy: dpo.name, approvedAt: daysAgo(200) },
-      { id: "pt_marketing", name: "Marketing communication", description: "Sending offers where consent has been given.", status: "approved", approvedBy: dpo.name, approvedAt: daysAgo(150) },
-      { id: "pt_service", name: "Service improvement", description: "Analysing usage to improve the service.", status: "approved", approvedBy: dpo.name, approvedAt: daysAgo(150) },
-      { id: "pt_grievance", name: "Grievance redressal", description: "Handling complaints and rights requests.", status: "approved", approvedBy: dpo.name, approvedAt: daysAgo(200) },
+      { id: "pt_servicing", name: "Account servicing", description: "Operating and servicing the customer's accounts.", status: "approved", approvedBy: dpo.name, approvedAt: daysAgo(200), lawfulBasis: "contractual", retention: "Account relationship + 8 years" },
+      { id: "pt_regulatory", name: "Regulatory compliance", description: "Meeting KYC, AML and reporting obligations.", status: "approved", approvedBy: dpo.name, approvedAt: daysAgo(200), lawfulBasis: "legitimate_use", retention: "5 years after relationship ends" },
+      { id: "pt_fraud", name: "Fraud prevention", description: "Detecting and preventing fraudulent transactions.", status: "approved", approvedBy: dpo.name, approvedAt: daysAgo(200), lawfulBasis: "legitimate_use", retention: "365 days" },
+      { id: "pt_marketing", name: "Marketing communication", description: "Sending offers where consent has been given.", status: "approved", approvedBy: dpo.name, approvedAt: daysAgo(150), lawfulBasis: "consent", retention: "Until consent withdrawn" },
+      { id: "pt_service", name: "Service improvement", description: "Analysing usage to improve the service.", status: "approved", approvedBy: dpo.name, approvedAt: daysAgo(150), lawfulBasis: "legitimate_use", retention: "180 days" },
+      { id: "pt_grievance", name: "Grievance redressal", description: "Handling complaints and rights requests.", status: "approved", approvedBy: dpo.name, approvedAt: daysAgo(200), lawfulBasis: "legitimate_use", retention: "3 years from closure" },
     ],
   });
 

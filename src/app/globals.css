@@ -2608,3 +2608,75 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
   background: var(--bg-muted); color: var(--text-2);
   font-size: 12px; font-weight: 500; white-space: nowrap;
 }
+
+/* ---- Processing Activities: element links, warnings, history timeline ---- */
+
+/* An element name that opens its inventory drawer — reads as a link, is a button. */
+.linklike {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--blue);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+.linklike:hover { text-decoration: underline; }
+
+/* A small inline warning marker (No DPA on file / Cross-border) — one tone, no
+   new palette, just the existing red role used sparingly. */
+.warn-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 10%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--red) 35%, var(--border-strong));
+  white-space: nowrap;
+  width: fit-content;
+}
+
+.input.xs {
+  min-height: 28px;
+  height: 28px;
+  padding: 2px 8px;
+  font-size: 12px;
+  border-radius: var(--radius);
+}
+.icon-btn.xs { padding: 3px; }
+
+/* Read-only element history timeline. */
+.timeline {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+.timeline-item {
+  position: relative;
+  display: flex;
+  gap: 10px;
+  padding: 0 0 14px 4px;
+}
+.timeline-item::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 14px;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+}
+.timeline-item:last-child::before { display: none; }
+.timeline-dot {
+  flex-shrink: 0;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-top: 4px;
+  z-index: 1;
+}

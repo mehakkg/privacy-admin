@@ -185,6 +185,11 @@ model DataProcessor {
   /// managed in the Governance Portal. Distinct governance source from DPO/CISO
   /// objects, same "visible, not editable" principle.
   riskClassification String?
+  /// ISO country/region code of where the processor processes the data ("IN",
+  /// "US", "EU"…). Governance-set, not Admin-editable. When it is outside India
+  /// and not on the notified-country allowlist the activity row flags it
+  /// "Cross-border — unreviewed" rather than failing silently. See lib/jurisdiction.
+  jurisdiction String?
   /// The date the (active) DPA was executed.
   contractDate DateTime?
 
@@ -476,6 +481,15 @@ model PurposeTag {
   approvedBy String
   approvedAt DateTime
 
+  /// Retention belongs to the PURPOSE, not the element or activity: the same
+  /// element used for two purposes carries two retention clocks, so retention
+  /// travels with the purpose. A duration ("365 days") or "until deletion".
+  /// DPO-set at approval time; Admin sees it locked, like the purpose itself.
+  retention  String?
+  /// consent | legitimate_use | contractual — the lawful basis under the DPDP
+  /// Act for processing under this purpose. DPO-set; shown beside the purpose.
+  lawfulBasis String?
+
   classifiedFields   ClassifiedField[]
   processingActivities ProcessingActivity[]
   consentRecords     ConsentRecord[]
@@ -504,13 +518,26 @@ model ProcessingActivity {
   dataElementsJson String @default("[]")
 
   createdAt DateTime @default(now())
-  /// csv | manual — how the row first entered the table.
+  /// csv | manual | ropa_suggested — how the row first entered the table.
   origin    String   @default("manual")
 
+  /// active | under_review | archived. Admin sets active/under_review directly;
+  /// moving to archived routes a DPO-approval request (the same escalation
+  /// pattern as Purpose/Processor) and is blocked while any element is still
+  /// "requested — awaiting DPO".
+  lifecycleState String @default("active")
+
+  /// The Fiduciary registry entry (Entity) this activity belongs to. Links to
+  /// the Fiduciaries tab's data — never a parallel entity list. Nullable: an
+  /// activity with no entity shows "Unassigned entity" and still functions.
+  entityId String?
+
   purposeTag PurposeTag? @relation(fields: [purposeTagId], references: [id])
+  entity     Entity?     @relation(fields: [entityId], references: [id])
   elements   ActivityElement[]
 
   @@index([purposeTagId])
+  @@index([entityId])
 }
 
 /// One PII element within a Processing Activity. Purpose and Processor attach
@@ -1578,6 +1605,7 @@ model Entity {
 
   userMappings EntityUserMapping[]
   notices      Notice[]
+  activities   ProcessingActivity[]
 }
 
 model EntityUserMapping {
