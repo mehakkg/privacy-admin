@@ -1606,6 +1606,7 @@ model Entity {
   userMappings EntityUserMapping[]
   notices      Notice[]
   activities   ProcessingActivity[]
+  roleAssignments RoleAssignment[]
 }
 
 model EntityUserMapping {
@@ -1650,11 +1651,27 @@ model ProtectionRuleException {
 /// two diverge, that is DRIFT: Admin can edit the role within the baseline, but
 /// widening it beyond the baseline is a governance change, not a technical one,
 /// and the guards route it to an escalation.
+/// The single Role entity for the whole product — surfaced read-only in Approved
+/// Policy and fully in Identity & Access, never duplicated. Historically the RBAC
+/// matrix row; extended with the capability model, lifecycle status and role type
+/// the Identity & Access module needs.
 model RBACRole {
   id          String @id @default(cuid())
   name        String @unique
   description String @default("")
   systemId    String?
+
+  /// system | custom. System roles are DPO/CISO-authored and locked to Admin
+  /// (same treatment as Approved Policy); custom roles are Admin-composed.
+  roleType String @default("system")
+  /// approved | draft | pending_dpo_approval — the composition/ratification
+  /// lifecycle. Only approved (and all system) roles are assignable.
+  status   String @default("approved")
+
+  /// JSON of the capability model: [{ module, action, sensitivity }]. The
+  /// plain-permission list below is kept for the existing RBAC-matrix screens.
+  capabilitiesJson String @default("[]")
+  createdBy        String?
 
   /// JSON string[] of permissions currently granted by this role.
   permissionsJson String
@@ -1666,6 +1683,7 @@ model RBACRole {
   /// True for the least-privilege starting points offered by the Provisioning
   /// Panel.
   isTemplate       Boolean @default(false)
+  /// approved_by / approved_at for the ratified role (system, or approved custom).
   baselineApprovedBy String @default("A. Khan")
   baselineApprovedAt DateTime @default(now())
   /// When Admin last saved / reviewed this role. Drives the RBAC matrix's
@@ -1674,6 +1692,76 @@ model RBACRole {
 
   grants AccessGrant[]
   provisioningRequests ProvisioningRequest[]
+  assignments RoleAssignment[]
+
+  @@index([roleType])
+  @@index([status])
+}
+
+/// A role granted to a person within a Fiduciary, scoped to systems. The
+/// evidentiary record for a Rule 6 audit: it carries the justification and a
+/// snapshot of the role's capabilities AT GRANT TIME, so later drift is
+/// measurable against what was actually approved rather than against today's role.
+model RoleAssignment {
+  id       String @id @default(cuid())
+  roleId   String
+  /// Person the role is granted to (free text / InternalUser name for the demo).
+  userName String
+  userId   String?
+  /// The Fiduciary (Entity) the assignment sits within.
+  entityId String?
+
+  /// JSON string[] of systems the grant reaches (the scope).
+  scopeSystemsJson String @default("[]")
+  justification    String
+  grantedAt        DateTime @default(now())
+  /// Capabilities captured at grant time — the baseline drift is measured against.
+  baselineSnapshotJson String @default("[]")
+
+  /// active | expired | revoked
+  status String @default("active")
+
+  /// Per-system provisioning grid: [{ system, status: pending|granted|failed, detail? }]
+  /// and the rolled-up state, so a partial failure is never shown as success.
+  provisioningJson   String @default("[]")
+  /// granted | partial | failed | pending
+  provisioningStatus String @default("granted")
+
+  role   RBACRole @relation(fields: [roleId], references: [id])
+  entity Entity?  @relation(fields: [entityId], references: [id])
+  drift  DriftRecord[]
+
+  @@index([roleId])
+  @@index([status])
+}
+
+/// One detected deviation of an assignment's current capabilities from its
+/// approved baseline. Every drift ends in a recorded decision — detection alone
+/// is not the deliverable; resolution is.
+model DriftRecord {
+  id           String @id @default(cuid())
+  assignmentId String
+
+  detectedAt           DateTime @default(now())
+  baselineSnapshotJson String   @default("[]")
+  currentSnapshotJson  String   @default("[]")
+  /// critical | minor — computed from the sensitivity of what changed.
+  severity   String @default("minor")
+
+  /// corrected | retroactively_approved | unresolved
+  resolution String @default("unresolved")
+  resolvedBy String?
+  resolvedAt DateTime?
+
+  /// Whether the change could be traced to a source; drives the review drawer's
+  /// change-trace line vs. the "source unclear — flag for investigation" state.
+  traceable   Boolean @default(true)
+  changeTrace String?
+
+  assignment RoleAssignment @relation(fields: [assignmentId], references: [id])
+
+  @@index([severity])
+  @@index([resolution])
 }
 
 /// A pending or completed request to grant access, before any grant exists.

@@ -70,5 +70,8 @@ if (!POOLED) {
     run("Seeding Data Map demo", "npx tsx prisma/patch-datamap.ts", POOLED);
     // Idempotent: seeds the Vendor Risk (TPRM) demo vendors.
     run("Seeding Vendor Risk demo", "npx tsx prisma/patch-tprm.ts", POOLED);
+    // Idempotent: backfills the Role capability model and seeds the Identity &
+    // Access demo (custom roles, assignments, drift).
+    run("Seeding Identity & Access demo", "npx tsx prisma/patch-rbac.ts", POOLED);
   }
 }

@@ -6,6 +6,8 @@ import { GOVERNANCE_OWNER } from "@/lib/guards/escalationGate";
 import { ROLE_LABEL } from "@/lib/domain";
 import { getCurrentRole } from "@/lib/session";
 import { PurposeTaxonomy } from "@/components/PurposeTaxonomy";
+import { RoleDefinitions } from "@/components/access/roleDefinitions";
+import type { RoleView } from "@/components/access/roleDetailDrawer";
 
 export const dynamic = "force-dynamic";
 
@@ -27,12 +29,23 @@ export const dynamic = "force-dynamic";
 export default async function GovernancePage() {
   const role = await getCurrentRole();
   const isDpo = role === "dpo";
-  const [purposes, notices, cookies, rules] = await Promise.all([
+  const [purposes, notices, cookies, rules, roles] = await Promise.all([
     db.purposeTag.findMany({ orderBy: { name: "asc" } }),
     db.noticeVersion.findMany({ orderBy: { version: "desc" } }),
     db.cookieCategory.findMany({ orderBy: { name: "asc" } }),
     db.protectionRule.findMany({ orderBy: { dataCategory: "asc" } }),
+    // Ratified roles only: system, or approved custom. Drafts/pending don't appear.
+    db.rBACRole.findMany({
+      where: { OR: [{ roleType: "system" }, { roleType: "custom", status: "approved" }] },
+      orderBy: [{ roleType: "asc" }, { name: "asc" }],
+    }),
   ]);
+
+  const roleViews: RoleView[] = roles.map((r) => ({
+    id: r.id, name: r.name, description: r.description, roleType: r.roleType, status: r.status,
+    capabilityIds: decodeList(r.capabilitiesJson), createdBy: r.createdBy,
+    approvedBy: r.baselineApprovedBy, approvedAt: r.baselineApprovedAt ? formatDate(r.baselineApprovedAt) : null, holders: 0,
+  }));
 
   return (
     <Shell active="/governance" title="Approved Policy">
@@ -187,6 +200,13 @@ export default async function GovernancePage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </Card>
+
+        <Card title="Role definitions">
+          <GovernanceBanner owner="the Data Protection Officer / CISO" object="Role definitions" />
+          <div style={{ marginTop: 12 }}>
+            <RoleDefinitions roles={roleViews} />
           </div>
         </Card>
       </div>
