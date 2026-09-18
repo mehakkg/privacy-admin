@@ -6,6 +6,7 @@ import { X, CheckCircle2, HelpCircle, ArrowRight } from "lucide-react";
 import { Pill } from "@/components/ui";
 import { ActionError } from "@/components/actions";
 import { resolveDriftAction } from "@/app/actions/rbac";
+import { SelfApprovedTag } from "@/components/access/selfApprovedTag";
 import { capabilityById, capabilityDiff } from "@/lib/rbac";
 import type { ActionResult } from "@/app/actions/requests";
 
@@ -20,6 +21,7 @@ export interface DriftView {
   changeTrace: string | null;
   baseline: string[];
   current: string[];
+  selfApproved: boolean;
 }
 
 const RES_LABEL: Record<string, string> = { corrected: "Corrected to baseline", retroactively_approved: "Retroactively approved", unresolved: "Unresolved" };
@@ -64,7 +66,7 @@ export function DriftDashboard({ rows, lastScan }: { rows: DriftView[]; lastScan
                     </span>
                   </td>
                   <td><Pill tone={d.severity === "critical" ? "red" : "yellow"}>{d.severity === "critical" ? "Critical" : "Minor"}</Pill></td>
-                  <td>{d.resolution === "unresolved" ? <Pill tone="gray">Unresolved</Pill> : <Pill tone="green" dot={false}>{RES_LABEL[d.resolution]}</Pill>}</td>
+                  <td><span className="row" style={{ gap: 6, flexWrap: "wrap" }}>{d.resolution === "unresolved" ? <Pill tone="gray">Unresolved</Pill> : <Pill tone="green" dot={false}>{RES_LABEL[d.resolution]}</Pill>}{d.selfApproved && <SelfApprovedTag compact />}</span></td>
                   <td className="cell-sub">{d.detectedAt}</td>
                 </tr>
               );
@@ -133,7 +135,7 @@ function DriftReviewDrawer({
 
           {resolved ? (
             <div className="notice info" style={{ marginTop: 16 }}>
-              <div className="notice-title">Resolved</div>
+              <div className="notice-title">Resolved {d.selfApproved && <SelfApprovedTag compact />}</div>
               <div>{RES_LABEL[d.resolution]}.</div>
             </div>
           ) : (

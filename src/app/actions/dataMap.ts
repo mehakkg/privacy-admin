@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/session";
+import { isCombinedGovernance } from "@/lib/governance";
 import { audited } from "@/lib/engines/audit";
 import type { TxClient } from "@/lib/tx";
 import type { ActionResult } from "@/app/actions/requests";
@@ -267,21 +268,23 @@ export async function proposeNewPurposeAction(elementId: string, input: Proposed
  */
 export async function approvePurposeAction(purposeId: string): Promise<ActionResult> {
   const { actor } = await getSession();
-  if (actor.role !== "dpo" && actor.role !== "ciso") {
+  const combined = await isCombinedGovernance();
+  const allowed = actor.role === "dpo" || actor.role === "ciso" || (combined && actor.role === "admin");
+  if (!allowed) {
     return { ok: false, error: "Only the DPO or CISO can approve a purpose. Switch role to approve.", errorKind: "UnauthorisedRulingError" };
   }
   try {
     await audited(
-      { actor, action: "purpose.approved", targetType: "PurposeTag", targetId: purposeId, payload: { approvedBy: actor.label } },
+      { actor, action: "purpose.approved", targetType: "PurposeTag", targetId: purposeId, payload: { approvedBy: actor.label, selfApproved: combined } },
       async (tx: TxClient) => {
         const p = await tx.purposeTag.findUniqueOrThrow({ where: { id: purposeId } });
         if (p.status !== "pending_dpo_approval") throw Object.assign(new Error("Only a pending purpose can be approved."), { name: "StateError" });
-        const purpose = await tx.purposeTag.update({ where: { id: purposeId }, data: { status: "approved", approvedBy: actor.label, approvedAt: new Date() } });
+        const purpose = await tx.purposeTag.update({ where: { id: purposeId }, data: { status: "approved", approvedBy: actor.label, approvedAt: new Date(), selfApproved: combined } });
         if (p.linkedElementId) {
           await tx.activityElement.updateMany({ where: { id: p.linkedElementId }, data: { purposeTagId: purpose.id, requestState: "none" } });
         }
-        // Purpose-first: clear the pending state on every segment using this purpose.
-        await tx.activityPurpose.updateMany({ where: { purposeTagId: purposeId }, data: { requestState: "none" } });
+        // Purpose-first: clear the pending state (+ stamp self-approval) on every segment using this purpose.
+        await tx.activityPurpose.updateMany({ where: { purposeTagId: purposeId }, data: { requestState: "none", selfApproved: combined } });
         return purpose;
       },
     );
@@ -299,7 +302,8 @@ export async function approvePurposeAction(purposeId: string): Promise<ActionRes
  *  Approved Policy), the reason is stored, and the element reverts to Unassigned. */
 export async function rejectPurposeAction(purposeId: string, reason: string): Promise<ActionResult> {
   const { actor } = await getSession();
-  if (actor.role !== "dpo" && actor.role !== "ciso") {
+  const combined = await isCombinedGovernance();
+  if (actor.role !== "dpo" && actor.role !== "ciso" && !(combined && actor.role === "admin")) {
     return { ok: false, error: "Only the DPO or CISO can reject a purpose. Switch role to decide.", errorKind: "UnauthorisedRulingError" };
   }
   if (!reason.trim()) return { ok: false, error: "A rejection needs a reason.", errorKind: "ValidationError" };

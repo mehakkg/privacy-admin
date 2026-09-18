@@ -119,6 +119,7 @@ function navGroups(openRequests: number, role: string): NavEntry[] {
         { href: "/access/assignments", label: "Assignments", ready: true },
         { href: "/access/approval-queue", label: "Approval Queue", ready: true },
         { href: "/access/drift", label: "Drift", ready: true },
+        { href: "/access/organization", label: "Organization setup", ready: true },
       ],
     },
     {

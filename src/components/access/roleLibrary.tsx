@@ -14,7 +14,7 @@ import { RoleComposer } from "@/components/access/roleComposer";
  * "Request new role" opens the Composer. The detail drawer is the shared one,
  * used read-only from Approved Policy too.
  */
-export function RoleLibrary({ roles, templates }: { roles: RoleView[]; templates: RoleView[] }) {
+export function RoleLibrary({ roles, templates, combined = false }: { roles: RoleView[]; templates: RoleView[]; combined?: boolean }) {
   const router = useRouter();
   const [view, setView] = useState<"cards" | "table">("cards");
   const [open, setOpen] = useState<RoleView | null>(null);
@@ -55,7 +55,7 @@ export function RoleLibrary({ roles, templates }: { roles: RoleView[]; templates
       )}
 
       {open && <RoleDetailDrawer role={open} onClose={() => setOpen(null)} onAssign={onAssign} onEdit={onEdit} />}
-      {composing && <RoleComposer editing={editing} templates={templates} onClose={() => { setComposing(false); setEditing(null); }} />}
+      {composing && <RoleComposer editing={editing} templates={templates} combined={combined} onClose={() => { setComposing(false); setEditing(null); }} />}
     </div>
   );
 }

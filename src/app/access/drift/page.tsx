@@ -32,6 +32,7 @@ export default async function DriftPage({
     changeTrace: r.changeTrace,
     baseline: decodeList(r.baselineSnapshotJson),
     current: decodeList(r.currentSnapshotJson),
+    selfApproved: r.selfApproved,
   }));
 
   // Default sort: critical first, then most recent.

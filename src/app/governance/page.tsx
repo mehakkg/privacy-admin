@@ -63,6 +63,7 @@ export default async function GovernancePage({
     id: r.id, name: r.name, description: r.description, roleType: r.roleType, status: r.status,
     capabilityIds: decodeList(r.capabilitiesJson), createdBy: r.createdBy,
     approvedBy: r.baselineApprovedBy, approvedAt: r.baselineApprovedAt ? formatDate(r.baselineApprovedAt) : null, holders: 0,
+    selfApproved: r.selfApproved,
   }));
 
   return (
@@ -107,6 +108,7 @@ export default async function GovernancePage({
                 status: p.status,
                 approvedBy: p.approvedBy,
                 approvedAt: formatDate(p.approvedAt),
+                selfApproved: p.selfApproved,
               }))}
             />
           </div>

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 import { Pill } from "@/components/ui";
 import { ActionError } from "@/components/actions";
+import { SelfApprovedTag } from "@/components/access/selfApprovedTag";
 import {
   createPurposeAction,
   requestPurposeAction,
@@ -19,6 +20,7 @@ export interface PurposeRow {
   status: string;
   approvedBy: string;
   approvedAt: string;
+  selfApproved?: boolean;
 }
 
 const STATUS_TONE: Record<string, "green" | "yellow" | "gray"> = {
@@ -121,7 +123,7 @@ export function PurposeTaxonomy({
 
             {purposes.map((p) => (
               <tr key={p.id}>
-                <td className="cell-primary">{p.name}</td>
+                <td className="cell-primary"><span className="row" style={{ gap: 6, flexWrap: "wrap" }}>{p.name}{p.selfApproved && <SelfApprovedTag compact />}</span></td>
                 <td className="muted">{p.description}</td>
                 <td>
                   {canEdit ? (

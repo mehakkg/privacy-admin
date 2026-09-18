@@ -3081,3 +3081,47 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 }
 .pp-empty { font-size: 12px; color: var(--text-3); padding: 4px 2px; }
 @media (max-width: 620px) { .pp-meta { grid-template-columns: 1fr; } }
+
+/* ===================== Governance structure / self-approval ===================== */
+.self-approved-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--purple);
+  background: color-mix(in srgb, var(--purple) 10%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--purple) 35%, var(--border-strong));
+  white-space: nowrap;
+}
+
+/* "You are reviewing this as DPO" banner in the approval drawer */
+.review-as-dpo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  margin: 0 0 12px;
+  border-radius: var(--radius);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--purple);
+  background: color-mix(in srgb, var(--purple) 8%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--purple) 35%, var(--border-strong));
+  border-left: 4px solid var(--purple);
+}
+
+/* Organization setup Yes/No cards */
+.gov-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.gov-choice {
+  display: flex; flex-direction: column; gap: 6px; text-align: left;
+  padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--bg); cursor: pointer; font: inherit;
+}
+.gov-choice:hover { border-color: var(--border-strong); }
+.gov-choice.on { border-color: var(--blue); background: color-mix(in srgb, var(--blue) 6%, var(--bg)); box-shadow: 0 0 0 1px var(--blue) inset; }
+.gov-choice-head { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13.5px; }
+.gov-check { margin-left: auto; color: var(--blue); }
+@media (max-width: 620px) { .gov-choices { grid-template-columns: 1fr; } }

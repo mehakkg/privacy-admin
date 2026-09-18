@@ -21,10 +21,11 @@ import type { RoleView } from "@/components/access/roleDetailDrawer";
  * a high-sensitivity selection must be acknowledged before the role can be saved.
  */
 export function RoleComposer({
-  editing, templates, onClose,
+  editing, templates, combined = false, onClose,
 }: {
   editing?: RoleView | null;
   templates: RoleView[];
+  combined?: boolean;
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -89,6 +90,12 @@ export function RoleComposer({
           <button className="icon-btn" onClick={onClose} aria-label="Close"><X size={16} /></button>
         </div>
 
+        {combined && (
+          <div className="notice warn" style={{ marginTop: 12 }}>
+            <div className="notice-title">No dedicated DPO</div>
+            <div>Your organization has no dedicated DPO — automated checks are your primary safeguard against over-provisioning. Review this composition carefully; SoD conflicts are still hard-blocked.</div>
+          </div>
+        )}
         <div className="row" style={{ gap: 10, marginTop: 12, flexWrap: "wrap" }}>
           <input className="input" placeholder="Role name" value={name} onChange={(e) => setName(e.target.value)} style={{ flex: "1 1 220px" }} />
           <input className="input" placeholder="One-line description" value={description} onChange={(e) => setDescription(e.target.value)} style={{ flex: "2 1 280px" }} />

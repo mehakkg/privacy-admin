@@ -3,6 +3,7 @@ import { PageHead, Stat } from "@/components/ui";
 import { ApprovalQueue, type QueueItem } from "@/components/access/approvalQueue";
 import { getCurrentRole } from "@/lib/session";
 import { decodeList } from "@/lib/codec/json";
+import { isCombinedGovernance } from "@/lib/governance";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,7 @@ export const dynamic = "force-dynamic";
  *  purposes awaiting a DPO/CISO decision. */
 export default async function ApprovalQueuePage() {
   const role = await getCurrentRole();
+  const combined = await isCombinedGovernance();
 
   const [pendingRoles, pendingPurposes] = await Promise.all([
     db.rBACRole.findMany({ where: { status: "pending_dpo_approval" }, orderBy: { baselineApprovedAt: "asc" } }),
@@ -56,7 +58,7 @@ export default async function ApprovalQueuePage() {
         <Stat label="Past 48h SLA" value={overdue} tone={overdue ? "red" : undefined} />
       </div>
 
-      <ApprovalQueue items={items} actingRole={role} />
+      <ApprovalQueue items={items} actingRole={role} combined={combined} />
     </div>
   );
 }

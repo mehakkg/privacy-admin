@@ -6,6 +6,7 @@ import { audited } from "@/lib/engines/audit";
 import type { TxClient } from "@/lib/tx";
 import type { ActionResult } from "@/app/actions/requests";
 import { sodConflicts } from "@/lib/rbac";
+import { isCombinedGovernance } from "@/lib/governance";
 
 const ROLES_PATH = "/access/roles";
 
@@ -53,16 +54,22 @@ export async function composeRoleAction(input: {
   );
 }
 
-/** DPO/CISO ratifies a pending custom role. Guarded to the approver roles. */
+/**
+ * Ratify a pending custom role. Normally DPO/CISO only; under combined_admin_dpo
+ * governance the Admin approves in a DPO capacity, and the record is stamped
+ * self_approved (system-computed, never skipped). The review step always runs.
+ */
 export async function approveRoleAction(roleId: string): Promise<ActionResult> {
   const { actor } = await getSession();
-  if (actor.role !== "dpo" && actor.role !== "ciso") {
+  const combined = await isCombinedGovernance();
+  const allowed = actor.role === "dpo" || actor.role === "ciso" || (combined && actor.role === "admin");
+  if (!allowed) {
     return { ok: false, error: "Only the DPO or CISO can approve a role. Switch role to approve.", errorKind: "UnauthorisedRulingError" };
   }
   return run(() =>
     audited(
-      { actor, action: "role.approved", targetType: "RBACRole", targetId: roleId, payload: { approvedBy: actor.label } },
-      (tx: TxClient) => tx.rBACRole.update({ where: { id: roleId }, data: { status: "approved", baselineApprovedBy: actor.label, baselineApprovedAt: new Date() } }),
+      { actor, action: "role.approved", targetType: "RBACRole", targetId: roleId, payload: { approvedBy: actor.label, selfApproved: combined } },
+      (tx: TxClient) => tx.rBACRole.update({ where: { id: roleId }, data: { status: "approved", baselineApprovedBy: actor.label, baselineApprovedAt: new Date(), selfApproved: combined } }),
     ),
     "/access/approval-queue", "/governance",
   );
@@ -71,7 +78,8 @@ export async function approveRoleAction(roleId: string): Promise<ActionResult> {
 /** DPO/CISO rejects a pending role back to draft, with a reason. */
 export async function rejectRoleAction(roleId: string, reason: string): Promise<ActionResult> {
   const { actor } = await getSession();
-  if (actor.role !== "dpo" && actor.role !== "ciso") {
+  const combined = await isCombinedGovernance();
+  if (actor.role !== "dpo" && actor.role !== "ciso" && !(combined && actor.role === "admin")) {
     return { ok: false, error: "Only the DPO or CISO can reject a role. Switch role to decide.", errorKind: "UnauthorisedRulingError" };
   }
   if (!reason.trim()) return { ok: false, error: "A rejection needs a reason.", errorKind: "ValidationError" };
@@ -164,18 +172,24 @@ export async function retryProvisioningAction(assignmentId: string, system: stri
  */
 export async function resolveDriftAction(driftId: string, resolution: "corrected" | "retroactively_approved"): Promise<ActionResult> {
   const { actor } = await getSession();
+  const combined = await isCombinedGovernance();
   return run(() =>
     audited(
-      { actor, action: resolution === "corrected" ? "drift.corrected" : "drift.retro_requested", targetType: "DriftRecord", targetId: driftId, payload: { resolution } },
+      { actor, action: resolution === "corrected" ? "drift.corrected" : "drift.retro_requested", targetType: "DriftRecord", targetId: driftId, payload: { resolution, selfApproved: resolution === "retroactively_approved" && combined } },
       async (tx: TxClient) => {
         const d = await tx.driftRecord.findUniqueOrThrow({ where: { id: driftId } });
-        if (resolution === "retroactively_approved" && actor.role !== "dpo" && actor.role !== "ciso") {
-          // Admin can only REQUEST retro-approval; it is not applied until DPO clears it.
+        // Retroactive approval needs a DPO — unless the org is combined, where the
+        // Admin approves in a DPO capacity and it is recorded as self-approved.
+        if (resolution === "retroactively_approved" && actor.role !== "dpo" && actor.role !== "ciso" && !(combined && actor.role === "admin")) {
           throw Object.assign(new Error("Retroactive approval must be cleared by the DPO. Switch to the DPO role to approve, or choose “Correct to baseline”."), { name: "UnauthorisedRulingError" });
         }
         return tx.driftRecord.update({
           where: { id: driftId },
-          data: { resolution, resolvedBy: actor.label, resolvedAt: new Date(), baselineSnapshotJson: resolution === "retroactively_approved" ? d.currentSnapshotJson : d.baselineSnapshotJson },
+          data: {
+            resolution, resolvedBy: actor.label, resolvedAt: new Date(),
+            baselineSnapshotJson: resolution === "retroactively_approved" ? d.currentSnapshotJson : d.baselineSnapshotJson,
+            selfApproved: resolution === "retroactively_approved" && combined,
+          },
         });
       },
     ),

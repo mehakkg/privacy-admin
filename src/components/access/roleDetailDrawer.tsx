@@ -2,6 +2,7 @@
 
 import { X, Lock, ShieldAlert } from "lucide-react";
 import { Pill } from "@/components/ui";
+import { SelfApprovedTag } from "@/components/access/selfApprovedTag";
 import {
   capabilityById, MACRO_NAV_ORDER, ROLE_STATUS_LABEL, ROLE_STATUS_TONE,
   type MacroNav,
@@ -18,6 +19,7 @@ export interface RoleView {
   approvedBy: string | null;
   approvedAt: string | null;
   holders: number;
+  selfApproved?: boolean;
 }
 
 /**
@@ -95,7 +97,7 @@ export function RoleDetailDrawer({
           <h3 className="drawer-section">Provenance</h3>
           <dl className="kv">
             {role.createdBy && <div style={{ display: "contents" }}><dt>Created by</dt><dd>{role.createdBy}</dd></div>}
-            <div style={{ display: "contents" }}><dt>Approved by</dt><dd>{role.approvedBy && role.approvedBy !== "—" ? `${role.approvedBy}${role.approvedAt ? ` · ${role.approvedAt}` : ""}` : "Not yet approved"}</dd></div>
+            <div style={{ display: "contents" }}><dt>Approved by</dt><dd><span className="row" style={{ gap: 8, flexWrap: "wrap" }}>{role.approvedBy && role.approvedBy !== "—" ? `${role.approvedBy}${role.approvedAt ? ` · ${role.approvedAt}` : ""}` : "Not yet approved"}{role.selfApproved && <SelfApprovedTag compact />}</span></dd></div>
             <div style={{ display: "contents" }}><dt>Held by</dt><dd>{role.holders} {role.holders === 1 ? "person" : "people"}</dd></div>
           </dl>
 

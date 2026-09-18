@@ -33,14 +33,15 @@ function ageLabel(iso: string) {
   return `${Math.floor(h / 24)}d old`;
 }
 
-export function ApprovalQueue({ items, actingRole }: { items: QueueItem[]; actingRole: string }) {
+export function ApprovalQueue({ items, actingRole, combined = false }: { items: QueueItem[]; actingRole: string; combined?: boolean }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [result, setResult] = useState<ActionResult | null>(null);
   const [open, setOpen] = useState<QueueItem | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const canApprove = actingRole === "dpo" || actingRole === "ciso";
+  // In combined Admin+DPO governance the same person reviews in a DPO capacity.
+  const canApprove = actingRole === "dpo" || actingRole === "ciso" || (combined && actingRole === "admin");
 
   const run = (op: () => Promise<ActionResult>, after?: () => void) =>
     start(async () => { const r = await op(); setResult(r); if (r.ok) { after?.(); router.refresh(); } });
@@ -57,6 +58,12 @@ export function ApprovalQueue({ items, actingRole }: { items: QueueItem[]; actin
 
   return (
     <div>
+      {combined && (
+        <div className="notice warn" style={{ marginBottom: 12 }}>
+          <div className="notice-title">Combined Admin + DPO governance</div>
+          <div>Your organization has no dedicated DPO. You review these requests in a DPO capacity; approvals are recorded as self-approved. The review step is never skipped.</div>
+        </div>
+      )}
       {!canApprove && (
         <div className="notice info" style={{ marginBottom: 12 }}>
           <div className="notice-title">You are acting as {actingRole.toUpperCase()}</div>
@@ -109,7 +116,7 @@ export function ApprovalQueue({ items, actingRole }: { items: QueueItem[]; actin
 
       {open && open.kind === "role" && (
         <RoleApprovalDrawer
-          item={open} canApprove={canApprove} pending={pending}
+          item={open} canApprove={canApprove} combined={combined} pending={pending}
           onApprove={() => run(() => approve(open), () => setOpen(null))}
           onReject={(reason) => run(() => reject(open, reason), () => setOpen(null))}
           onClose={() => setOpen(null)}
@@ -117,7 +124,7 @@ export function ApprovalQueue({ items, actingRole }: { items: QueueItem[]; actin
       )}
       {open && open.kind === "purpose" && (
         <PurposeApprovalDrawer
-          item={open} canApprove={canApprove} pending={pending}
+          item={open} canApprove={canApprove} combined={combined} pending={pending}
           onApprove={() => run(() => approve(open), () => setOpen(null))}
           onReject={(reason) => run(() => reject(open, reason), () => setOpen(null))}
           onClose={() => setOpen(null)}
@@ -142,9 +149,9 @@ function RejectBlock({ pending, onReject, onCancel }: { pending: boolean; onReje
 
 /** Role request — Approve disabled until the full capability list is scrolled. */
 function RoleApprovalDrawer({
-  item, canApprove, pending, onApprove, onReject, onClose,
+  item, canApprove, combined, pending, onApprove, onReject, onClose,
 }: {
-  item: QueueItem; canApprove: boolean; pending: boolean;
+  item: QueueItem; canApprove: boolean; combined: boolean; pending: boolean;
   onApprove: () => void; onReject: (reason: string) => void; onClose: () => void;
 }) {
   const [viewed, setViewed] = useState(false);
@@ -169,6 +176,9 @@ function RoleApprovalDrawer({
           <button className="icon-btn" onClick={onClose} aria-label="Close"><X size={16} /></button>
         </div>
         <div className="drawer-body">
+          {combined && canApprove && (
+            <div className="review-as-dpo"><ShieldAlert size={14} /> You are reviewing this as DPO — this approval will be recorded as self-approved.</div>
+          )}
           <p className="cell-sub" style={{ marginTop: 0 }}>Requested by {item.requester}. {summarise(ids)}</p>
           {high > 0 && <p className="row" style={{ gap: 6, color: "var(--red)", fontSize: 12.5 }}><ShieldAlert size={13} /> {high} high-sensitivity capabilit{high === 1 ? "y" : "ies"}.</p>}
 
@@ -207,9 +217,9 @@ function RoleApprovalDrawer({
 
 /** Proposed-purpose request — shows the linked element and legal basis for context. */
 function PurposeApprovalDrawer({
-  item, canApprove, pending, onApprove, onReject, onClose,
+  item, canApprove, combined, pending, onApprove, onReject, onClose,
 }: {
-  item: QueueItem; canApprove: boolean; pending: boolean;
+  item: QueueItem; canApprove: boolean; combined: boolean; pending: boolean;
   onApprove: () => void; onReject: (reason: string) => void; onClose: () => void;
 }) {
   const [rejecting, setRejecting] = useState(false);
@@ -221,6 +231,9 @@ function PurposeApprovalDrawer({
           <button className="icon-btn" onClick={onClose} aria-label="Close"><X size={16} /></button>
         </div>
         <div className="drawer-body">
+          {combined && canApprove && (
+            <div className="review-as-dpo"><ShieldAlert size={14} /> You are reviewing this as DPO — this approval will be recorded as self-approved.</div>
+          )}
           <p className="cell-sub" style={{ marginTop: 0 }}>Proposed by {item.requester}.</p>
           <h3 className="drawer-section first">Proposal</h3>
           <dl className="kv">

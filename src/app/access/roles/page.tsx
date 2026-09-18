@@ -5,6 +5,7 @@ import { RoleLibrary } from "@/components/access/roleLibrary";
 import type { RoleView } from "@/components/access/roleDetailDrawer";
 import { decodeList } from "@/lib/codec/json";
 import { capabilityById } from "@/lib/rbac";
+import { isCombinedGovernance } from "@/lib/governance";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,7 @@ export default async function RolesLibraryPage({
 }) {
   const params = await searchParams;
   const term = (params.q ?? "").trim().toLowerCase();
+  const combined = await isCombinedGovernance();
 
   const roles = await db.rBACRole.findMany({
     include: { _count: { select: { assignments: true } } },
@@ -34,6 +36,7 @@ export default async function RolesLibraryPage({
     approvedBy: r.baselineApprovedBy,
     approvedAt: r.baselineApprovedAt ? formatDate(r.baselineApprovedAt) : null,
     holders: r._count.assignments,
+    selfApproved: r.selfApproved,
   });
 
   let views = roles.map(toView);
@@ -79,7 +82,7 @@ export default async function RolesLibraryPage({
         ]}
       />
 
-      <RoleLibrary roles={views} templates={templates} />
+      <RoleLibrary roles={views} templates={templates} combined={combined} />
     </div>
   );
 }

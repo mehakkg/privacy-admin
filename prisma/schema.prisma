@@ -496,6 +496,10 @@ model PurposeTag {
   /// Recorded when the DPO rejects the proposal; the purpose is not shown in
   /// Approved Policy in that state.
   rejectionReason String?
+  /// True when approved under combined_admin_dpo governance (the requester and the
+  /// approver are the same person). System-computed at approval, never user-set,
+  /// and never relabelled if the org later designates a dedicated DPO.
+  selfApproved Boolean @default(false)
 
   /// Retention belongs to the PURPOSE, not the element or activity: the same
   /// element used for two purposes carries two retention clocks, so retention
@@ -573,6 +577,9 @@ model ActivityPurpose {
   processorId  String?
   /// none | requested
   requestState String @default("none")
+  /// True when the segment's purpose was approved under combined_admin_dpo
+  /// governance. System-computed; permanent historical marker.
+  selfApproved Boolean @default(false)
   createdAt    DateTime @default(now())
 
   activity   ProcessingActivity @relation(fields: [activityId], references: [id], onDelete: Cascade)
@@ -1733,6 +1740,9 @@ model RBACRole {
   /// plain-permission list below is kept for the existing RBAC-matrix screens.
   capabilitiesJson String @default("[]")
   createdBy        String?
+  /// True when ratified under combined_admin_dpo governance. System-computed; a
+  /// permanent historical marker, never relabelled on a later governance change.
+  selfApproved     Boolean @default(false)
 
   /// JSON string[] of permissions currently granted by this role.
   permissionsJson String
@@ -1813,6 +1823,9 @@ model DriftRecord {
   resolution String @default("unresolved")
   resolvedBy String?
   resolvedAt DateTime?
+  /// True when a retroactive approval was recorded under combined_admin_dpo
+  /// governance. System-computed; permanent historical marker.
+  selfApproved Boolean @default(false)
 
   /// Whether the change could be traced to a source; drives the review drawer's
   /// change-trace line vs. the "source unclear — flag for investigation" state.
@@ -1861,4 +1874,16 @@ model ProvisioningRequest {
   role RBACRole? @relation(fields: [roleId], references: [id])
 
   @@index([status])
+}
+
+/// Singleton org-level configuration (id is always "org"). Holds the governance
+/// structure that decides how approvals route: a dedicated DPO, or a combined
+/// Admin+DPO where the same person reviews their own requests (recorded as
+/// self-approved, never skipped).
+model OrgSettings {
+  id String @id @default("org")
+  /// dedicated_dpo | combined_admin_dpo
+  governanceStructure String @default("dedicated_dpo")
+  updatedAt DateTime @updatedAt
+  updatedBy String?
 }

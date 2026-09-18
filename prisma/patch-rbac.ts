@@ -37,9 +37,11 @@ async function backfillRoleCaps() {
 
 async function seedCustomRoles() {
   const rows = [
-    { id: "role_custom_migration", name: "Data Migration Operator", description: "Runs one-off migrations between approved sources.", roleType: "custom", status: "draft", caps: ["discovery.scan", "sources.connect"], createdBy: "Ritu Nair", approvedBy: "—" },
-    { id: "role_custom_export", name: "Bulk Export Analyst", description: "Exports evidence packs for regulatory review.", roleType: "custom", status: "pending_dpo_approval", caps: ["audit.view", "audit.export"], createdBy: "Ritu Nair", approvedBy: "—" },
-    { id: "role_custom_support_lead", name: "Regional Support Lead", description: "Resolves escalated customer cases across a region.", roleType: "custom", status: "approved", caps: ["requests.view", "requests.execute"], createdBy: "Ritu Nair", approvedBy: "K. Menon" },
+    { id: "role_custom_migration", name: "Data Migration Operator", description: "Runs one-off migrations between approved sources.", roleType: "custom", status: "draft", caps: ["discovery.scan", "sources.connect"], createdBy: "Ritu Nair", approvedBy: "—", selfApproved: false },
+    { id: "role_custom_export", name: "Bulk Export Analyst", description: "Exports evidence packs for regulatory review.", roleType: "custom", status: "pending_dpo_approval", caps: ["audit.view", "audit.export"], createdBy: "Ritu Nair", approvedBy: "—", selfApproved: false },
+    // Approved by the same person acting as DPO under combined governance —
+    // carries the permanent self-approved marker to demo that history state.
+    { id: "role_custom_support_lead", name: "Regional Support Lead", description: "Resolves escalated customer cases across a region.", roleType: "custom", status: "approved", caps: ["requests.view", "requests.execute"], createdBy: "Ritu Nair", approvedBy: "Ritu Nair", selfApproved: true },
   ];
   for (const r of rows) {
     if ((await prisma.rBACRole.count({ where: { id: r.id } })) > 0) continue;
@@ -48,7 +50,7 @@ async function seedCustomRoles() {
         id: r.id, name: r.name, description: r.description, roleType: r.roleType, status: r.status,
         capabilitiesJson: j(r.caps), createdBy: r.createdBy,
         permissionsJson: j(r.caps), baselineSnapshotJson: j(r.caps), baselineCategoriesJson: j([]),
-        baselineApprovedBy: r.approvedBy,
+        baselineApprovedBy: r.approvedBy, selfApproved: r.selfApproved ?? false,
       },
     });
   }
