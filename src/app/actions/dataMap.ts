@@ -214,3 +214,210 @@ export async function setEntityAction(activityId: string, entityId: string): Pro
     ),
   );
 }
+
+const LEGAL_BASES = ["consent", "legitimate_use", "contractual_necessity"] as const;
+
+export interface ProposedPurpose {
+  name: string;
+  description: string;
+  legalBasis: string;
+}
+
+/**
+ * Propose a brand-new Purpose for an element when nothing in the approved catalog
+ * fits. Creates a Purpose row with status = pending_dpo_approval (never approved),
+ * linked to the element for DPO context, and marks the element "requested —
+ * awaiting DPO". It does not appear in Approved Policy or the existing-purpose
+ * picker until the DPO ratifies it.
+ */
+export async function proposeNewPurposeAction(elementId: string, input: ProposedPurpose): Promise<ActionResult> {
+  const { actor } = await getSession();
+  if (!input.name.trim()) return { ok: false, error: "Name the purpose.", errorKind: "ValidationError" };
+  if (!input.description.trim()) return { ok: false, error: "A one-line description is required.", errorKind: "ValidationError" };
+  if (!(LEGAL_BASES as readonly string[]).includes(input.legalBasis)) return { ok: false, error: "Choose a legal basis.", errorKind: "ValidationError" };
+  return run(() =>
+    audited(
+      { actor, action: "purpose.proposed", targetType: "PurposeTag", targetId: input.name.trim(), payload: { elementId, legalBasis: input.legalBasis } },
+      async (tx: TxClient) => {
+        await tx.activityElement.findUniqueOrThrow({ where: { id: elementId } });
+        await tx.purposeTag.create({
+          data: {
+            name: input.name.trim(),
+            description: input.description.trim(),
+            status: "pending_dpo_approval",
+            approvedBy: "—",
+            approvedAt: new Date(),
+            lawfulBasis: input.legalBasis,
+            proposedBy: actor.label,
+            proposedAt: new Date(),
+            linkedElementId: elementId,
+          },
+        });
+        return tx.activityElement.update({ where: { id: elementId }, data: { requestState: "requested" } });
+      },
+    ),
+  );
+}
+
+/**
+ * DPO/CISO ratifies a proposed purpose. It flips to approved (so it appears in
+ * Approved Policy and the existing-purpose picker for every element), and the
+ * element it was proposed for is assigned it. Legal basis is NOT editable here —
+ * it is part of the proposal being approved.
+ */
+export async function approvePurposeAction(purposeId: string): Promise<ActionResult> {
+  const { actor } = await getSession();
+  if (actor.role !== "dpo" && actor.role !== "ciso") {
+    return { ok: false, error: "Only the DPO or CISO can approve a purpose. Switch role to approve.", errorKind: "UnauthorisedRulingError" };
+  }
+  try {
+    await audited(
+      { actor, action: "purpose.approved", targetType: "PurposeTag", targetId: purposeId, payload: { approvedBy: actor.label } },
+      async (tx: TxClient) => {
+        const p = await tx.purposeTag.findUniqueOrThrow({ where: { id: purposeId } });
+        if (p.status !== "pending_dpo_approval") throw Object.assign(new Error("Only a pending purpose can be approved."), { name: "StateError" });
+        const purpose = await tx.purposeTag.update({ where: { id: purposeId }, data: { status: "approved", approvedBy: actor.label, approvedAt: new Date() } });
+        if (p.linkedElementId) {
+          await tx.activityElement.updateMany({ where: { id: p.linkedElementId }, data: { purposeTagId: purpose.id, requestState: "none" } });
+        }
+        return purpose;
+      },
+    );
+    revalidatePath(PATH, "layout");
+    revalidatePath("/governance", "layout");
+    revalidatePath("/access/approval-queue", "layout");
+    return { ok: true };
+  } catch (error) {
+    const e = error as Error;
+    return { ok: false, error: e.message, errorKind: e.name };
+  }
+}
+
+/** DPO/CISO rejects a proposed purpose. It is marked rejected (never shown in
+ *  Approved Policy), the reason is stored, and the element reverts to Unassigned. */
+export async function rejectPurposeAction(purposeId: string, reason: string): Promise<ActionResult> {
+  const { actor } = await getSession();
+  if (actor.role !== "dpo" && actor.role !== "ciso") {
+    return { ok: false, error: "Only the DPO or CISO can reject a purpose. Switch role to decide.", errorKind: "UnauthorisedRulingError" };
+  }
+  if (!reason.trim()) return { ok: false, error: "A rejection needs a reason.", errorKind: "ValidationError" };
+  try {
+    await audited(
+      { actor, action: "purpose.rejected", targetType: "PurposeTag", targetId: purposeId, payload: { reason: reason.trim() } },
+      async (tx: TxClient) => {
+        const p = await tx.purposeTag.findUniqueOrThrow({ where: { id: purposeId } });
+        if (p.linkedElementId) {
+          await tx.activityElement.updateMany({ where: { id: p.linkedElementId, requestState: "requested" }, data: { requestState: "none" } });
+        }
+        return tx.purposeTag.update({ where: { id: purposeId }, data: { status: "rejected", rejectionReason: reason.trim() } });
+      },
+    );
+    revalidatePath(PATH, "layout");
+    revalidatePath("/access/approval-queue", "layout");
+    return { ok: true };
+  } catch (error) {
+    const e = error as Error;
+    return { ok: false, error: e.message, errorKind: e.name };
+  }
+}
+
+export interface NewElementInput {
+  name: string;
+  /** none = leave unassigned; existing = request an approved purpose; propose = propose a new one. */
+  purposeMode: "none" | "existing" | "propose";
+  existingPurposeTagId?: string | null;
+  processorId?: string | null;
+  proposed?: ProposedPurpose | null;
+}
+
+/** Shared: attach a purpose choice to a freshly-created element inside a tx. */
+async function attachElementPurpose(
+  tx: TxClient,
+  activityName: string,
+  elementId: string,
+  elementName: string,
+  el: NewElementInput,
+  actorLabel: string,
+) {
+  if (el.purposeMode === "existing" && el.existingPurposeTagId) {
+    await tx.escalation.create({
+      data: {
+        type: "purpose_request", sourceRole: "admin", targetRole: "dpo",
+        reason: `Assign approved purpose to “${elementName}” in ${activityName}`,
+        contextJson: JSON.stringify({ elementId, elementName, activity: activityName, existingPurposeTagId: el.existingPurposeTagId, processorId: el.processorId ?? null }),
+      },
+    });
+    await tx.activityElement.update({ where: { id: elementId }, data: { requestState: "requested" } });
+  } else if (el.purposeMode === "propose" && el.proposed) {
+    await tx.purposeTag.create({
+      data: {
+        name: el.proposed.name.trim(), description: el.proposed.description.trim(), status: "pending_dpo_approval",
+        approvedBy: "—", approvedAt: new Date(), lawfulBasis: el.proposed.legalBasis,
+        proposedBy: actorLabel, proposedAt: new Date(), linkedElementId: elementId,
+      },
+    });
+    await tx.activityElement.update({ where: { id: elementId }, data: { requestState: "requested" } });
+  }
+}
+
+/** Add one element to an existing activity, with its purpose choice attached in
+ *  the same modal (existing request / new-purpose proposal / leave unassigned). */
+export async function addElementWithPurposeAction(activityId: string, el: NewElementInput): Promise<ActionResult> {
+  const { actor } = await getSession();
+  if (!el.name.trim()) return { ok: false, error: "Name the element.", errorKind: "ValidationError" };
+  if (el.purposeMode === "existing" && !el.existingPurposeTagId) return { ok: false, error: "Pick a purpose, or choose to propose one.", errorKind: "ValidationError" };
+  if (el.purposeMode === "propose" && (!el.proposed?.name.trim() || !el.proposed?.description.trim() || !(LEGAL_BASES as readonly string[]).includes(el.proposed?.legalBasis ?? ""))) {
+    return { ok: false, error: "Complete the proposed purpose.", errorKind: "ValidationError" };
+  }
+  return run(() =>
+    audited(
+      { actor, action: "activity.element_added", targetType: "ActivityElement", targetId: el.name.trim(), payload: { activityId, purposeMode: el.purposeMode } },
+      async (tx: TxClient) => {
+        const activity = await tx.processingActivity.findUniqueOrThrow({ where: { id: activityId } });
+        const element = await tx.activityElement.create({ data: { activityId, elementName: el.name.trim() } });
+        await attachElementPurpose(tx, activity.activity, element.id, el.name.trim(), el, actor.label);
+        return element;
+      },
+    ),
+  );
+}
+
+/**
+ * Add Activity, the guided way: create the activity AND its first element(s) in
+ * one continuous action, each element optionally carrying a purpose request
+ * (existing) or a new-purpose proposal — all in a single transaction so the new
+ * row lands in the table already showing its correct rollup state.
+ */
+export async function createActivityWithElementsAction(input: {
+  name: string;
+  entityId?: string | null;
+  description?: string | null;
+  elements: NewElementInput[];
+}): Promise<ActionResult> {
+  const { actor } = await getSession();
+  if (!input.name.trim()) return { ok: false, error: "Name the activity.", errorKind: "ValidationError" };
+  for (const el of input.elements) {
+    if (!el.name.trim()) return { ok: false, error: "Every element needs a name.", errorKind: "ValidationError" };
+    if (el.purposeMode === "existing" && !el.existingPurposeTagId) return { ok: false, error: `Pick a purpose for “${el.name.trim()}”, or choose to propose one.`, errorKind: "ValidationError" };
+    if (el.purposeMode === "propose") {
+      if (!el.proposed?.name.trim() || !el.proposed?.description.trim() || !(LEGAL_BASES as readonly string[]).includes(el.proposed?.legalBasis ?? "")) {
+        return { ok: false, error: `Complete the proposed purpose for “${el.name.trim()}”.`, errorKind: "ValidationError" };
+      }
+    }
+  }
+  return run(() =>
+    audited(
+      { actor, action: "activity.created", targetType: "ProcessingActivity", targetId: input.name.trim(), payload: { elements: input.elements.length } },
+      async (tx: TxClient) => {
+        const activity = await tx.processingActivity.create({
+          data: { activity: input.name.trim(), entityId: input.entityId || null, description: input.description?.trim() || null, origin: "manual", lifecycleState: "active" },
+        });
+        for (const el of input.elements) {
+          const element = await tx.activityElement.create({ data: { activityId: activity.id, elementName: el.name.trim() } });
+          await attachElementPurpose(tx, activity.activity, element.id, el.name.trim(), el, actor.label);
+        }
+        return activity;
+      },
+    ),
+  );
+}

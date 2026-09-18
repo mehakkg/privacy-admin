@@ -1,21 +1,32 @@
 "use client";
 
-import { useMemo, useState, useTransition, type ReactNode } from "react";
+import { useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Lock, Plus, History, ExternalLink, X, AlertTriangle, Globe, Clock } from "lucide-react";
+import { Lock, Plus, History, ExternalLink, X, AlertTriangle, Globe, Clock, Trash2 } from "lucide-react";
 import { Pill, Chip } from "@/components/ui";
+import { Modal } from "@/components/Modal";
 import { ActionError } from "@/components/actions";
 import {
-  addActivityAction, addElementAction, setSubjectTypeAction, requestPurposeProcessorAction,
+  setSubjectTypeAction, requestPurposeProcessorAction, proposeNewPurposeAction,
   setLifecycleStateAction, requestArchiveAction, setEntityAction, assignFieldToActivityAction,
+  createActivityWithElementsAction, addElementWithPurposeAction,
+  type NewElementInput,
 } from "@/app/actions/dataMap";
 import {
-  lawfulBasisLabel, LAWFUL_BASIS_LABEL, type LawfulBasis,
+  lawfulBasisLabel,
   jurisdictionLabel, isCrossBorderUnreviewed,
   LIFECYCLE_LABEL, type LifecycleState, rollup,
 } from "@/lib/processingActivity";
+import { PurposeSelector, purposeChoiceValid, type PurposeChoice } from "@/components/access/purposeSelector";
 import type { ActionResult } from "@/app/actions/requests";
+
+/** Map a PurposeChoice from the selector to the server's NewElementInput shape. */
+function choiceToInput(name: string, choice: PurposeChoice): NewElementInput {
+  if (choice.mode === "existing") return { name, purposeMode: "existing", existingPurposeTagId: choice.existingPurposeTagId, processorId: choice.processorId };
+  if (choice.mode === "propose") return { name, purposeMode: "propose", proposed: choice.proposed };
+  return { name, purposeMode: "none" };
+}
 
 export interface HistoryItem {
   at: string;
@@ -84,10 +95,8 @@ export function ProcessingActivitiesTable({
   assignField?: string | null;
 }) {
   const { pending, result, run } = useRun();
-  const [addingActivity, setAddingActivity] = useState(false);
-  const [newActivity, setNewActivity] = useState("");
-  const [addElementFor, setAddElementFor] = useState<string | null>(null);
-  const [newElement, setNewElement] = useState("");
+  const [addActivityOpen, setAddActivityOpen] = useState(false);
+  const [addElementFor, setAddElementFor] = useState<{ id: string; name: string } | null>(null);
   const [requestFor, setRequestFor] = useState<ElementRow | null>(null);
   const [inventoryFor, setInventoryFor] = useState<ElementRow | null>(null);
   const [historyFor, setHistoryFor] = useState<ElementRow | null>(null);
@@ -98,15 +107,7 @@ export function ProcessingActivitiesTable({
     <div>
       <div className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
         <span className="cell-sub">{activities.length} activit{activities.length === 1 ? "y" : "ies"} · Purpose, Retention &amp; Lawful basis are DPO-owned and set via an approved request; Admin owns Subject type, Lifecycle and Entity.</span>
-        {!addingActivity ? (
-          <button className="btn primary sm" onClick={() => setAddingActivity(true)}><Plus size={14} /> Add activity</button>
-        ) : (
-          <span className="row" style={{ gap: 6 }}>
-            <input className="input sm" placeholder="New activity name" value={newActivity} onChange={(e) => setNewActivity(e.target.value)} autoFocus style={{ width: 220 }} />
-            <button className="btn primary sm" disabled={pending || !newActivity.trim()} onClick={() => run(() => addActivityAction(newActivity), () => { setNewActivity(""); setAddingActivity(false); })}>Create</button>
-            <button className="btn ghost sm" onClick={() => { setAddingActivity(false); setNewActivity(""); }}>Cancel</button>
-          </span>
-        )}
+        <button className="btn primary sm" onClick={() => setAddActivityOpen(true)}><Plus size={14} /> Add activity</button>
       </div>
 
       <div className="table-wrap">
@@ -134,11 +135,7 @@ export function ProcessingActivitiesTable({
                 onLifecycle={(v) => run(() => setLifecycleStateAction(a.id, v))}
                 onArchive={() => run(() => requestArchiveAction(a.id))}
                 onEntity={(v) => run(() => setEntityAction(a.id, v))}
-                addElementFor={addElementFor}
-                setAddElementFor={setAddElementFor}
-                newElement={newElement}
-                setNewElement={setNewElement}
-                onAddElement={(actId) => run(() => addElementAction(actId, newElement), () => { setNewElement(""); setAddElementFor(null); })}
+                onAddElement={() => setAddElementFor({ id: a.id, name: a.activity })}
                 pending={pending}
               />
             ))}
@@ -150,13 +147,34 @@ export function ProcessingActivitiesTable({
       </div>
       <ActionError result={result} />
 
+      {addActivityOpen && (
+        <AddActivityModal
+          purposes={purposes}
+          processors={processors}
+          entities={entities}
+          pending={pending}
+          onClose={() => setAddActivityOpen(false)}
+          onSubmit={(input, done) => run(() => createActivityWithElementsAction(input), () => { setAddActivityOpen(false); done(); })}
+        />
+      )}
+      {addElementFor && (
+        <AddElementModal
+          activity={addElementFor}
+          purposes={purposes}
+          processors={processors}
+          pending={pending}
+          onClose={() => setAddElementFor(null)}
+          onSubmit={(el, done) => run(() => addElementWithPurposeAction(addElementFor.id, el), () => { setAddElementFor(null); done(); })}
+        />
+      )}
       {requestFor && (
         <RequestModal
           element={requestFor}
           purposes={purposes}
           processors={processors}
           onClose={() => setRequestFor(null)}
-          onSubmit={(req, done) => run(() => requestPurposeProcessorAction(requestFor.id, req), () => { setRequestFor(null); done(); })}
+          onExisting={(req, done) => run(() => requestPurposeProcessorAction(requestFor.id, req), () => { setRequestFor(null); done(); })}
+          onPropose={(p, done) => run(() => proposeNewPurposeAction(requestFor.id, p), () => { setRequestFor(null); done(); })}
           pending={pending}
         />
       )}
@@ -226,8 +244,7 @@ function AssignModal({
 }
 
 function ActivityGroup({
-  a, entities, onRequest, onInventory, onHistory, onSubjectType, onLifecycle, onArchive, onEntity,
-  addElementFor, setAddElementFor, newElement, setNewElement, onAddElement, pending,
+  a, entities, onRequest, onInventory, onHistory, onSubjectType, onLifecycle, onArchive, onEntity, onAddElement, pending,
 }: {
   a: ActivityRow; entities: Opt[];
   onRequest: (el: ElementRow) => void;
@@ -237,9 +254,7 @@ function ActivityGroup({
   onLifecycle: (v: string) => void;
   onArchive: () => void;
   onEntity: (v: string) => void;
-  addElementFor: string | null; setAddElementFor: (v: string | null) => void;
-  newElement: string; setNewElement: (v: string) => void;
-  onAddElement: (activityId: string) => void; pending: boolean;
+  onAddElement: () => void; pending: boolean;
 }) {
   const span = Math.max(1, a.elements.length) + 1; // +1 for the add-element row
   const roll = rollup(a.elements.map((e) => ({ purposeAssigned: e.purposeTagId != null, hasRetention: e.retention != null })));
@@ -336,15 +351,7 @@ function ActivityGroup({
   rows.push(
     <tr key="add" className="add-row">
       <td colSpan={5}>
-        {addElementFor === a.id ? (
-          <span className="row" style={{ gap: 6 }}>
-            <input className="input sm" placeholder="e.g. PAN Number" value={newElement} onChange={(e) => setNewElement(e.target.value)} autoFocus style={{ width: 200 }} />
-            <button className="btn primary xs" disabled={pending || !newElement.trim()} onClick={() => onAddElement(a.id)}>Add</button>
-            <button className="btn ghost xs" onClick={() => setAddElementFor(null)}>Cancel</button>
-          </span>
-        ) : (
-          <button className="btn ghost xs" onClick={() => setAddElementFor(a.id)}><Plus size={12} /> Add element</button>
-        )}
+        <button className="btn ghost xs" onClick={onAddElement}><Plus size={12} /> Add element</button>
       </td>
     </tr>,
   );
@@ -453,100 +460,192 @@ function HistoryDrawer({ element, onClose }: { element: ElementRow; onClose: () 
   );
 }
 
-/** Bundled Purpose + Processor request, with an optional retention / lawful-basis
- *  suggestion for the DPO. Searches approved purposes for a close match FIRST. */
+/**
+ * Request a purpose for an element — the two-tab flow: "Use existing purpose"
+ * (routes an assignment request to the DPO) or "Propose new purpose" (creates a
+ * pending purpose in the same DPO Approval Queue). Admin never sets a purpose
+ * directly; both paths go to the DPO.
+ */
 function RequestModal({
-  element, purposes, processors, onClose, onSubmit, pending,
+  element, purposes, processors, onClose, onExisting, onPropose, pending,
 }: {
   element: ElementRow; purposes: Opt[]; processors: Opt[];
   onClose: () => void;
-  onSubmit: (req: { existingPurposeTagId?: string | null; proposedPurposeName?: string | null; processorId?: string | null; proposedRetention?: string | null; proposedLawfulBasis?: string | null }, done: () => void) => void;
+  onExisting: (req: { existingPurposeTagId?: string | null; processorId?: string | null }, done: () => void) => void;
+  onPropose: (p: { name: string; description: string; legalBasis: string }, done: () => void) => void;
   pending: boolean;
 }) {
-  const [query, setQuery] = useState("");
-  const [picked, setPicked] = useState<string | null>(null);
-  const [asNew, setAsNew] = useState(false);
-  const [processorId, setProcessorId] = useState<string>("");
-  const [retention, setRetention] = useState("");
-  const [lawfulBasis, setLawfulBasis] = useState("");
+  const [choice, setChoice] = useState<PurposeChoice>({ mode: "existing", existingPurposeTagId: null, processorId: null });
+  const valid = purposeChoiceValid(choice) && choice.mode !== "none";
 
-  const matches = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return purposes.slice(0, 6);
-    return purposes.filter((p) => p.name.toLowerCase().includes(q) || q.split(/\s+/).some((t) => p.name.toLowerCase().includes(t))).slice(0, 6);
-  }, [query, purposes]);
-
-  const canSubmit = (picked && !asNew) || (asNew && query.trim());
+  const submit = () => {
+    if (choice.mode === "existing") onExisting({ existingPurposeTagId: choice.existingPurposeTagId, processorId: choice.processorId }, () => {});
+    else if (choice.mode === "propose") onPropose(choice.proposed, () => {});
+  };
 
   return (
-    <div className="modal-scrim" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
-        <h3 style={{ marginTop: 0 }}>Request purpose &amp; processor</h3>
-        <p className="cell-sub" style={{ marginTop: 0 }}>For <strong>{element.elementName}</strong>. Admin can&rsquo;t set purpose, retention or lawful basis directly — this bundles them into one request the DPO approves and locks.</p>
+    <Modal
+      title="Request purpose"
+      size="md"
+      subtitle={<>For <strong>{element.elementName}</strong> — Admin can’t set a purpose directly; this goes to the DPO.</>}
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn ghost" onClick={onClose}>Cancel</button>
+          <button className="btn primary" disabled={pending || !valid} onClick={submit}>{pending ? "Submitting…" : "Submit request to DPO"}</button>
+        </>
+      }
+    >
+      <PurposeSelector value={choice} onChange={setChoice} purposes={purposes} processors={processors} elementName={element.elementName} />
+    </Modal>
+  );
+}
 
-        <div className="section-label">Purpose</div>
-        <input className="input" placeholder="Search approved purposes, or type a new one…" value={query} onChange={(e) => { setQuery(e.target.value); setPicked(null); setAsNew(false); }} />
-        {!asNew && (
-          <div className="stack" style={{ gap: 4, marginTop: 8 }}>
-            {matches.map((p) => (
-              <button key={p.id} className={`pick-item${picked === p.id ? " on" : ""}`} onClick={() => { setPicked(p.id); }}>
-                <span className="cell-primary">{p.name}</span>
-                <span className="cell-sub">Existing approved purpose</span>
-              </button>
-            ))}
-            {query.trim() && (
-              <button className="btn ghost xs" style={{ alignSelf: "flex-start" }} onClick={() => { setAsNew(true); setPicked(null); }}>
-                None of these — propose “{query.trim()}” as new →
-              </button>
-            )}
-          </div>
-        )}
-        {asNew && (
-          <div style={{ marginTop: 8 }}>
-            <Pill tone="yellow">New purpose proposed: “{query.trim()}”</Pill>
-            <button className="btn ghost xs" style={{ marginLeft: 8 }} onClick={() => setAsNew(false)}>Back to matches</button>
-          </div>
-        )}
+interface ElementDraft { name: string; choice: PurposeChoice }
 
-        <div className="section-label" style={{ marginTop: 14 }}>Processor</div>
-        <select className="input" value={processorId} onChange={(e) => setProcessorId(e.target.value)}>
-          <option value="">Internal — no processor</option>
-          {processors.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
+function purposeSummary(choice: PurposeChoice, purposes: Opt[]): string {
+  if (choice.mode === "none") return "Unassigned";
+  if (choice.mode === "existing") return choice.existingPurposeTagId ? `Request: ${purposes.find((p) => p.id === choice.existingPurposeTagId)?.name ?? "purpose"}` : "Request (no purpose picked)";
+  return `Propose: ${choice.proposed.name || "new purpose"}`;
+}
 
-        <div className="row" style={{ gap: 10, marginTop: 14 }}>
-          <div style={{ flex: 1 }}>
-            <div className="section-label">Suggested retention <span className="cell-sub">(DPO decides)</span></div>
-            <input className="input" placeholder="e.g. 365 days" value={retention} onChange={(e) => setRetention(e.target.value)} />
+/**
+ * ADD ACTIVITY — the guided, continuous modal. Activity fields, then its first
+ * element(s) with the purpose request already attached, all before the modal
+ * closes. "Add another element" is optional and repeatable.
+ */
+function AddActivityModal({
+  purposes, processors, entities, pending, onClose, onSubmit,
+}: {
+  purposes: Opt[]; processors: Opt[]; entities: Opt[]; pending: boolean;
+  onClose: () => void;
+  onSubmit: (input: { name: string; entityId?: string | null; description?: string | null; elements: NewElementInput[] }, done: () => void) => void;
+}) {
+  const [name, setName] = useState("");
+  const [entityId, setEntityId] = useState("");
+  const [description, setDescription] = useState("");
+  const [elements, setElements] = useState<ElementDraft[]>([]);
+  const [curName, setCurName] = useState("");
+  const [curChoice, setCurChoice] = useState<PurposeChoice>({ mode: "none" });
+  const [nameError, setNameError] = useState(false);
+
+  const curValid = curName.trim() && purposeChoiceValid(curChoice);
+  const commitCurrent = () => {
+    if (!curValid) return;
+    setElements((e) => [...e, { name: curName.trim(), choice: curChoice }]);
+    setCurName("");
+    setCurChoice({ mode: "none" });
+  };
+
+  const submit = () => {
+    if (!name.trim()) { setNameError(true); return; }
+    const all = [...elements];
+    if (curName.trim() && purposeChoiceValid(curChoice)) all.push({ name: curName.trim(), choice: curChoice });
+    onSubmit({ name: name.trim(), entityId: entityId || null, description: description.trim() || null, elements: all.map((d) => choiceToInput(d.name, d.choice)) }, () => {});
+  };
+
+  return (
+    <Modal
+      title="Add activity"
+      size="lg"
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn ghost" onClick={onClose}>Cancel</button>
+          <button className="btn primary" disabled={pending || !name.trim()} onClick={submit}>{pending ? "Creating…" : "Create activity"}</button>
+        </>
+      }
+    >
+      <div className="stack" style={{ gap: 12 }}>
+        <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+          <div style={{ flex: "2 1 240px" }}>
+            <div className="section-label">Activity name <span className="cell-sub">(required)</span></div>
+            <input className="input" placeholder="e.g. Loan Application" value={name} onChange={(e) => { setName(e.target.value); setNameError(false); }} autoFocus />
+            {nameError && <span className="field-error">Name the activity.</span>}
           </div>
-          <div style={{ flex: 1 }}>
-            <div className="section-label">Suggested lawful basis</div>
-            <select className="input" value={lawfulBasis} onChange={(e) => setLawfulBasis(e.target.value)}>
-              <option value="">—</option>
-              {(Object.keys(LAWFUL_BASIS_LABEL) as LawfulBasis[]).map((k) => <option key={k} value={k}>{LAWFUL_BASIS_LABEL[k]}</option>)}
+          <div style={{ flex: "1 1 180px" }}>
+            <div className="section-label">Entity (Fiduciary)</div>
+            <select className="input" value={entityId} onChange={(e) => setEntityId(e.target.value)}>
+              <option value="">Unassigned entity</option>
+              {entities.map((en) => <option key={en.id} value={en.id}>{en.name}</option>)}
             </select>
           </div>
         </div>
+        <div>
+          <div className="section-label">Description</div>
+          <input className="input" placeholder="One-line description of the processing" value={description} onChange={(e) => setDescription(e.target.value)} />
+        </div>
 
-        <div className="row" style={{ gap: 8, marginTop: 16 }}>
-          <button
-            className="btn primary"
-            disabled={pending || !canSubmit}
-            onClick={() => onSubmit(
-              {
-                ...(asNew ? { proposedPurposeName: query.trim() } : { existingPurposeTagId: picked }),
-                processorId: processorId || null,
-                proposedRetention: retention.trim() || null,
-                proposedLawfulBasis: lawfulBasis || null,
-              },
-              () => {},
-            )}
-          >
-            {pending ? "Submitting…" : "Submit request to DPO"}
-          </button>
-          <button className="btn ghost" onClick={onClose}>Cancel</button>
+        <div className="std-divider" />
+
+        <div>
+          <div className="section-label">Elements</div>
+          {elements.length > 0 && (
+            <div className="stack" style={{ gap: 6, margin: "6px 0 10px" }}>
+              {elements.map((d, i) => (
+                <div key={i} className="draft-row">
+                  <span className="cell-primary">{d.name}</span>
+                  <span className="cell-sub">{purposeSummary(d.choice, purposes)}</span>
+                  <button className="icon-btn xs" style={{ marginLeft: "auto" }} onClick={() => setElements((e) => e.filter((_, j) => j !== i))} aria-label="Remove element"><Trash2 size={13} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="add-element-form">
+            <div className="section-label">{elements.length ? "Add another element" : "First element"} <span className="cell-sub">(optional)</span></div>
+            <input className="input" placeholder="Element name, e.g. PAN Number" value={curName} onChange={(e) => setCurName(e.target.value)} style={{ marginBottom: 10 }} />
+            <PurposeSelector value={curChoice} onChange={setCurChoice} purposes={purposes} processors={processors} elementName={curName.trim() || "this element"} allowNone />
+            <button className="btn sm" style={{ marginTop: 10 }} disabled={!curValid} onClick={commitCurrent}><Plus size={13} /> Add another element</button>
+          </div>
         </div>
       </div>
-    </div>
+    </Modal>
+  );
+}
+
+/** ADD ELEMENT — one element onto an existing activity, purpose request inline. */
+function AddElementModal({
+  activity, purposes, processors, pending, onClose, onSubmit,
+}: {
+  activity: { id: string; name: string }; purposes: Opt[]; processors: Opt[]; pending: boolean;
+  onClose: () => void;
+  onSubmit: (el: NewElementInput, done: () => void) => void;
+}) {
+  const [name, setName] = useState("");
+  const [choice, setChoice] = useState<PurposeChoice>({ mode: "none" });
+  const [nameError, setNameError] = useState(false);
+  const valid = name.trim() && purposeChoiceValid(choice);
+
+  const submit = () => {
+    if (!name.trim()) { setNameError(true); return; }
+    onSubmit(choiceToInput(name.trim(), choice), () => {});
+  };
+
+  return (
+    <Modal
+      title="Add element"
+      size="md"
+      subtitle={<>Adding to: <strong>{activity.name}</strong></>}
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn ghost" onClick={onClose}>Cancel</button>
+          <button className="btn primary" disabled={pending || !valid} onClick={submit}>{pending ? "Adding…" : "Add element"}</button>
+        </>
+      }
+    >
+      <div className="stack" style={{ gap: 12 }}>
+        <div>
+          <div className="section-label">Element name <span className="cell-sub">(required)</span></div>
+          <input className="input" placeholder="e.g. Phone Number" value={name} onChange={(e) => { setName(e.target.value); setNameError(false); }} autoFocus />
+          {nameError && <span className="field-error">Name the element.</span>}
+        </div>
+        <div>
+          <div className="section-label">Purpose</div>
+          <PurposeSelector value={choice} onChange={setChoice} purposes={purposes} processors={processors} elementName={name.trim() || "this element"} allowNone />
+        </div>
+      </div>
+    </Modal>
   );
 }

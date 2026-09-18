@@ -476,10 +476,25 @@ model PurposeTag {
   id          String @id @default(cuid())
   name        String @unique
   description String
-  /// draft | approved | retired
+  /// draft | approved | retired | pending_dpo_approval | rejected
+  ///
+  /// A purpose Admin proposes (no existing one fits) is created
+  /// `pending_dpo_approval` and routed to the DPO Approval Queue — it never
+  /// appears in Approved Policy or the existing-purpose picker until ratified.
   status     String
   approvedBy String
   approvedAt DateTime
+
+  /// Proposal provenance — set when Admin proposes a new purpose for an element.
+  proposedBy      String?
+  proposedAt      DateTime?
+  /// The element this purpose was proposed for, so the DPO has the context on
+  /// why it is needed. Plain id (not an FK cascade) — kept for audit even if the
+  /// element changes.
+  linkedElementId String?
+  /// Recorded when the DPO rejects the proposal; the purpose is not shown in
+  /// Approved Policy in that state.
+  rejectionReason String?
 
   /// Retention belongs to the PURPOSE, not the element or activity: the same
   /// element used for two purposes carries two retention clocks, so retention
@@ -520,6 +535,8 @@ model ProcessingActivity {
   createdAt DateTime @default(now())
   /// csv | manual | ropa_suggested — how the row first entered the table.
   origin    String   @default("manual")
+  /// Optional plain-English description captured in the Add Activity modal.
+  description String?
 
   /// active | under_review | archived. Admin sets active/under_review directly;
   /// moving to archived routes a DPO-approval request (the same escalation

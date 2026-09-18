@@ -46,7 +46,9 @@ export default async function GovernancePage({
   const role = await getCurrentRole();
   const isDpo = role === "dpo";
   const [purposes, notices, cookies, rules, roles] = await Promise.all([
-    db.purposeTag.findMany({ orderBy: { name: "asc" } }),
+    // Approved Policy is "what's ratified" — a proposed (pending) or rejected
+    // purpose never appears here until the DPO approves it.
+    db.purposeTag.findMany({ where: { status: { notIn: ["pending_dpo_approval", "rejected"] } }, orderBy: { name: "asc" } }),
     db.noticeVersion.findMany({ orderBy: { version: "desc" } }),
     db.cookieCategory.findMany({ orderBy: { name: "asc" } }),
     db.protectionRule.findMany({ orderBy: { dataCategory: "asc" } }),

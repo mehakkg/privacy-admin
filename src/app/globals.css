@@ -2886,3 +2886,52 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
   .composer-summary { border-left: 0; padding-left: 0; border-top: 1px solid var(--border); padding-top: 12px; position: static; }
   .sod-vs { text-align: center; }
 }
+
+/* ===================== Standard Modal (create-record pattern) ===================== */
+.modal.std-modal {
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+  padding: 0;
+  width: 96vw;
+}
+.modal.std-modal.sm { max-width: 440px; }
+.modal.std-modal.md { max-width: 560px; }
+.modal.std-modal.lg { max-width: 760px; }
+.std-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.std-modal-body {
+  padding: 16px 18px;
+  overflow-y: auto;
+}
+.std-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-muted);
+}
+.field-error { display: block; margin-top: 4px; font-size: 12px; color: var(--red); }
+.std-divider { height: 1px; background: var(--border); margin: 2px 0; }
+.draft-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+.add-element-form {
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  background: var(--bg-muted);
+}
