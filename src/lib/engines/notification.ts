@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import type { TxClient } from "@/lib/tx";
 import type { ActorRole, NotificationSeverity } from "@/lib/domain";
+import { isMutable } from "@/lib/notifications";
 
 /**
  * NOTIFICATION ENGINE (acceptance criterion 3)
@@ -93,6 +94,15 @@ export type NotificationEvent =
       kind: "discovery.merge_incomplete";
       fieldPath: string;
       remaining: number;
+    }
+  // --- Integration / discovery-push sync failure (first-class category) ------
+  | {
+      kind: "integration.sync_failed";
+      sourceName: string;
+      sourceId: string;
+      /** Consecutive failures including this one. 2+ escalates to critical. */
+      consecutive: number;
+      status: string; // TIMED_OUT | FAILED | …
     };
 
 interface Fanout {
@@ -209,6 +219,16 @@ function fanout(event: NotificationEvent): Fanout {
         severity: "warning",
       };
 
+    case "integration.sync_failed":
+      return {
+        roles: ["admin"],
+        title: event.consecutive >= 2 ? `Repeat sync failure — ${event.sourceName}` : `Sync failed — ${event.sourceName}`,
+        body: event.consecutive >= 2
+          ? `${event.sourceName} has now failed ${event.consecutive} consecutive syncs (${event.status}). This needs attention — data from it is going stale.`
+          : `${event.sourceName} sync returned ${event.status}. It will retry on the next cycle; a second consecutive failure will escalate.`,
+        severity: event.consecutive >= 2 ? "critical" : "warning",
+      };
+
     case "access.revocation_state_changed":
       return {
         roles: ["ciso"],
@@ -222,26 +242,83 @@ function fanout(event: NotificationEvent): Fanout {
   }
 }
 
+/** The first-class category for an event kind (drives the bell + Settings config). */
+function categoryFor(kind: string): string {
+  if (kind === "integration.sync_failed" || kind === "discovery.scan_failed") return "integration_sync_failure";
+  if (kind.startsWith("escalation")) return "dpo_approval_needed";
+  if (kind === "sla.threshold" || kind.startsWith("completion") || kind === "execution.verified" || kind === "execution.failed") return "dsr_sla_deadline";
+  if (kind.startsWith("breach")) return "breach_clock";
+  if (kind.startsWith("drift")) return "drift_detected";
+  if (kind === "retention.blocked" || kind.startsWith("policy")) return "policy_violation";
+  return "general_activity";
+}
+
+/** Deep link to the source record for an event, or null. */
+function hrefFor(event: NotificationEvent): string | null {
+  switch (event.kind) {
+    case "integration.sync_failed": return `/discovery/sources/${event.sourceId}`;
+    case "discovery.scan_failed": return "/discovery/sources";
+    case "escalation.raised":
+    case "escalation.ruled": return "/access/approval-queue";
+    case "sla.threshold":
+    case "execution.failed":
+    case "execution.verified":
+    case "completion.changed":
+      return "requestId" in event && event.requestId ? `/requests/${event.requestId}` : "/requests";
+    default: return null;
+  }
+}
+
 /**
  * Emit inside the caller's transaction, so a notification is never sent for a
- * state change that then rolls back.
+ * state change that then rolls back. Honours each recipient role's mute
+ * preference — except NEVER-mutable categories, which reach the role regardless
+ * (a role-targeted statutory/governance alert can't be silenced by one person).
  */
 export async function emit(
   tx: TxClient,
   event: NotificationEvent,
 ): Promise<void> {
   const { roles, title, body, severity } = fanout(event);
+  const category = categoryFor(event.kind);
+  const linkedHref = hrefFor(event);
+  const requestId = "requestId" in event ? event.requestId : null;
+
+  const prefs = await tx.notificationPreference.findMany({ where: { role: { in: roles }, category } });
+  const mutedRoles = new Set(prefs.filter((p) => p.muted && isMutable(category)).map((p) => p.role));
+
+  const targets = roles.filter((role) => !mutedRoles.has(role));
+  if (targets.length === 0) return;
 
   await tx.notification.createMany({
-    data: roles.map((role) => ({
-      targetRole: role,
-      triggerEvent: event.kind,
-      title,
-      body,
-      requestId: "requestId" in event ? event.requestId : null,
-      severity,
+    data: targets.map((role) => ({
+      targetRole: role, triggerEvent: event.kind, category, title, body, requestId, linkedHref, severity,
     })),
   });
+}
+
+/**
+ * Integration-sync failure → a first-class notification. Computes the consecutive
+ * failure count from the source's recent scan-run history so a 2nd consecutive
+ * TIMED_OUT / FAILED escalates to critical. System-generated on sync completion —
+ * Admin never has to check the Integrations screen to learn a sync broke.
+ */
+export async function emitIntegrationSyncFailure(
+  tx: TxClient,
+  input: { sourceId: string; sourceName: string; status: string },
+): Promise<void> {
+  const recent = await tx.scanRun.findMany({
+    where: { sourceId: input.sourceId },
+    orderBy: { startedAt: "desc" },
+    take: 10,
+    select: { status: true },
+  });
+  let consecutive = 1; // this failure
+  for (const r of recent) {
+    if (r.status === "failed" || r.status === "partial") consecutive += 1;
+    else break;
+  }
+  await emit(tx, { kind: "integration.sync_failed", sourceId: input.sourceId, sourceName: input.sourceName, consecutive, status: input.status });
 }
 
 export async function listNotifications(role: ActorRole, take = 30) {

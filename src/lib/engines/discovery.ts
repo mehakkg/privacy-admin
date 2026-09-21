@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import type { TxClient } from "@/lib/tx";
 import { audited, type AuditActor } from "@/lib/engines/audit";
-import { emit } from "@/lib/engines/notification";
+import { emit, emitIntegrationSyncFailure } from "@/lib/engines/notification";
 import { decodeObject, encodeObject } from "@/lib/codec/json";
 import type { CompletionState } from "@/lib/domain";
 
@@ -213,6 +213,14 @@ export async function runScan(sourceId: string, actor: AuditActor) {
       sourceName: source.name,
       stage: outcome.failureStage ?? "unknown",
       partial: outcome.status === "partial",
+    });
+    // First-class integration-sync-failure alert to Admin — generated here on sync
+    // completion, so a TIMED_OUT / FAILED push surfaces in the header bell without
+    // anyone checking Integrations. A 2nd consecutive failure escalates to critical.
+    await emitIntegrationSyncFailure(db, {
+      sourceId,
+      sourceName: source.name,
+      status: (outcome.failureStage ? outcome.failureStage.toUpperCase() : outcome.status.toUpperCase()),
     });
   }
 

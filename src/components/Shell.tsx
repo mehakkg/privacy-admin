@@ -1,9 +1,8 @@
 import type { ReactNode } from "react";
-import Link from "next/link";
-import { Bell } from "lucide-react";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/session";
-import { countUnread } from "@/lib/engines/notification";
+import { countUnread, listNotifications } from "@/lib/engines/notification";
+import { NotificationBell } from "@/components/NotificationBell";
 import { requireOnboardingGate } from "@/lib/guards/onboardingGate";
 import { ROLE_LABEL } from "@/lib/domain";
 import { RoleSwitcher } from "@/components/RoleSwitcher";
@@ -199,12 +198,17 @@ export async function Shell({
   }
 
   const session = await getSession();
-  const [openRequests, unread] = await Promise.all([
+  const [openRequests, unread, recent] = await Promise.all([
     db.dataPrincipalRequest.count({
       where: { status: { notIn: ["closed", "rejected"] } },
     }),
     countUnread(session.role),
+    listNotifications(session.role, 12),
   ]);
+  const bellItems = recent.map((n) => ({
+    id: n.id, category: n.category, severity: n.severity, title: n.title, body: n.body,
+    createdAt: n.createdAt.toISOString(), read: n.readAt != null, href: n.linkedHref,
+  }));
 
   return (
     <div className="app">
@@ -223,19 +227,7 @@ export async function Shell({
         <header className="topbar">
           <span className="topbar-title">{title}</span>
           <span className="topbar-spacer" />
-          <Link
-            href="/notifications"
-            className="icon-btn"
-            aria-label={
-              unread > 0 ? `Notifications, ${unread} unread` : "Notifications"
-            }
-            title={unread > 0 ? `${unread} unread` : "Notifications"}
-          >
-            <Bell size={16} strokeWidth={1.9} />
-            {unread > 0 && (
-              <span className="icon-badge">{unread > 9 ? "9+" : unread}</span>
-            )}
-          </Link>
+          <NotificationBell items={bellItems} unread={unread} />
           <ThemeToggle />
           <RoleSwitcher current={session.role} />
           <ProfileMenu

@@ -450,9 +450,14 @@ model Notification {
   targetRole    String
   targetActorId String?
   triggerEvent  String
+  /// dpo_approval_needed | drift_detected | dsr_sla_deadline | breach_clock |
+  /// integration_sync_failure | policy_violation | general_activity
+  category      String @default("general_activity")
   title         String
   body          String
   requestId     String?
+  /// Deep link to the source record (the exact Approval Queue item, DriftRecord…).
+  linkedHref    String?
   /// info | warning | critical
   severity  String    @default("info")
   createdAt DateTime  @default(now())
@@ -462,6 +467,22 @@ model Notification {
   request     DataPrincipalRequest? @relation(fields: [requestId], references: [id])
 
   @@index([targetRole])
+  @@index([category])
+}
+
+/// Per-person notification configuration. Keyed by the acting role (this product's
+/// notion of the logged-in user). Categories dpo_approval_needed and breach_clock
+/// can never be muted — enforced server-side in the save action and honoured by
+/// the emit path, so a role-targeted statutory/governance alert is never silenced.
+model NotificationPreference {
+  id          String  @id @default(cuid())
+  role        String
+  category    String
+  /// JSON string[] of enabled channels: in_app | email.
+  channelsJson String @default("[\"in_app\"]")
+  muted       Boolean @default(false)
+
+  @@unique([role, category])
 }
 
 // ---------------------------------------------------------------------------

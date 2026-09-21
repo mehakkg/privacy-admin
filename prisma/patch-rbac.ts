@@ -161,6 +161,42 @@ async function seedOnboardingDefaults() {
   console.log("patch-rbac: onboarding defaults ensured.");
 }
 
+/**
+ * Demo notifications for the header bell — including the specific gap this closes:
+ * a repeat integration-sync failure surfaced as Critical. Seeded once (guarded on
+ * whether the admin role already has any notifications).
+ */
+async function seedNotifications() {
+  if ((await prisma.notification.count({ where: { targetRole: "admin" } })) > 0) return;
+  const src = (await prisma.discoverySource.findFirst({ where: { scanStatus: "failed" }, select: { id: true, name: true } }))
+    ?? (await prisma.discoverySource.findFirst({ select: { id: true, name: true } }));
+  const now = Date.now();
+  const mins = (m: number) => new Date(now - m * 60_000);
+  await prisma.notification.createMany({
+    data: [
+      {
+        targetRole: "admin", triggerEvent: "integration.sync_failed", category: "integration_sync_failure",
+        title: `Repeat sync failure — ${src?.name ?? "Marketing Automation"}`,
+        body: `${src?.name ?? "Marketing Automation"} has now failed 2 consecutive syncs (TIMED_OUT). This needs attention — data from it is going stale.`,
+        linkedHref: src ? `/discovery/sources/${src.id}` : "/discovery/sources", severity: "critical", createdAt: mins(8),
+      },
+      {
+        targetRole: "admin", triggerEvent: "drift.detected", category: "drift_detected",
+        title: "Access drifted from its approved baseline",
+        body: "Data Engineer · Neha Gupta gained a capability beyond baseline. Review and correct or re-approve.",
+        linkedHref: "/access/drift", severity: "warning", createdAt: mins(40),
+      },
+      {
+        targetRole: "admin", triggerEvent: "general.activity", category: "general_activity",
+        title: "Weekly drift scan completed",
+        body: "The scheduled least-privilege scan finished. 1 new drift found.",
+        linkedHref: "/access/drift", severity: "info", createdAt: mins(180),
+      },
+    ],
+  });
+  console.log("patch-rbac: demo notifications seeded.");
+}
+
 async function main() {
   if (!process.env.DATABASE_URL) { console.log("patch-rbac: no DATABASE_URL, skipping."); return; }
   await backfillRoleCaps();
@@ -168,6 +204,7 @@ async function main() {
   await seedAssignments();
   await seedDrift();
   await seedOnboardingDefaults();
+  await seedNotifications();
 }
 
 main()
