@@ -95,6 +95,7 @@ function navGroups(openRequests: number, role: string): NavEntry[] {
         { href: "/breach/incidents", label: "Incidents", ready: true },
         { href: "/breach/investigation", label: "Investigation", ready: true },
         { href: "/breach/notifications", label: "Notifications & Board reporting", ready: true },
+        { href: "/breach/trends", label: "Trends", ready: true },
       ],
     },
     {

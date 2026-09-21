@@ -73,5 +73,7 @@ if (!POOLED) {
     // Idempotent: backfills the Role capability model and seeds the Identity &
     // Access demo (custom roles, assignments, drift).
     run("Seeding Identity & Access demo", "npx tsx prisma/patch-rbac.ts", POOLED);
+    // Idempotent: seeds the Breach Management demo (live + submitted incidents).
+    run("Seeding Breach demo", "npx tsx prisma/patch-breach.ts", POOLED);
   }
 }

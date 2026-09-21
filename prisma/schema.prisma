@@ -1748,6 +1748,7 @@ model Entity {
   notices      Notice[]
   activities   ProcessingActivity[]
   roleAssignments RoleAssignment[]
+  breachIncidents BreachIncident[]
 }
 
 model EntityUserMapping {
@@ -2071,4 +2072,113 @@ model CertificationItem {
 
   @@index([campaignId])
   @@index([reviewerId])
+}
+
+// ---------------------------------------------------------------------------
+// Breach Management (DPDP s.8(6) + Rules): intake → Board notification →
+// remediation → trends. The 72-hour clock is the Notifications breach_clock
+// category's deadline (detected_at + 72h), surfaced here — not a new timer.
+// ---------------------------------------------------------------------------
+
+model BreachIncident {
+  id         String @id @default(cuid())
+  reference  String @unique
+  detectedAt DateTime @default(now())
+  /// internal | public_self_service
+  reportedVia String @default("internal")
+  category    String?
+  /// low | medium | high | critical — auto-computed from volume × PII × sensitivity.
+  severity    String @default("medium")
+  severityBasisJson String @default("{}")
+  /// triage | investigating | package_compiling | board_notified | remediation | closed
+  status      String @default("triage")
+  entityId    String?
+  isProcessorCaused Boolean @default(false)
+  owner       String?
+  reporterNote String @default("")
+
+  entity   Entity? @relation(fields: [entityId], references: [id])
+  impacts  IncidentImpactMapping[]
+  cohorts  AffectedPrincipalCohort[]
+  processorThreads ProcessorBreachThread[]
+  boardPackage BoardNotificationPackage?
+  tasks    RemediationTask[]
+
+  @@index([status])
+  @@index([severity])
+}
+
+/// Each row a real link into existing Processing Activities records — never free text.
+model IncidentImpactMapping {
+  id          String @id @default(cuid())
+  incidentId  String
+  elementName String
+  purposeId   String?
+  processorId String?
+  incident BreachIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  @@index([incidentId])
+}
+
+/// Immutable snapshot of the affected cohort at identification time.
+model AffectedPrincipalCohort {
+  id            String @id @default(cuid())
+  incidentId    String
+  snapshotTakenAt DateTime @default(now())
+  principalIdsJson String @default("[]")
+  count         Int @default(0)
+  incident BreachIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  @@index([incidentId])
+}
+
+/// Investigation thread with an implicated processor (links to TPRM).
+model ProcessorBreachThread {
+  id          String @id @default(cuid())
+  incidentId  String
+  processorId String
+  processorName String
+  outreachSentAt DateTime?
+  remediationResponse String?
+  responseReceivedAt DateTime?
+  /// Requires an EXPLICIT confirmation action — never auto-true on response.
+  fiduciaryConfirmed Boolean @default(false)
+  confirmedAt DateTime?
+  confirmedBy String?
+  incident BreachIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  @@index([incidentId])
+}
+
+/// Two-stage Board notification. Six structured fields, one per Rule 8(6)(b)
+/// sub-clause — never collapsed. CISO compiles, DPO reviews and submits.
+model BoardNotificationPackage {
+  id         String @id @unique @default(cuid())
+  incidentId String @unique
+  immediateDescription String?
+  immediateSentAt DateTime?
+  /// Rule 8(6)(b)(i–vi):
+  updatedDescription        String?
+  factsAndCircumstances     String?
+  mitigationMeasures        String?
+  causeFindings             String?
+  remedialMeasures          String?
+  principalIntimationReport String?
+  compiledBy String?
+  approvedBy String?
+  submittedAt DateTime?
+  /// True when submitted under combined_admin_dpo governance (self-approval).
+  selfApproved Boolean @default(false)
+  incident BreachIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+}
+
+model RemediationTask {
+  id         String @id @default(cuid())
+  incidentId String
+  title      String
+  assignedTo String?
+  /// compliance | legal | it
+  team       String @default("compliance")
+  /// open | in_progress | done
+  status     String @default("open")
+  dueDate    DateTime?
+  incident BreachIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  @@index([incidentId])
 }

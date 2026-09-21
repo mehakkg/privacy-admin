@@ -103,6 +103,13 @@ export type NotificationEvent =
       /** Consecutive failures including this one. 2+ escalates to critical. */
       consecutive: number;
       status: string; // TIMED_OUT | FAILED | …
+    }
+  // --- Breach: the 72-hour Board-notification clock (breach_clock category) ---
+  | {
+      kind: "breach.detected";
+      incidentId: string;
+      reference: string;
+      severity: string;
     };
 
 interface Fanout {
@@ -219,6 +226,14 @@ function fanout(event: NotificationEvent): Fanout {
         severity: "warning",
       };
 
+    case "breach.detected":
+      return {
+        roles: ["ciso", "dpo"],
+        title: `Breach ${event.reference} — 72-hour clock started`,
+        body: `A ${event.severity} breach was recorded. The Board must be notified within 72 hours (DPDP s.8(6)). Compile the notification package.`,
+        severity: "critical",
+      };
+
     case "integration.sync_failed":
       return {
         roles: ["admin"],
@@ -258,6 +273,7 @@ function hrefFor(event: NotificationEvent): string | null {
   switch (event.kind) {
     case "integration.sync_failed": return `/discovery/sources/${event.sourceId}`;
     case "discovery.scan_failed": return "/discovery/sources";
+    case "breach.detected": return `/breach/incidents/${event.incidentId}`;
     case "escalation.raised":
     case "escalation.ruled": return "/access/approval-queue";
     case "sla.threshold":
