@@ -1113,8 +1113,44 @@ model ConsentRecord {
 
   purposeTag PurposeTag? @relation(fields: [purposeTagId], references: [id])
 
+  verificationChecks VerificationCheck[]
+  changeAttempts     ChangeAttempt[]
+
   @@index([channelOrigin])
   @@index([syncStatus])
+}
+
+/// A spot-check: recompute the artifact's hash from stored content and compare to
+/// the hash stored at creation (ConsentRecord.artifactHash). The verify/demonstrate
+/// layer — it never mutates the artifact, only confirms it can't have changed.
+model VerificationCheck {
+  id             String @id @default(cuid())
+  artifactId     String
+  checkedAt      DateTime @default(now())
+  recomputedHash String
+  /// match | mismatch
+  result         String
+  checkedBy      String?
+
+  artifact ConsentRecord @relation(fields: [artifactId], references: [id])
+
+  @@index([artifactId])
+}
+
+/// A logged, ALWAYS-rejected attempt to alter a consent artifact — surfacing the
+/// enforcement that already makes mutation structurally impossible. `rejected` is
+/// always true; the row exists to demonstrate the attempt was refused.
+model ChangeAttempt {
+  id         String @id @default(cuid())
+  artifactId String
+  attemptedAt DateTime @default(now())
+  attemptedBy String?
+  rejected   Boolean @default(true)
+  attemptedChangeSummary String
+
+  artifact ConsentRecord @relation(fields: [artifactId], references: [id])
+
+  @@index([artifactId])
 }
 
 /// Singleton configuration for the consent platform's Setup tab.

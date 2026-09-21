@@ -62,6 +62,7 @@ function navGroups(openRequests: number, role: string): NavEntry[] {
         { href: "/consent/notices", label: "Notices", ready: true },
         { href: "/consent/platform", label: "Consent collection", ready: true },
         { href: "/consent/records", label: "Consent records", ready: true },
+        { href: "/consent/integrity", label: "Artifact integrity", ready: true },
         // Cookie consent has a materially different feature set (script-blocking,
         // banner config, geo/language) from general consent capture, so it is its
         // own sub-tab rather than folded into Consent collection.

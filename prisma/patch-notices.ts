@@ -12,8 +12,42 @@
  */
 
 import { PrismaClient } from "@prisma/client";
+import { createHash } from "node:crypto";
 
 const prisma = new PrismaClient();
+
+/** Canonical consent-artifact hash — MUST match src/lib/consentHash.ts exactly. */
+function hashConsent(c: { subjectRef: string; purposeTagId: string | null; channelOrigin: string; status: string; collectedAt: Date }): string {
+  const canonical = [c.subjectRef, c.purposeTagId ?? "", c.channelOrigin, c.status, c.collectedAt.toISOString()].join("|");
+  return "sha256:" + createHash("sha256").update(canonical).digest("hex");
+}
+
+/**
+ * Consent-artifact integrity demo. Backfills the stored hash on records that
+ * predate it, then (once) seeds two rejected change-attempts on one record and a
+ * deliberately-corrupted hash on another so the Mismatch state is demonstrable.
+ */
+async function backfillConsentIntegrity() {
+  const records = await prisma.consentRecord.findMany();
+  for (const r of records) {
+    if (!r.artifactHash?.startsWith("sha256:")) {
+      await prisma.consentRecord.update({ where: { id: r.id }, data: { artifactHash: hashConsent(r) } });
+    }
+  }
+  if ((await prisma.changeAttempt.count()) === 0 && records.length > 0) {
+    const a = records[0];
+    await prisma.changeAttempt.createMany({
+      data: [
+        { artifactId: a.id, attemptedBy: "integration:crm-sync", attemptedChangeSummary: "Attempted to overwrite status granted → withdrawn via bulk import. Rejected — artifacts are immutable." },
+        { artifactId: a.id, attemptedBy: "R. Iyer (admin)", attemptedChangeSummary: "Attempted to edit collected-at timestamp. Rejected — artifacts are immutable." },
+      ],
+    });
+    // One deliberately-corrupted record to demonstrate the Mismatch state.
+    const b = records.find((x) => x.id !== a.id) ?? a;
+    await prisma.consentRecord.update({ where: { id: b.id }, data: { artifactHash: "sha256:0000000000000000000000000000000000000000000000000000000000000000" } });
+  }
+  console.log("patch-notices: consent integrity backfilled.");
+}
 
 const RULE3_ALL = JSON.stringify({
   itemization: { note: "Data categories itemised in the body." },
@@ -105,6 +139,7 @@ async function main() {
   }
 
   console.log("patch-notices: notice metadata backfilled.");
+  await backfillConsentIntegrity();
 }
 
 main()
