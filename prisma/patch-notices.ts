@@ -139,7 +139,38 @@ async function main() {
   }
 
   console.log("patch-notices: notice metadata backfilled.");
+  await seedConsentRecordsIfEmpty(purposeId);
   await backfillConsentIntegrity();
+}
+
+/**
+ * The deploy seed (bootstrap.ts) does not create consent records, so on Vercel
+ * the Artifact Integrity dashboard would render empty. Seed a small, realistic
+ * spread once — mixed channels, statuses and purposes — so the dashboard has
+ * artifacts to verify and export. Hashes are left unset here and computed by
+ * backfillConsentIntegrity(), which runs immediately after. Idempotent: only
+ * seeds when the table is empty.
+ */
+async function seedConsentRecordsIfEmpty(purposeId: (name: string) => string | null) {
+  if ((await prisma.consentRecord.count()) > 0) {
+    console.log("patch-notices: consent records present, not seeding.");
+    return;
+  }
+  const day = 86_400_000;
+  const now = Date.now();
+  const pMarketing = purposeId("Marketing communication") ?? purposeId("Marketing communications") ?? null;
+  const pServicing = purposeId("Account servicing") ?? null;
+  const rows = [
+    { subjectRef: "CUST-449120", purposeTagId: pMarketing, channelOrigin: "digital", status: "granted", collectedAt: new Date(now - 60 * day), expiresAt: new Date(now + 700 * day), syncStatus: "synced" },
+    { subjectRef: "CUST-449120", purposeTagId: pServicing, channelOrigin: "digital", status: "granted", collectedAt: new Date(now - 60 * day), expiresAt: new Date(now + 700 * day), syncStatus: "synced" },
+    { subjectRef: "CUST-501882", purposeTagId: pServicing, channelOrigin: "branch", status: "granted", collectedAt: new Date(now - 30 * day), expiresAt: new Date(now + 700 * day), syncStatus: "synced", idVerification: "PAN + in-person" },
+    { subjectRef: "CUST-501882", purposeTagId: pMarketing, channelOrigin: "branch", status: "withdrawn", collectedAt: new Date(now - 30 * day), syncStatus: "synced", idVerification: "PAN + in-person" },
+    { subjectRef: "CUST-612344", purposeTagId: pMarketing, channelOrigin: "phone", status: "granted", collectedAt: new Date(now - 14 * day), expiresAt: new Date(now + 700 * day), syncStatus: "synced" },
+    { subjectRef: "CUST-733901", purposeTagId: pServicing, channelOrigin: "bulk_import", status: "granted", collectedAt: new Date(now - 5 * day), expiresAt: new Date(now + 700 * day), syncStatus: "synced" },
+    { subjectRef: "CUST-733901", purposeTagId: pMarketing, channelOrigin: "digital", status: "expired", collectedAt: new Date(now - 400 * day), expiresAt: new Date(now - 30 * day), syncStatus: "synced" },
+  ];
+  await prisma.consentRecord.createMany({ data: rows });
+  console.log(`patch-notices: seeded ${rows.length} consent records for the integrity demo.`);
 }
 
 main()
