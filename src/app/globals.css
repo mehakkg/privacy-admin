@@ -30,6 +30,11 @@
   --bg-row-hover: #f9fafb;
   --bg-selected: #eff4ff;
   --bg-muted: #f3f4f6;
+  /* Card/elevated surface + subtle row background. Defined so components that
+     referenced var(--surface,#fff)/var(--bg-subtle,#fafafa) stop falling back to
+     hardcoded light values (which broke dark mode). */
+  --surface: #ffffff;
+  --bg-subtle: #fafafa;
 
   /* Borders — design-system tokens (color.border / border.strong) */
   --border: #e5e7eb;
@@ -127,6 +132,8 @@
   --bg-row-hover: #223047;
   --bg-selected: #17233d;
   --bg-muted: #1c2740;
+  --surface: #243247;
+  --bg-subtle: #1c2740;
 
   /* Borders */
   --border: #334155;
@@ -2569,8 +2576,9 @@ h3.drawer-section.first { margin-top: 0; padding-top: 0; border-top: 0; }
 .sidebar-nav.rail .sidebar-item { justify-content: center; padding: 11px 0; gap: 0; }
 .sidebar-nav.rail .sidebar-subitem { justify-content: center; padding: 9px 0; }
 
-/* Topbar — 64px, white, single bottom border (§4). */
-.topbar { height: 64px; min-height: 64px; background: #FFFFFF; border-bottom: 1px solid #E5E7EB; }
+/* Topbar — 64px, single bottom border (§4). Tokenized so it follows the theme;
+   a hardcoded #FFFFFF here was the dark-mode breadcrumb-on-white bug. */
+.topbar { height: 64px; min-height: 64px; background: var(--bg); border-bottom: 1px solid var(--border); }
 
 /* ===========================================================================
    DESIGN SYSTEM — component alignment (§6 Input, §7 Button, §13 Badge, Table).
