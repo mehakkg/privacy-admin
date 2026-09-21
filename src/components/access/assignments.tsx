@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Plus, X, ChevronDown, ChevronRight, CheckCircle2, AlertTriangle, XCircle } from "lucide-react";
 import { Pill } from "@/components/ui";
 import { ActionError } from "@/components/actions";
@@ -38,19 +39,28 @@ function useRun() {
 }
 
 export function Assignments({
-  assignments, roles, entities, systems, initialRoleId,
+  assignments, roles, entities, systems, initialRoleId, userFilter = null,
 }: {
   assignments: AssignmentView[];
   roles: RoleView[];
   entities: { id: string; name: string }[];
   systems: string[];
   initialRoleId?: string | null;
+  userFilter?: string | null;
 }) {
   const { pending, result, run } = useRun();
   const [flowOpen, setFlowOpen] = useState(Boolean(initialRoleId));
 
   return (
     <div>
+      {userFilter && (
+        <div className="notice info" style={{ marginBottom: 12 }}>
+          <div className="row" style={{ justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+            <span>Showing access for <strong>{userFilter}</strong>.</span>
+            <Link href="/access/assignments" className="row-link">Show all assignments →</Link>
+          </div>
+        </div>
+      )}
       <div className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
         <span className="cell-sub">{assignments.length} assignment{assignments.length === 1 ? "" : "s"} · every grant carries a recorded justification and a viewed summary.</span>
         <button className="btn primary sm" onClick={() => setFlowOpen(true)}><Plus size={14} /> New assignment</button>

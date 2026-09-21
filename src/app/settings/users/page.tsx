@@ -1,24 +1,44 @@
+import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
-import { Placeholder } from "@/components/Placeholder";
+import { PageHead, formatDate } from "@/components/ui";
+import { UsersDirectory, type UserAccount } from "@/components/settings/UsersDirectory";
+import { RevocationVerification } from "@/components/RevocationVerification";
 
 export const dynamic = "force-dynamic";
 
-export default function Page() {
+/**
+ * SETTINGS → USERS — a lightweight account directory. Deliberately holds NO role,
+ * capability or permission data: Identity & Access is the sole owner of access.
+ * The only mutation here is account-level deactivation, which calls the existing
+ * cross-system revocation flow (RevocationVerification, below) rather than
+ * duplicating it or editing roles.
+ */
+export default async function UsersPage() {
+  const users = await db.internalUser.findMany({ orderBy: [{ accountStatus: "asc" }, { fullName: "asc" }] });
+
+  const rows: UserAccount[] = users.map((u) => ({
+    id: u.id,
+    name: u.fullName,
+    email: u.email,
+    accountStatus: u.accountStatus,
+    dateAdded: formatDate(u.joinedAt),
+  }));
+
   return (
-    <Shell active="/settings/users" title={"Users & Roles"}>
-      <Placeholder
-        title={"Users & Roles"}
-        tip={"This product's own privacy roles — who can act as DPO/CISO/Grievance Officer/Admin/Legal — not general system access."}
-        what={
-          <>
-            Tabs: <strong>Users</strong> and <strong>Privacy Roles &amp; Permissions</strong>.
-            The access-control layer underneath every &ldquo;Acting as&rdquo; governance
-            decision in this product — who may act as DPO, CISO, Grievance Officer, Admin or
-            Legal, and what each can approve. General system/infrastructure RBAC stays IAM&rsquo;s
-            and is referenced read-only at most.
-          </>
-        }
+    <Shell active="/settings/users" title="Users">
+      <PageHead
+        title="Users"
+        titleTip="A directory of user accounts — name, email, account status. Roles, capabilities and access assignment live in Identity & Access, not here."
       />
+
+      <UsersDirectory users={rows} />
+
+      <div style={{ marginTop: 24, borderTop: "1px solid var(--border)", paddingTop: 16 }}>
+        <h3 style={{ margin: "0 0 4px", fontSize: 14 }}>Cross-system revocation</h3>
+        <p className="cell-sub" style={{ margin: "0 0 12px" }}>Deactivating an account above runs the same revocation checklist offboarding uses. Its state is tracked per system here until confirmed.</p>
+        {/* Reused verbatim from Identity & Access deprovisioning — not rebuilt. */}
+        <RevocationVerification />
+      </div>
     </Shell>
   );
 }

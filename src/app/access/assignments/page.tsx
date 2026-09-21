@@ -10,9 +10,10 @@ export const dynamic = "force-dynamic";
 export default async function AssignmentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ role?: string }>;
+  searchParams: Promise<{ role?: string; user?: string }>;
 }) {
   const params = await searchParams;
+  const userFilter = params.user?.trim() || null;
 
   const [assignments, roles, entities, systems] = await Promise.all([
     db.roleAssignment.findMany({ include: { role: true, entity: true }, orderBy: { grantedAt: "desc" } }),
@@ -21,7 +22,7 @@ export default async function AssignmentsPage({
     db.connectedSystem.findMany({ orderBy: { name: "asc" }, select: { name: true } }),
   ]);
 
-  const views: AssignmentView[] = assignments.map((a) => ({
+  const allViews: AssignmentView[] = assignments.map((a) => ({
     id: a.id,
     roleName: a.role.name,
     roleType: a.role.roleType,
@@ -34,6 +35,8 @@ export default async function AssignmentsPage({
     provisioning: (decodeObject<ProvSystem[]>(a.provisioningJson) ?? []),
     provisioningStatus: a.provisioningStatus,
   }));
+  // Pre-filter to a person when arriving from Settings → Users.
+  const views = userFilter ? allViews.filter((v) => v.userName.toLowerCase() === userFilter.toLowerCase()) : allViews;
 
   const roleViews: RoleView[] = roles.map((r) => ({
     id: r.id, name: r.name, description: r.description, roleType: r.roleType, status: r.status,
@@ -41,18 +44,18 @@ export default async function AssignmentsPage({
     approvedBy: r.baselineApprovedBy, approvedAt: null, holders: 0,
   }));
 
-  const partial = views.filter((v) => v.provisioningStatus === "partial" || v.provisioningStatus === "failed").length;
+  const partial = allViews.filter((v) => v.provisioningStatus === "partial" || v.provisioningStatus === "failed").length;
 
   return (
     <div className="stack">
       <PageHead
         title="Assignments"
-        titleTip="Approved roles granted to people, scoped to systems, each with a recorded justification. Provisioning is confirmed per system — a partial failure is never shown as success."
+        titleTip="Approved roles granted to people, scoped to systems, each with a recorded justification. Provisioning is confirmed per system — a partial failure is never shown as success. This is the one place access is assigned."
       />
 
       <div className="stat-row">
-        <Stat label="Active assignments" value={views.filter((v) => v.status === "active").length} />
-        <Stat label="Fully provisioned" value={views.filter((v) => v.provisioningStatus === "granted").length} tone="green" />
+        <Stat label="Active assignments" value={allViews.filter((v) => v.status === "active").length} />
+        <Stat label="Fully provisioned" value={allViews.filter((v) => v.provisioningStatus === "granted").length} tone="green" />
         <Stat label="Partial / failed" value={partial} tone={partial ? "red" : undefined} />
       </div>
 
@@ -62,6 +65,7 @@ export default async function AssignmentsPage({
         entities={entities}
         systems={systems.map((s) => s.name)}
         initialRoleId={params.role ?? null}
+        userFilter={userFilter}
       />
     </div>
   );

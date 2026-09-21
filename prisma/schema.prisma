@@ -1139,8 +1139,12 @@ model InternalUser {
   fullName   String
   email      String    @unique
   department String
-  /// active | on_notice | offboarded
+  /// active | on_notice | offboarded — the HR employment state.
   employmentStatus String
+  /// active | deactivated | invited — the ACCOUNT state shown on Settings →
+  /// Users. Account-level, distinct from role access; deactivating here triggers
+  /// the existing cross-system revocation flow rather than editing roles.
+  accountStatus String @default("active")
   joinedAt   DateTime
   leftAt     DateTime?
   /// Set when HR flags an offboarding; drives the deprovisioning queue.

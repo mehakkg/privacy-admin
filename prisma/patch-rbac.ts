@@ -149,6 +149,15 @@ async function seedOnboardingDefaults() {
   // Existing entities predate per-entity governance — default them so the demo
   // reads as fully configured. Fresh onboarding sets these explicitly.
   await prisma.entity.updateMany({ where: { governanceStructure: null }, data: { governanceStructure: "dedicated_dpo" } });
+
+  // Settings → Users demo: show Active / Deactivated / Invited. Run once (guarded
+  // on whether any non-active account status already exists), mapped off the
+  // seeded employment states so it's deterministic without inventing users.
+  const nonActive = await prisma.internalUser.count({ where: { accountStatus: { in: ["invited", "deactivated"] } } });
+  if (nonActive === 0) {
+    await prisma.internalUser.updateMany({ where: { employmentStatus: "offboarded" }, data: { accountStatus: "deactivated" } });
+    await prisma.internalUser.updateMany({ where: { employmentStatus: "on_notice" }, data: { accountStatus: "invited" } });
+  }
   console.log("patch-rbac: onboarding defaults ensured.");
 }
 

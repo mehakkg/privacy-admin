@@ -156,7 +156,7 @@ function navGroups(openRequests: number, role: string): NavEntry[] {
       // Permissions and Sign-in methods live here, not at the top level.
       children: [
         { href: "/settings/organization", label: "Organization", ready: true },
-        { href: "/settings/users", label: "Users & roles", ready: true },
+        { href: "/settings/users", label: "Users", ready: true },
         { href: "/integrations/connected-systems", label: "Integrations", ready: true },
         { href: "/notifications/channels", label: "Notifications", ready: true },
       ],
