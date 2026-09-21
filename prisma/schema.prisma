@@ -1183,6 +1183,8 @@ model SystemAccount {
   username String
   /// active | disabled | revoked | orphaned
   status   String
+  /// human | service — drives which DormancyThreshold applies.
+  accountType String @default("human")
   createdAt    DateTime
   lastActiveAt DateTime?
 
@@ -1193,6 +1195,7 @@ model SystemAccount {
   sessions    ActiveSession[]
   revocations RevocationRecord[]
   disposition AccountDisposition?
+  investigations InvestigationRecord[]
 
   @@unique([systemId, username])
   @@index([userId])
@@ -1835,6 +1838,7 @@ model RoleAssignment {
   role   RBACRole @relation(fields: [roleId], references: [id])
   entity Entity?  @relation(fields: [entityId], references: [id])
   drift  DriftRecord[]
+  certificationItems CertificationItem[]
 
   @@index([roleId])
   @@index([status])
@@ -1956,4 +1960,79 @@ model OrgSettings {
 
   updatedAt DateTime @updatedAt
   updatedBy String?
+}
+
+// ---------------------------------------------------------------------------
+// Identity & Access — Insights (dormancy/investigation) + Assessments
+// (certification). Distinct detection mechanisms from Drift: Insights asks "is
+// this access still alive?", Assessments asks "is it still justified?".
+// ---------------------------------------------------------------------------
+
+/// Org-configurable dormancy threshold, separate defaults per account type.
+model DormancyThreshold {
+  id           String @id @default(cuid())
+  accountType  String @unique  // human | service
+  thresholdDays Int
+  updatedAt    DateTime @updatedAt
+  updatedBy    String?
+}
+
+/// A dormant/orphaned-account investigation decision. The system-suggested
+/// classification is ADVISORY only — never auto-applied, never pre-selects a
+/// decision. Every decision (Retain OR Revoke) requires a justification.
+model InvestigationRecord {
+  id        String @id @default(cuid())
+  accountId String
+  flaggedAt DateTime @default(now())
+  /// JSON timeline of last-active events across connected systems.
+  usageTimelineJson String @default("[]")
+  /// likely_service | likely_abandoned | unclear — advisory hint only.
+  systemSuggestedClassification String @default("unclear")
+  /// retained | revoked | null (undecided)
+  decision      String?
+  justification String?
+  decidedBy     String?
+  decidedAt     DateTime?
+
+  account SystemAccount @relation(fields: [accountId], references: [id])
+
+  @@index([accountId])
+  @@index([decision])
+}
+
+/// A periodic access-certification campaign. Scope is a SNAPSHOT of active
+/// assignments taken at campaign start, not a live view.
+model CertificationCampaign {
+  id           String @id @default(cuid())
+  name         String
+  scheduledFor DateTime
+  dueDate      DateTime
+  /// in_progress | complete | overdue
+  status       String @default("in_progress")
+  createdAt    DateTime @default(now())
+
+  items CertificationItem[]
+}
+
+/// One assignment to certify within a campaign. Reviewer is derived from role
+/// ownership / manager relationship; a reviewer sees only their scoped subset.
+model CertificationItem {
+  id           String @id @default(cuid())
+  campaignId   String
+  assignmentId String
+  /// Derived reviewer (role label used as the scoping identity in this demo).
+  reviewerId   String
+  /// Snapshot of who approved the grant, when, and why — shown before deciding.
+  originalGrantContextJson String @default("{}")
+  /// certified | revoked | null (unreviewed)
+  decision   String?
+  /// Required on a Revoke decision (same bar as everywhere else).
+  justification String?
+  decidedAt  DateTime?
+
+  campaign   CertificationCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  assignment RoleAssignment        @relation(fields: [assignmentId], references: [id])
+
+  @@index([campaignId])
+  @@index([reviewerId])
 }

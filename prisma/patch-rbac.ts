@@ -197,6 +197,39 @@ async function seedNotifications() {
   console.log("patch-rbac: demo notifications seeded.");
 }
 
+/** Demo for Insights (dormant accounts) + Assessments (certification campaigns). */
+async function seedInsightsAssessments() {
+  // Dormant accounts: make a couple of seeded accounts look dormant, one a
+  // service account (long threshold) and one human, both past threshold.
+  if ((await prisma.systemAccount.count({ where: { accountType: "service" } })) === 0) {
+    const accts = await prisma.systemAccount.findMany({ take: 3, orderBy: { username: "asc" } });
+    const old = new Date(Date.now() - 210 * 86_400_000);
+    if (accts[0]) await prisma.systemAccount.update({ where: { id: accts[0].id }, data: { accountType: "service", lastActiveAt: old } });
+    if (accts[1]) await prisma.systemAccount.update({ where: { id: accts[1].id }, data: { accountType: "human", lastActiveAt: new Date(Date.now() - 95 * 86_400_000) } });
+  }
+
+  // Certification campaigns: one in-progress (partly reviewed), one overdue.
+  if ((await prisma.certificationCampaign.count()) === 0) {
+    const assignments = await prisma.roleAssignment.findMany({ where: { status: "active" }, include: { role: true } });
+    if (assignments.length > 0) {
+      const now = Date.now();
+      const ctx = (a: (typeof assignments)[number]) => JSON.stringify({ user: a.userName, role: a.role.name, approvedBy: a.role.baselineApprovedBy, grantedAt: a.grantedAt.toISOString(), justification: a.justification });
+      // In-progress, due in the future, first item certified.
+      const inprog = await prisma.certificationCampaign.create({ data: { name: "Q3 2026 access certification", scheduledFor: new Date(now - 3 * 86_400_000), dueDate: new Date(now + 11 * 86_400_000), status: "in_progress" } });
+      for (let i = 0; i < assignments.length; i++) {
+        const a = assignments[i];
+        await prisma.certificationItem.create({ data: { campaignId: inprog.id, assignmentId: a.id, reviewerId: a.role.name, originalGrantContextJson: ctx(a), decision: i === 0 ? "certified" : null, decidedAt: i === 0 ? new Date(now - 86_400_000) : null } });
+      }
+      // Overdue: due in the past, items still unreviewed.
+      const overdue = await prisma.certificationCampaign.create({ data: { name: "Q2 2026 access certification", scheduledFor: new Date(now - 100 * 86_400_000), dueDate: new Date(now - 20 * 86_400_000), status: "in_progress" } });
+      for (const a of assignments) {
+        await prisma.certificationItem.create({ data: { campaignId: overdue.id, assignmentId: a.id, reviewerId: a.role.name, originalGrantContextJson: ctx(a) } });
+      }
+    }
+  }
+  console.log("patch-rbac: insights + assessments demo seeded.");
+}
+
 async function main() {
   if (!process.env.DATABASE_URL) { console.log("patch-rbac: no DATABASE_URL, skipping."); return; }
   await backfillRoleCaps();
@@ -205,6 +238,7 @@ async function main() {
   await seedDrift();
   await seedOnboardingDefaults();
   await seedNotifications();
+  await seedInsightsAssessments();
 }
 
 main()

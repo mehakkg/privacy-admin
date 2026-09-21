@@ -3270,3 +3270,44 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 .locked-mute { display: inline-flex; flex-direction: column; gap: 1px; font-size: 12px; font-weight: 600; color: var(--text-3); }
 .locked-mute > :first-child { display: inline-flex; align-items: center; gap: 5px; }
 .notif-prefs td { vertical-align: top; }
+
+/* ===================== Insights + Assessments ===================== */
+.advisory-hint { font-size: 12px; color: var(--text-3); font-style: italic; }
+.advisory-box {
+  margin: 12px 0; padding: 10px 12px; border-radius: var(--radius);
+  background: var(--bg-muted); border: 1px dashed var(--border-strong); font-size: 12.5px; color: var(--text-2);
+}
+.threshold-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-muted);
+}
+/* Drift-choice "chosen" state (reused equal-weight buttons) */
+.btn.drift-choice.chosen { border-color: var(--text); background: var(--bg-muted); box-shadow: 0 0 0 1px var(--text) inset; }
+
+/* Permission matrix */
+.matrix-role { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg); overflow: hidden; }
+.matrix-role-head { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 10px 12px; background: none; border: 0; cursor: pointer; font: inherit; }
+.matrix-role-head:hover { background: var(--bg-muted); }
+.matrix-assignees { border-top: 1px solid var(--border-soft); padding: 6px 12px 10px; display: flex; flex-direction: column; gap: 4px; }
+.matrix-assignee { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: var(--radius); }
+.matrix-assignee:hover { background: var(--bg-muted); }
+
+/* Certification campaigns */
+.campaign-card { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg); padding: 14px 16px; }
+.campaign-card.overdue { border-color: var(--red); border-left: 4px solid var(--red); background: color-mix(in srgb, var(--red) 4%, var(--bg)); }
+.campaign-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.progress { width: 180px; height: 8px; border-radius: 999px; background: var(--bg-muted); overflow: hidden; }
+.progress > span { display: block; height: 100%; background: var(--blue); }
+.progress.overdue > span { background: var(--red); }
+.overdue-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; color: #fff; background: var(--red); }
+
+/* ===================== Consent Artifact Integrity ===================== */
+.integrity-verdict { display: flex; align-items: center; gap: 10px; padding: 16px 18px; border-radius: var(--radius-md); font-weight: 700; font-size: 15px; }
+.integrity-verdict.ok { color: #065f46; background: color-mix(in srgb, var(--green) 16%, #fff); border: 2px solid var(--green); }
+.integrity-verdict.mismatch { color: #fff; background: var(--red); border: 2px solid #7f1d1d; box-shadow: 0 4px 16px color-mix(in srgb, var(--red) 40%, transparent); }
+.hash-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+.hash-box { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; background: var(--bg-muted); }
+.hash-box .mono { word-break: break-all; font-size: 11px; }
+.hash-box.mismatch { border-color: var(--red); }
+.stat-tile-ok .stat-value, .stat-tile-ok .stat-num { color: var(--green) !important; }
+@media (max-width: 620px) { .hash-compare { grid-template-columns: 1fr; } }

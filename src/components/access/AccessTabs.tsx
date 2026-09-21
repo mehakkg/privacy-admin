@@ -8,6 +8,8 @@ const TABS = [
   { href: "/access/assignments", label: "Assignments" },
   { href: "/access/approval-queue", label: "Approval Queue" },
   { href: "/access/drift", label: "Drift" },
+  { href: "/access/insights", label: "Insights" },
+  { href: "/access/assessments", label: "Assessments" },
   { href: "/access/organization", label: "Governance Setup" },
 ];
 
