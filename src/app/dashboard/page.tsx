@@ -1,5 +1,4 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
 import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
 import { Card, PageHead, Pill, Stat, formatDateTime } from "@/components/ui";
@@ -9,6 +8,8 @@ import { WIDGET_BY_ID } from "@/lib/dashboard/widgets";
 import { MyDashboard } from "@/components/myDashboard";
 import type { SavedWidget } from "@/app/actions/dashboard";
 import { ROLE_LABEL, type ActorRole } from "@/lib/domain";
+import { getOnboardingSnapshot } from "@/lib/onboarding";
+import { OnboardingBanners, type BannerState } from "@/components/dashboard/OnboardingBanners";
 
 export const dynamic = "force-dynamic";
 
@@ -49,11 +50,28 @@ export default async function DashboardPage({
   const tab: Tab = (TABS as readonly string[]).includes(rawTab ?? "") ? (rawTab as Tab) : "operations";
 
   const role = await getCurrentRole();
-  const [metrics, recent, layoutRow] = await Promise.all([
+  const [metrics, recent, layoutRow, onb, primaryEntity] = await Promise.all([
     computeDashboardMetrics(),
     db.auditLogEntry.findMany({ orderBy: { seq: "desc" }, take: 8 }),
     db.dashboardLayout.findUnique({ where: { role } }),
+    getOnboardingSnapshot(),
+    db.entity.findFirst({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ]);
+
+  const allGsDone = onb.sourceConnected && onb.assignmentCount > 0 && onb.entityCount > 1;
+  const banners: BannerState = {
+    showWelcome: onb.configured && !onb.provisionBannerDismissed,
+    welcomeText: onb.entityCount > 1
+      ? `We set up ${onb.entityCount} entities${onb.assignmentCount ? ` and invited ${onb.assignmentCount} team member${onb.assignmentCount === 1 ? "" : "s"}` : ""}.`
+      : `We set up ${onb.orgName ?? "your organization"} as your entity and assigned you the Admin role.`,
+    showGettingStarted: onb.configured && !onb.gettingStartedDismissed && !allGsDone,
+    showIncomplete: onb.hasGovernanceGap,
+    incompleteReason: onb.entityCount === 0
+      ? "No legal entity has been set up yet — every organization needs at least one Data Fiduciary."
+      : `${onb.entitiesMissingGovernance} entit${onb.entitiesMissingGovernance === 1 ? "y has" : "ies have"} no governance structure set.`,
+    primaryEntity: primaryEntity ?? null,
+    items: { source: onb.sourceConnected, teammates: onb.assignmentCount > 0, anotherEntity: onb.entityCount > 1 },
+  };
 
   let initialWidgets: SavedWidget[] = [];
   try {
@@ -72,6 +90,8 @@ export default async function DashboardPage({
   return (
     <Shell active="/dashboard" title="Dashboard">
       <PageHead title="Dashboard" titleTip="Your landing surface — a summary of what needs attention, pulled together from across the platform." />
+
+      <OnboardingBanners state={banners} />
 
       <nav className="stepper" style={{ marginBottom: 16 }}>
         {TABS.map((t) => (

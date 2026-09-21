@@ -129,12 +129,36 @@ async function seedDrift() {
   console.log("patch-rbac: drift seeded.");
 }
 
+/**
+ * Onboarding defaults for the long-lived demo: mark it already-configured so the
+ * onboarding banners don't fire on the seeded dashboard, and give existing
+ * entities a governance answer (they predate the per-entity field) so the
+ * non-dismissible incomplete-state banner stays quiet. A genuinely fresh org
+ * (no entities / null governance) still triggers the safety net.
+ */
+async function seedOnboardingDefaults() {
+  await prisma.orgSettings.upsert({
+    where: { id: "org" },
+    update: {},
+    create: { id: "org", governanceStructure: "dedicated_dpo" },
+  });
+  const org = await prisma.orgSettings.findUnique({ where: { id: "org" } });
+  if (org && !org.name) {
+    await prisma.orgSettings.update({ where: { id: "org" }, data: { name: "Meridian Financial Services", sizeTier: "mid_market", provisionBannerDismissed: true } });
+  }
+  // Existing entities predate per-entity governance — default them so the demo
+  // reads as fully configured. Fresh onboarding sets these explicitly.
+  await prisma.entity.updateMany({ where: { governanceStructure: null }, data: { governanceStructure: "dedicated_dpo" } });
+  console.log("patch-rbac: onboarding defaults ensured.");
+}
+
 async function main() {
   if (!process.env.DATABASE_URL) { console.log("patch-rbac: no DATABASE_URL, skipping."); return; }
   await backfillRoleCaps();
   await seedCustomRoles();
   await seedAssignments();
   await seedDrift();
+  await seedOnboardingDefaults();
 }
 
 main()

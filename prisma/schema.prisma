@@ -1671,6 +1671,11 @@ model Entity {
   sdfHistoryJson String  @default("[]")
   mergerPending  Boolean @default(false)
 
+  /// dedicated_dpo | combined_admin_dpo — governance is set PER ENTITY (each legal
+  /// entity is its own Data Fiduciary). Null = not yet answered during onboarding,
+  /// which drives the non-dismissible incomplete-state banner.
+  governanceStructure String?
+
   userMappings EntityUserMapping[]
   notices      Notice[]
   activities   ProcessingActivity[]
@@ -1882,8 +1887,22 @@ model ProvisioningRequest {
 /// self-approved, never skipped).
 model OrgSettings {
   id String @id @default("org")
-  /// dedicated_dpo | combined_admin_dpo
+  /// dedicated_dpo | combined_admin_dpo — the ORG-LEVEL routing used by the
+  /// approval flow. Onboarding sets governance per entity (Entity.governanceStructure)
+  /// and mirrors it here: combined if any entity is combined, else dedicated.
   governanceStructure String @default("dedicated_dpo")
+
+  // -- Onboarding ----------------------------------------------------------
+  name     String?
+  /// startup | mid_market | enterprise
+  sizeTier String?
+  /// Explicitly a single-user org (counts toward is_fully_configured).
+  singleUser Boolean @default(false)
+  /// One-time "we set up your org" banner (Screen 3) — dismissed forever once true.
+  provisionBannerDismissed Boolean @default(false)
+  /// Getting Started checklist card dismissal.
+  gettingStartedDismissed  Boolean @default(false)
+
   updatedAt DateTime @updatedAt
   updatedBy String?
 }
