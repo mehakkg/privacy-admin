@@ -548,6 +548,9 @@ textarea {
 .topbar-title {
   font-size: 13.5px;
   font-weight: 500;
+  /* Was inheriting a muted colour → low-contrast gray-on-white. Pin to the
+     primary text token, which has a WCAG-AA value in both themes. */
+  color: var(--text);
 }
 .topbar-spacer {
   flex: 1;
