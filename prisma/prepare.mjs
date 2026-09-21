@@ -61,19 +61,32 @@ if (!POOLED) {
     "npx prisma db push --skip-generate --accept-data-loss",
     DIRECT,
   );
-  if (synced) {
-    run("Seeding if empty", "npx tsx prisma/bootstrap.ts", POOLED);
-    // Idempotent: brings existing notice rows up to the revised data shape
-    // (Fiduciary / Category / Purpose / Rule 3) on databases seeded before it.
-    run("Backfilling notice metadata", "npx tsx prisma/patch-notices.ts", POOLED);
-    // Idempotent: seeds the element-level Data Map demo (Loan Application).
-    run("Seeding Data Map demo", "npx tsx prisma/patch-datamap.ts", POOLED);
-    // Idempotent: seeds the Vendor Risk (TPRM) demo vendors.
-    run("Seeding Vendor Risk demo", "npx tsx prisma/patch-tprm.ts", POOLED);
-    // Idempotent: backfills the Role capability model and seeds the Identity &
-    // Access demo (custom roles, assignments, drift).
-    run("Seeding Identity & Access demo", "npx tsx prisma/patch-rbac.ts", POOLED);
-    // Idempotent: seeds the Breach Management demo (live + submitted incidents).
-    run("Seeding Breach demo", "npx tsx prisma/patch-breach.ts", POOLED);
+  if (!synced) {
+    console.log(
+      "[prepare] db push did not complete this build. The database is very " +
+        "likely already provisioned from an earlier deploy, so the seed and " +
+        "patch steps below still run — each is idempotent and individually " +
+        "non-fatal. Gating them behind db push meant a single transient direct-" +
+        "connection hiccup silently skipped every demo backfill, which is worse " +
+        "than attempting them against an already-correct schema.",
+    );
   }
+  // Run the seed/patch steps whether or not THIS build's db push completed.
+  // Every step is idempotent (guarded by a presence check) and non-fatal, so
+  // running them against an already-provisioned database is safe, and it means a
+  // transient push failure no longer wipes out the demo data from the deploy.
+  run("Seeding if empty", "npx tsx prisma/bootstrap.ts", POOLED);
+  // Idempotent: brings existing notice rows up to the revised data shape
+  // (Fiduciary / Category / Purpose / Rule 3) on databases seeded before it, and
+  // seeds the consent records the Artifact Integrity dashboard verifies.
+  run("Backfilling notice metadata", "npx tsx prisma/patch-notices.ts", POOLED);
+  // Idempotent: seeds the element-level Data Map demo (Loan Application).
+  run("Seeding Data Map demo", "npx tsx prisma/patch-datamap.ts", POOLED);
+  // Idempotent: seeds the Vendor Risk (TPRM) demo vendors.
+  run("Seeding Vendor Risk demo", "npx tsx prisma/patch-tprm.ts", POOLED);
+  // Idempotent: backfills the Role capability model and seeds the Identity &
+  // Access demo (custom roles, assignments, drift).
+  run("Seeding Identity & Access demo", "npx tsx prisma/patch-rbac.ts", POOLED);
+  // Idempotent: seeds the Breach Management demo (live + submitted incidents).
+  run("Seeding Breach demo", "npx tsx prisma/patch-breach.ts", POOLED);
 }
