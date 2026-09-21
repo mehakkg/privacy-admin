@@ -6,7 +6,7 @@ import { Plus, ShieldAlert, Clock, Download, ArrowRight } from "lucide-react";
 import { Pill, Notice } from "@/components/ui";
 import { ActionError } from "@/components/actions";
 import { reassignAction, addSubtaskAction, setSubtaskStatusAction, requestExtensionAction } from "@/app/actions/dprr";
-import { SUBTASK_TEAMS, SUBTASK_STATUS_LABEL } from "@/lib/engines/dprr";
+import { SUBTASK_TEAMS, SUBTASK_STATUS_LABEL } from "@/lib/dprr";
 import type { ActionResult } from "@/app/actions/requests";
 
 export interface TicketDetail {

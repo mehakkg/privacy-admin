@@ -3,6 +3,7 @@ import { audited, type AuditActor } from "@/lib/engines/audit";
 import { emit } from "@/lib/engines/notification";
 import { computeStatutoryCeiling, evaluateSla } from "@/lib/engines/sla";
 import { GRIEVANCE_REDRESSAL_CEILING } from "@/lib/dpdp/statute";
+import { SUBTASK_TEAMS, SUBTASK_STATUSES } from "@/lib/dprr";
 import type { TxClient } from "@/lib/tx";
 
 /**
@@ -11,17 +12,10 @@ import type { TxClient } from "@/lib/tx";
  * This is the "auto-assignment engine" the DataPrincipalRequest schema comment
  * anticipated. It does not re-model the request or recompute its status/SLA —
  * it reuses evaluateSla / the statute constants and layers routing, extension
- * and automatic-escalation state onto a companion DPRRTicket.
+ * and automatic-escalation state onto a companion DPRRTicket. Shared constants
+ * live in @/lib/dprr so client components can use them without importing this
+ * (server-only) module.
  */
-
-export const SUBTASK_TEAMS = ["fulfilment", "legal", "it"] as const;
-export type SubtaskTeam = (typeof SUBTASK_TEAMS)[number];
-export const SUBTASK_STATUSES = ["open", "in_progress", "done"] as const;
-export const SUBTASK_STATUS_LABEL: Record<string, string> = {
-  open: "Open",
-  in_progress: "In progress",
-  done: "Done",
-};
 
 /**
  * The routing rule. Deterministic and explainable — grievance-sourced requests
