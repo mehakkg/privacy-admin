@@ -8,7 +8,7 @@ const TABS = [
   { href: "/access/assignments", label: "Assignments" },
   { href: "/access/approval-queue", label: "Approval Queue" },
   { href: "/access/drift", label: "Drift" },
-  { href: "/access/organization", label: "Organization setup" },
+  { href: "/access/organization", label: "Governance Setup" },
 ];
 
 export function AccessTabs() {

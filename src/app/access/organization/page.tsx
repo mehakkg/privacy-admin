@@ -10,7 +10,7 @@ export default async function OrganizationSetupPage() {
   return (
     <div className="stack">
       <PageHead
-        title="Organization setup"
+        title="Governance setup"
         titleTip="How approval requests route across the product. A combined Admin+DPO org still goes through the Approval Queue — the review is never skipped — and self-approvals are marked in the audit trail."
       />
       <OrganizationSetup structure={structure} />

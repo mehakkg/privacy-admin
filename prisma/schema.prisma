@@ -1676,6 +1676,10 @@ model Entity {
   /// which drives the non-dismissible incomplete-state banner.
   governanceStructure String?
 
+  /// Per-entity legal-name override (Settings → Organization → Profile → per-entity).
+  /// Null = inherits the org-wide legal name.
+  legalName String?
+
   userMappings EntityUserMapping[]
   notices      Notice[]
   activities   ProcessingActivity[]
@@ -1881,6 +1885,20 @@ model ProvisioningRequest {
   @@index([status])
 }
 
+/// Branding applied to Data-Principal-facing surfaces (Notices, Preference Centre).
+/// `entityId` null = the org-wide default; a non-null row is a per-entity override.
+/// Per-entity override is opt-in — absence of a row means the entity inherits the
+/// org default, never an error state.
+model OrganizationBranding {
+  id           String  @id @default(cuid())
+  entityId     String? @unique
+  logoUrl      String?
+  primaryColor String?
+  faviconUrl   String?
+  updatedAt    DateTime @updatedAt
+  updatedBy    String?
+}
+
 /// Singleton org-level configuration (id is always "org"). Holds the governance
 /// structure that decides how approvals route: a dedicated DPO, or a combined
 /// Admin+DPO where the same person reviews their own requests (recorded as
@@ -1896,6 +1914,14 @@ model OrgSettings {
   name     String?
   /// startup | mid_market | enterprise
   sizeTier String?
+
+  // -- Organization profile (Settings → Organization → Profile) ------------
+  /// Legal entity name — surfaces on all consent notices and DSR correspondence.
+  legalName    String?
+  displayName  String?
+  industry     String?
+  address      String?
+  contactEmail String?
   /// Explicitly a single-user org (counts toward is_fully_configured).
   singleUser Boolean @default(false)
   /// One-time "we set up your org" banner (Screen 3) — dismissed forever once true.
