@@ -41,6 +41,9 @@ model Actor {
 
   onboardingEscalationFor OnboardingState[] @relation("OnboardingEscalationContact")
   onboardingBackupFor     OnboardingState[] @relation("OnboardingBackupContact")
+
+  dprrTicketsAssigned DPRRTicket[]    @relation("DprrTicketAssignee")
+  dprrExtensions      DPRRExtension[] @relation("DprrExtensionRequestedBy")
 }
 
 /// A Data Principal under the DPDP Act. Identifiers are separate rows so the
@@ -117,6 +120,7 @@ model DataPrincipalRequest {
   exceptions    RetentionException[]
   escalations   Escalation[]
   notifications Notification[]
+  dprrTicket    DPRRTicket?
 
   @@index([status])
   @@index([slaDeadline])
@@ -2181,4 +2185,102 @@ model RemediationTask {
   dueDate    DateTime?
   incident BreachIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
   @@index([incidentId])
+}
+
+// ---------------------------------------------------------------------------
+// DPRR Queue & SLA/Routing (Scenario 10)
+//
+// A DPRRTicket is the routing/SLA lifecycle layer over an existing
+// DataPrincipalRequest — it does NOT re-model the request or recompute its
+// status. It adds the four things the base request lacked: an owner set by the
+// auto-assignment router, an extendable deadline that never loses sight of the
+// original, sub-tasks, and a permanent record of automatic Board escalation.
+// ---------------------------------------------------------------------------
+
+model DPRRTicket {
+  id        String @id @default(cuid())
+  requestId String @unique
+
+  /// unassigned | assigned | reassigned
+  routingState       String  @default("unassigned")
+  assignedToActorId  String?
+  /// Why the router picked this owner (shown so routing is auditable, not magic).
+  autoAssignedReason String?
+
+  /// Snapshot of the request's fulfilment deadline when the ticket was created.
+  /// Immutable — an extension never overwrites it, so the original commitment is
+  /// always visible next to the current one.
+  originalDeadline DateTime
+  /// The deadline in force now. Moves forward only through a logged DPRRExtension.
+  currentDeadline  DateTime
+
+  /// Set by the system, never by a person, and never unset. There is no action
+  /// anywhere that clears these fields — escalation to the Board is permanent.
+  boardEscalated   Boolean   @default(false)
+  boardEscalatedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  request    DataPrincipalRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  assignedTo Actor?               @relation("DprrTicketAssignee", fields: [assignedToActorId], references: [id])
+  subtasks   DPRRSubtask[]
+  extensions DPRRExtension[]
+  escalations DPRREscalation[]
+
+  @@index([routingState])
+  @@index([currentDeadline])
+}
+
+model DPRRSubtask {
+  id       String @id @default(cuid())
+  ticketId String
+  title    String
+  /// fulfilment | legal | it
+  team       String  @default("fulfilment")
+  assignedTo String?
+  /// open | in_progress | done
+  status  String    @default("open")
+  dueDate DateTime?
+  createdAt DateTime @default(now())
+
+  ticket DPRRTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  @@index([ticketId])
+}
+
+/// Append-only. Each row records one deadline move with a required justification;
+/// rows are never edited or deleted, so the extension history is the audit trail.
+model DPRRExtension {
+  id       String @id @default(cuid())
+  ticketId String
+
+  previousDeadline DateTime
+  newDeadline      DateTime
+  /// Required — an extension with no stated reason is refused server-side.
+  justification    String
+  requestedByActorId String?
+
+  createdAt DateTime @default(now())
+
+  ticket      DPRRTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  requestedBy Actor?     @relation("DprrExtensionRequestedBy", fields: [requestedByActorId], references: [id])
+  @@index([ticketId])
+}
+
+/// A record that the system automatically escalated a ticket to the Data
+/// Protection Board. Deliberately has NO status/withdrawn/ruledBy field: there is
+/// no such thing as un-escalating, so the model offers no way to express it.
+model DPRREscalation {
+  id       String @id @default(cuid())
+  ticketId String
+
+  /// Always "board" — routed to the Data Protection Board.
+  targetRole String @default("board")
+  /// Machine reason for the trigger, e.g. statutory_ceiling_exceeded.
+  trigger    String
+  reason     String
+
+  createdAt DateTime @default(now())
+
+  ticket DPRRTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  @@index([ticketId])
 }

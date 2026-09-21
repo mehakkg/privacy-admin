@@ -78,7 +78,7 @@ function navGroups(openRequests: number, role: string): NavEntry[] {
       children: [
         { href: "/requests", label: "Requests", ready: true },
         { href: "/escalations", label: "Escalations", ready: true },
-        { href: "/requests/sla", label: "SLA & routing", ready: true },
+        { href: "/requests/sla", label: "DPRR queue & SLA", ready: true },
       ],
     },
     // Breach Management and Vendor Risk are TOP-LEVEL, not nested under Risk &

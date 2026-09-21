@@ -3376,3 +3376,32 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 .trend-bar > span { display: block; height: 100%; }
 .trend-bar-num { width: 28px; text-align: right; font-weight: 600; font-size: 12.5px; }
 @media (max-width: 720px) { .kanban { grid-template-columns: 1fr; } }
+
+/* ---- DPRR queue & ticket detail ---- */
+.dprr-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 860px) {
+  .dprr-grid { grid-template-columns: 1fr; }
+}
+.dprr-grid .kv {
+  grid-template-columns: 150px 1fr;
+  margin-bottom: 2px;
+}
+.kv .k { color: var(--text-3); }
+.ext-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ext-list li {
+  padding: 8px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--bg-subtle);
+}

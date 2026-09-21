@@ -110,6 +110,13 @@ export type NotificationEvent =
       incidentId: string;
       reference: string;
       severity: string;
+    }
+  // --- DPRR: automatic Board escalation of a rights request (system-set) ------
+  | {
+      kind: "dprr.board_escalated";
+      ticketId: string;
+      requestRef: string;
+      reason: string;
     };
 
 interface Fanout {
@@ -234,6 +241,14 @@ function fanout(event: NotificationEvent): Fanout {
         severity: "critical",
       };
 
+    case "dprr.board_escalated":
+      return {
+        roles: ["dpo", "grievance_officer"],
+        title: `Escalated to the Board — ${event.requestRef}`,
+        body: event.reason,
+        severity: "critical",
+      };
+
     case "integration.sync_failed":
       return {
         roles: ["admin"],
@@ -261,7 +276,7 @@ function fanout(event: NotificationEvent): Fanout {
 function categoryFor(kind: string): string {
   if (kind === "integration.sync_failed" || kind === "discovery.scan_failed") return "integration_sync_failure";
   if (kind.startsWith("escalation")) return "dpo_approval_needed";
-  if (kind === "sla.threshold" || kind.startsWith("completion") || kind === "execution.verified" || kind === "execution.failed") return "dsr_sla_deadline";
+  if (kind === "sla.threshold" || kind.startsWith("completion") || kind === "execution.verified" || kind === "execution.failed" || kind.startsWith("dprr")) return "dsr_sla_deadline";
   if (kind.startsWith("breach")) return "breach_clock";
   if (kind.startsWith("drift")) return "drift_detected";
   if (kind === "retention.blocked" || kind.startsWith("policy")) return "policy_violation";
@@ -274,6 +289,7 @@ function hrefFor(event: NotificationEvent): string | null {
     case "integration.sync_failed": return `/discovery/sources/${event.sourceId}`;
     case "discovery.scan_failed": return "/discovery/sources";
     case "breach.detected": return `/breach/incidents/${event.incidentId}`;
+    case "dprr.board_escalated": return `/requests/sla/${event.ticketId}`;
     case "escalation.raised":
     case "escalation.ruled": return "/access/approval-queue";
     case "sla.threshold":

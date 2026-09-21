@@ -89,4 +89,6 @@ if (!POOLED) {
   run("Seeding Identity & Access demo", "npx tsx prisma/patch-rbac.ts", POOLED);
   // Idempotent: seeds the Breach Management demo (live + submitted incidents).
   run("Seeding Breach demo", "npx tsx prisma/patch-breach.ts", POOLED);
+  // Idempotent: materialises DPRR tickets + routing/extension/escalation demo.
+  run("Seeding DPRR demo", "npx tsx prisma/patch-dprr.ts", POOLED);
 }
