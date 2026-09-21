@@ -13,6 +13,9 @@ export interface Metric {
   value: number;
   display: string;
   band?: "teal" | "amber" | "red";
+  /** Typography variant for the value. Omitted → auto-detected from the display
+   *  string (bare number / fraction / percent → kpi; sentence-length → status). */
+  variant?: "kpi" | "status";
   trend?: { dir: "up" | "down" | "flat"; from?: number };
   sparkline?: number[];
   link: string | null;
@@ -211,7 +214,7 @@ export function RiskDashboard({
                       {expandedJourney === j.name && j.factors.length > 0 && (
                         <tr>
                           <td colSpan={4} style={{ background: "var(--bg-subtle, #fafafa)" }}>
-                            <div className="section-label">What's dragging this journey's score</div>
+                            <div className="section-label">What&rsquo;s dragging this journey&rsquo;s score</div>
                             <div className="stack" style={{ gap: 4 }}>
                               {j.factors.map((f) => (
                                 <Link key={f.label} href={f.link} className="row" style={{ gap: 6 }}>
@@ -261,9 +264,19 @@ export function RiskDashboard({
   );
 }
 
+/** KPI (short number/fraction/percent) vs status-summary (sentence). Explicit
+ *  `variant` wins; otherwise auto-detect — we err toward "status" for anything
+ *  that isn't clearly a short numeric, since guessing "kpi" wrong is the bug. */
+function isKpiValue(m: Metric): boolean {
+  if (m.variant) return m.variant === "kpi";
+  const t = m.display.trim();
+  return /^[\d.,]+%?$/.test(t) || /^\d+\s*(?:of|\/)\s*\d+/i.test(t) || t.length <= 6;
+}
+
 function MetricCard({ m, onOpen }: { m: Metric; onOpen: () => void }) {
   const disconnected = m.freshness.status === "disconnected";
   const stale = m.freshness.status === "stale";
+  const kpi = isKpiValue(m);
 
   const inner = (
     <>
@@ -285,7 +298,7 @@ function MetricCard({ m, onOpen }: { m: Metric; onOpen: () => void }) {
       ) : (
         <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-end", gap: 8 }}>
           <div
-            className="metric-value"
+            className={`metric-value ${kpi ? "kpi" : "status"}`}
             style={{ color: m.band ? BAND_COLOR[m.band] : undefined }}
           >
             {m.display}

@@ -751,6 +751,9 @@ table.dtable {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 12px;
+  /* auto-fill (not auto-fit) keeps a partial last row's cards at the same width
+     as the full rows above, rather than stretching them to fill the row. */
+  align-items: start;
 }
 .metric-card {
   display: block;
@@ -780,10 +783,22 @@ table.dtable {
   font-weight: 700;
 }
 .metric-value {
+  margin-top: 8px;
+}
+/* Numeric KPI: large, bold, single line (unchanged from before). */
+.metric-value.kpi {
   font-size: 30px;
   font-weight: 700;
   line-height: 1.1;
-  margin-top: 8px;
+  white-space: nowrap;
+}
+/* Status-summary: sentence-length values — smaller (title weight, not KPI), wraps
+   gracefully to two lines instead of a broken oversized wrap. */
+.metric-value.status {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: normal;
 }
 .metric-freshness {
   font-size: 11px;
