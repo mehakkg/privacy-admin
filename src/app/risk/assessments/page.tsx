@@ -24,7 +24,12 @@ export default async function RiskAssessmentsPage() {
 
   const outstanding = assessments.filter((a) => a.vendorStatus !== "submitted");
   const awaitingLegal = assessments.filter((a) => a.vendorStatus === "submitted" && a.legalReviewStatus !== "verified");
-  const highRisk = assessments.filter((a) => a.classification === "high" || a.classification === "critical");
+  // Effective risk = the verified classification if there is one, else the
+  // system baseline — so the count matches the "high"/"critical" rows shown.
+  const highRisk = assessments.filter((a) => {
+    const r = a.classification ?? a.baselineRating;
+    return r === "high" || r === "critical";
+  });
 
   return (
     <Shell active="/risk/assessments" title="Risk & Compliance / Assessments">
