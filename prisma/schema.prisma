@@ -909,8 +909,15 @@ model CookieCategory {
   description String
   /// on | off — default consent state; strictly necessary is the only `on`.
   defaultState String
-  approvedBy   String
-  approvedAt   DateTime
+  /// approved | pending_dpo_approval — custom categories are proposed by Admin
+  /// and go live only once the DPO approves (same pattern as PurposeTag).
+  status       String @default("approved")
+  /// True for a custom category beyond the 4 standard ones.
+  custom       Boolean @default(false)
+  proposedBy   String?
+  proposedAt   DateTime?
+  approvedBy   String?
+  approvedAt   DateTime?
 
   scripts CookieScript[]
 }
@@ -1014,9 +1021,48 @@ model NoticeVariant {
   language String
   content  String @default("")
 
+  /// True = inherit base content; false = overridden with its own content.
+  inherit       Boolean @default(true)
+  /// Hash of the base content captured when this variant was last reviewed/
+  /// overridden. If the base changes after, the variant is flagged stale.
+  baseHashAtReview String?
+  /// draft | qa_pending | qa_passed | published — per-variant publish status.
+  publishStatus String @default("draft")
+  publishedAt   DateTime?
+
   notice Notice @relation(fields: [noticeId], references: [id])
+  deviceChecks NoticeDeviceCheck[]
 
   @@unique([noticeId, language])
+}
+
+/// One cell of the device/browser rendering-QA matrix for a notice variant.
+model NoticeDeviceCheck {
+  id        String @id @default(cuid())
+  variantId String
+  device    String
+  browser   String
+  /// not_run | pass | fail
+  status    String @default("not_run")
+  detail    String?
+  /// automated (headless snapshot) | manual (device types that can't be automated)
+  method    String @default("automated")
+  updatedAt DateTime @updatedAt
+
+  variant NoticeVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@index([variantId])
+}
+
+/// A managed, named grouping of data fields (Screen 2). Deleting one reverts its
+/// member fields to ungrouped — the fields are never deleted.
+model DataCategory {
+  id          String @id @default(cuid())
+  name        String @unique
+  description String?
+  createdAt   DateTime @default(now())
+
+  fields ClassifiedField[]
 }
 
 // ---------------------------------------------------------------------------
@@ -1299,6 +1345,12 @@ model CookieScanFinding {
   page       String
   /// true = declared in the cookie policy; false = undisclosed, needs a call.
   disclosed  Boolean
+  /// true = executed before the consent event was recorded for the session.
+  firedBeforeConsent Boolean @default(false)
+  /// Auto-blocked by the scan on flag (undisclosed or pre-consent firing).
+  autoBlocked Boolean @default(false)
+  /// Plain-language but specific technical explanation of the issue.
+  technicalDetail String?
   /// open | categorised | blocked | dismissed
   status     String @default("open")
   suggestedCategory String?
@@ -1695,8 +1747,13 @@ model ClassifiedField {
   driftFlag        Boolean @default(false)
   previousType     String?
 
-  source     DiscoverySource @relation(fields: [sourceId], references: [id])
-  purposeTag PurposeTag?     @relation(fields: [purposeTagId], references: [id])
+  /// Screen 2: managed grouping this field belongs to (distinct from the free
+  /// `category` string). Null = ungrouped. Set null when its category is deleted.
+  dataCategoryId String?
+
+  source       DiscoverySource @relation(fields: [sourceId], references: [id])
+  purposeTag   PurposeTag?     @relation(fields: [purposeTagId], references: [id])
+  dataCategory DataCategory?   @relation(fields: [dataCategoryId], references: [id])
 
   triageItems   TriageItem[]
   rotCandidate  ROTCandidate?
@@ -1708,6 +1765,7 @@ model ClassifiedField {
   @@index([confidence])
   @@index([category])
   @@index([purposeTagId])
+  @@index([dataCategoryId])
 }
 
 /// Anything awaiting an Admin decision.

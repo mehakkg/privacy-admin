@@ -97,4 +97,6 @@ if (!POOLED) {
   run("Seeding Fulfilment demo", "npx tsx prisma/patch-fulfillment.ts", POOLED);
   // Idempotent: seeds Scenario 4 discovery governance + quarantine demo.
   run("Seeding Discovery governance demo", "npx tsx prisma/patch-scenario4.ts", POOLED);
+  // Idempotent: seeds Scenario 6 data categories, notice variants, cookie category.
+  run("Seeding Consent/Notices demo", "npx tsx prisma/patch-scenario6.ts", POOLED);
 }

@@ -49,6 +49,7 @@ function navGroups(openRequests: number, role: string): NavEntry[] {
         { href: "/discovery/scan-results", label: "Scan results", ready: true },
         { href: "/data-map/processing-activities", label: "Processing activities", ready: true },
         { href: "/discovery/inventory", label: "Data inventory", ready: true },
+        { href: "/data-map/categories", label: "Data categories", ready: true },
         { href: "/discovery/triage", label: "Review queue", ready: true },
         { href: "/discovery/quarantine", label: "Quarantine", ready: true },
         { href: "/discovery/identity-resolution", label: "Identity resolution", ready: true },
@@ -71,6 +72,8 @@ function navGroups(openRequests: number, role: string): NavEntry[] {
         // banner config, geo/language) from general consent capture, so it is its
         // own sub-tab rather than folded into Consent collection.
         { href: "/consent/cookies", label: "Cookie consent", ready: true },
+        { href: "/consent/cookie-categories", label: "Cookie categories", ready: true },
+        { href: "/consent/script-scan", label: "Script compliance scan", ready: true },
       ],
     },
     {

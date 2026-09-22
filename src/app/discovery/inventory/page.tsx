@@ -2,6 +2,7 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
 import { CompactFilterBar } from "@/components/CompactFilterBar";
+import { TagToPurposeButton } from "@/components/datamap/TagToPurposeButton";
 import {
   InfoTip,
   PageHead,
@@ -98,6 +99,8 @@ export default async function InventoryPage({
     db.purposeTag.findMany({ where: { status: "approved" }, orderBy: { name: "asc" } }),
     db.classifiedField.count({ where: { purposeTagId: null } }),
   ]);
+  const processors = await db.dataProcessor.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } });
+  const purposeOpts = purposes.map((p) => ({ id: p.id, name: p.name, retention: p.retention, lawfulBasis: p.lawfulBasis }));
 
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const entities = [...new Set(sources.map((s) => s.entityId).filter(Boolean))] as string[];
@@ -250,11 +253,12 @@ export default async function InventoryPage({
                       <span className="cell-sub">{f.purposeTag.name}</span>
                     ) : (
                       // Flagged, never blank.
-                      <span className="row" style={{ gap: 5 }}>
+                      <span className="row" style={{ gap: 5, alignItems: "center" }}>
                         <Pill tone="yellow">Untagged</Pill>
+                        <TagToPurposeButton fieldId={f.id} fieldPath={f.fieldPath} purposes={purposeOpts} processors={processors} />
                         <InfoTip
                           align="left"
-                          text="No lawful purpose has been recorded for this field. Assign one in Classification Review, or raise it with the DPO if no approved purpose fits."
+                          text="No lawful purpose has been recorded for this field. Tag it to a purpose here, or raise it with the DPO if no approved purpose fits."
                         />
                       </span>
                     )}
