@@ -3,7 +3,7 @@ import { Shell } from "@/components/Shell";
 import { CompactFilterBar } from "@/components/CompactFilterBar";
 import { PageHead, Stat } from "@/components/ui";
 import { ProtectionRulesTable, type RuleRow } from "@/components/protectionRules";
-import { decodeList } from "@/lib/codec/json";
+import { decodeList, decodeObject } from "@/lib/codec/json";
 
 export const dynamic = "force-dynamic";
 
@@ -25,13 +25,14 @@ export default async function ProtectionRulesPage({
 
   const [rules, scopes, exceptions, systems, locations] = await Promise.all([
     db.protectionRule.findMany({ orderBy: { ruleName: "asc" } }),
-    db.protectionRuleScope.findMany(),
+    db.protectionRuleScope.findMany({ select: { ruleId: true, systemsJson: true, fieldsJson: true } }),
     db.protectionRuleException.findMany(),
     db.connectedSystem.findMany({ orderBy: { name: "asc" } }),
     db.dataLocation.findMany({ where: { systemId: { not: null } }, select: { systemId: true, dataCategoriesJson: true } }),
   ]);
 
   const scopeByRule = new Map(scopes.map((s) => [s.ruleId, decodeList(s.systemsJson)]));
+  const fieldsByRule = new Map(scopes.map((s) => [s.ruleId, decodeObject<Record<string, string[]>>(s.fieldsJson) ?? {}]));
 
   // Per-system data categories, so configuring a scope onto a system that does
   // not hold the rule's data category can be flagged (not silently accepted).
@@ -45,6 +46,7 @@ export default async function ProtectionRulesPage({
 
   let rows: RuleRow[] = rules.map((r) => {
     const scoped = scopeByRule.get(r.id) ?? [];
+    const scopedFields = fieldsByRule.get(r.id) ?? {};
     const ruleExc = exceptions.filter((e) => e.ruleId === r.id);
     const activeExc = ruleExc.filter((e) => e.status === "approved");
     const pendingExc = ruleExc.filter((e) => e.status === "requested");
@@ -62,6 +64,7 @@ export default async function ProtectionRulesPage({
       definition: r.definition,
       setBy: r.approvedBy,
       scopedSystemIds: scoped,
+      scopedFields,
       status,
       exceptions: activeExc.map((e) => ({ process: e.process, narrowedScope: e.narrowedScope })),
       pendingException: pendingExc.length > 0,

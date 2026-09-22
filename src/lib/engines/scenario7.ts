@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { audited, type AuditActor } from "@/lib/engines/audit";
 import { isCombinedGovernance } from "@/lib/governance";
-import { suggestMetrics } from "@/lib/scenario7";
+import { suggestMetrics, parseUserNames } from "@/lib/scenario7";
 import type { TxClient } from "@/lib/tx";
 
 /**
@@ -96,10 +96,9 @@ export async function connectRiskSource(sourceId: string, metrics: string[], act
  *  to parse fall back to manual entry — the entity records a partial_import. */
 export async function createAcquiredEntity(name: string, rawUsers: string, actor: AuditActor) {
   if (!name.trim()) throw Object.assign(new Error("Name the entity."), { name: "ValidationError" });
-  const lines = rawUsers.split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
-  const valid = lines.filter((l) => /^[A-Za-z][A-Za-z .'-]{1,60}$/.test(l));
-  const failed = lines.filter((l) => !valid.includes(l));
-  const importStatus = lines.length === 0 ? "manual" : failed.length > 0 ? "partial_import" : "bulk_imported";
+  const { valid, failed } = parseUserNames(rawUsers);
+  const total = valid.length + failed.length;
+  const importStatus = total === 0 ? "manual" : failed.length > 0 ? "partial_import" : "bulk_imported";
 
   const entity = await audited(
     { actor, action: "entity.acquired_created", targetType: "Entity", targetId: name.trim(), eventDescription: `Created acquired entity ${name.trim()} (${importStatus}, ${valid.length} users imported)`, payload: { importStatus, imported: valid.length, failed: failed.length } },

@@ -7,7 +7,7 @@ import { Plus, Upload, AlertTriangle } from "lucide-react";
 import { Pill, Notice } from "@/components/ui";
 import { ActionError } from "@/components/actions";
 import { createAcquiredEntityAction } from "@/app/actions/scenario7";
-import { ENTITY_SOURCE_LABEL, IMPORT_STATUS_LABEL, IMPORT_STATUS_TONE } from "@/lib/scenario7";
+import { ENTITY_SOURCE_LABEL, IMPORT_STATUS_LABEL, IMPORT_STATUS_TONE, parseUserNames } from "@/lib/scenario7";
 import type { ActionResult } from "@/app/actions/requests";
 
 export interface EntityRow { id: string; name: string; source: string; importStatus: string; mappingCount: number }
@@ -25,6 +25,12 @@ export function EntitySetupForm({ entities }: { entities: EntityRow[] }) {
     if (r.ok) { setName(""); setRawUsers(""); router.refresh(); }
   });
 
+  // Live structure preview — exactly what Create will produce, using the same
+  // parser the server import uses, so what you see is what gets created.
+  const preview = parseUserNames(rawUsers);
+  const previewTotal = preview.valid.length + preview.failed.length;
+  const showPreview = name.trim().length > 0 || previewTotal > 0;
+
   return (
     <div className="dprr-grid" style={{ alignItems: "start" }}>
       <div className="card">
@@ -41,7 +47,19 @@ export function EntitySetupForm({ entities }: { entities: EntityRow[] }) {
             <span>Bulk-import users <span className="cell-sub">paste or CSV — one name per line/comma (reuses the Onboarding Structured-path importer)</span></span>
             <textarea className="input" rows={5} value={rawUsers} onChange={(e) => setRawUsers(e.target.value)} placeholder={"Aarti Nair\nRohan Mehta\nsvc-billing (invalid → falls back to manual)"} />
           </label>
-          <button className="btn primary" disabled={pending || !name.trim()} onClick={submit}><Upload size={14} /> Create entity &amp; import structure</button>
+          {showPreview && (
+            <div className="notice info compact" style={{ margin: "10px 0" }}>
+              <div className="notice-title">Structure preview — this will create</div>
+              <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+                <li>Entity: <strong>{name.trim() || "(name required)"}</strong> · acquired</li>
+                <li>{preview.valid.length} user{preview.valid.length === 1 ? "" : "s"} imported{preview.valid.length > 0 ? `: ${preview.valid.join(", ")}` : ""}</li>
+                {preview.failed.length > 0 && (
+                  <li style={{ color: "var(--yellow)" }}>{preview.failed.length} row{preview.failed.length === 1 ? "" : "s"} fall back to manual entry: {preview.failed.join(", ")}</li>
+                )}
+              </ul>
+            </div>
+          )}
+          <button className="btn primary" disabled={pending || !name.trim()} onClick={submit}><Upload size={14} /> {preview.failed.length > 0 ? "Confirm — create entity & import the rest" : "Create entity & import structure"}</button>
           <p className="cell-sub" style={{ marginTop: 8 }}><AlertTriangle size={11} style={{ verticalAlign: "-1px" }} /> Rows that don&apos;t parse as a person name fall back to manual entry for that portion only — the rest still import.</p>
         </div>
       </div>

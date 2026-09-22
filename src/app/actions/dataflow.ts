@@ -122,8 +122,17 @@ export async function flagFlowForReviewAction(
 export async function saveRuleScopeAction(
   ruleId: string,
   systemIds: string[],
+  fieldsBySystem: Record<string, string[]> = {},
 ): Promise<ActionResult> {
   const { actor } = await getSession();
+  // Keep field selections only for systems still in scope, and drop empty
+  // selections (empty === "all fields in that system", the default).
+  const fields: Record<string, string[]> = {};
+  for (const sid of systemIds) {
+    const cats = fieldsBySystem[sid];
+    if (cats && cats.length > 0) fields[sid] = cats;
+  }
+  const fieldsJson = encodeObject(fields);
   return run("/data-flow/protection-rules", () =>
     audited(
       {
@@ -131,13 +140,13 @@ export async function saveRuleScopeAction(
         action: "protection.scope_saved",
         targetType: "ProtectionRuleScope",
         targetId: ruleId,
-        payload: { ruleId, systemIds },
+        payload: { ruleId, systemIds, fields },
       },
       (tx: TxClient) =>
         tx.protectionRuleScope.upsert({
           where: { ruleId },
-          create: { ruleId, systemsJson: encodeList(systemIds), updatedBy: actor.label },
-          update: { systemsJson: encodeList(systemIds), updatedBy: actor.label },
+          create: { ruleId, systemsJson: encodeList(systemIds), fieldsJson, updatedBy: actor.label },
+          update: { systemsJson: encodeList(systemIds), fieldsJson, updatedBy: actor.label },
         }),
     ),
   );

@@ -2085,6 +2085,11 @@ model ProtectionRuleScope {
   id     String @id @default(cuid())
   ruleId String @unique
   systemsJson String @default("[]")
+  /// Field-level narrowing WITHIN a scoped system: JSON object of
+  /// { [systemId]: string[] of data categories the rule applies to }. A system
+  /// absent from this object (or with an empty array) means "all fields in that
+  /// system" — so system-only scoping stays the zero-config default.
+  fieldsJson  String @default("{}")
   updatedAt   DateTime @updatedAt
   updatedBy   String?
 }

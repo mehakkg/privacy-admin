@@ -23,6 +23,9 @@ export interface RuleRow {
   definition: string;
   setBy: string;
   scopedSystemIds: string[];
+  /** Field-level narrowing per scoped system: { [systemId]: categories }. A
+   *  system absent here (or empty) means the rule covers all its fields. */
+  scopedFields: Record<string, string[]>;
   status: "implemented" | "needs_scope" | "exception_active";
   exceptions: { process: string; narrowedScope: string }[];
   pendingException: boolean;
@@ -130,7 +133,7 @@ export function ProtectionRulesTable({
             systems={systems}
             systemCategories={systemCategories}
             pending={pending}
-            onSaveScope={(ids) => run(() => saveRuleScopeAction(r.id, ids))}
+            onSaveScope={(ids, fields) => run(() => saveRuleScopeAction(r.id, ids, fields))}
             onRequestException={(process, reason, narrowed) =>
               run(() => requestExceptionAction(r.id, r.ruleName, process, reason, narrowed))
             }
@@ -166,16 +169,28 @@ function RuleDrawer({
   systems: { id: string; name: string }[];
   systemCategories?: Record<string, string[]>;
   pending: boolean;
-  onSaveScope: (ids: string[]) => void;
+  onSaveScope: (ids: string[], fields: Record<string, string[]>) => void;
   onRequestException: (process: string, reason: string, narrowed: string) => void;
 }) {
   const [scope, setScope] = useState<string[]>(rule.scopedSystemIds);
+  const [fields, setFields] = useState<Record<string, string[]>>(rule.scopedFields ?? {});
   const [reqExc, setReqExc] = useState(false);
   const [process, setProcess] = useState("");
   const [reason, setReason] = useState("");
   const [narrowed, setNarrowed] = useState("");
 
   const toggle = (id: string) => setScope((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  // Toggle one data category (field) within a system. Empty selection for a
+  // system means "all fields" — the zero-config default — so we drop the key.
+  const toggleField = (systemId: string, cat: string) =>
+    setFields((f) => {
+      const cur = f[systemId] ?? [];
+      const next = cur.includes(cat) ? cur.filter((c) => c !== cat) : [...cur, cat];
+      const copy = { ...f };
+      if (next.length === 0) delete copy[systemId];
+      else copy[systemId] = next;
+      return copy;
+    });
 
   return (
     <div className="stack" style={{ gap: 14 }}>
@@ -195,14 +210,43 @@ function RuleDrawer({
       </div>
 
       <div>
-        <div className="section-label">Scope — which systems this rule applies to</div>
+        <div className="section-label">Scope — which systems &amp; fields this rule applies to</div>
         <div className="stack" style={{ gap: 4 }}>
-          {systems.map((s) => (
-            <label key={s.id} className="row" style={{ gap: 8 }}>
-              <input type="checkbox" checked={scope.includes(s.id)} onChange={() => toggle(s.id)} />
-              <span>{s.name}</span>
-            </label>
-          ))}
+          {systems.map((s) => {
+            const checked = scope.includes(s.id);
+            const cats = systemCategories[s.id] ?? [];
+            const sel = fields[s.id] ?? [];
+            return (
+              <div key={s.id}>
+                <label className="row" style={{ gap: 8 }}>
+                  <input type="checkbox" checked={checked} onChange={() => toggle(s.id)} />
+                  <span>{s.name}</span>
+                </label>
+                {/* Field-level narrowing appears only for a scoped system that has
+                    known data categories; none selected = all fields. */}
+                {checked && cats.length > 0 && (
+                  <div className="row" style={{ gap: 6, flexWrap: "wrap", margin: "4px 0 6px 26px" }}>
+                    <span className="cell-sub" style={{ marginRight: 2 }}>Fields:</span>
+                    {cats.map((c) => {
+                      const on = sel.includes(c);
+                      return (
+                        <button
+                          key={c}
+                          type="button"
+                          className={`chip${on ? " on" : ""}`}
+                          onClick={() => toggleField(s.id, c)}
+                          title={on ? "Applied to this field" : "Click to narrow the rule to this field"}
+                        >
+                          {c}
+                        </button>
+                      );
+                    })}
+                    <span className="cell-sub">{sel.length === 0 ? "all fields" : `${sel.length} field${sel.length === 1 ? "" : "s"}`}</span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
         {(() => {
           // Flag any configured system that does not hold the rule's data
@@ -222,7 +266,7 @@ function RuleDrawer({
           ) : null;
         })()}
         <div className="row" style={{ marginTop: 10 }}>
-          <button className="btn primary sm" disabled={pending} onClick={() => onSaveScope(scope)}>
+          <button className="btn primary sm" disabled={pending} onClick={() => onSaveScope(scope, fields)}>
             {pending ? "Saving…" : "Save scope"}
           </button>
           {rule.status === "needs_scope" && <Pill tone="yellow">Needs scope</Pill>}
