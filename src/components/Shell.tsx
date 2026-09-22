@@ -140,6 +140,19 @@ function navGroups(openRequests: number, role: string): NavEntry[] {
       ],
     },
 
+    {
+      key: "audit-escalation",
+      label: "Audit & Escalation",
+      href: "/audit-trail/evidence",
+      ready: true,
+      children: [
+        { href: "/audit-trail/evidence", label: "Evidence requests", ready: true },
+        { href: "/audit-trail/deletions", label: "Deletion instructions", ready: true },
+        { href: "/audit-trail/rulings", label: "DPO rulings", ready: true },
+        { href: "/audit", label: "Audit log", ready: true },
+      ],
+    },
+
     // Approved Policy: the one deliberate exception to the six-section rule. It
     // is referenced constantly across nearly every other section, so it sits at
     // the top level rather than nested inside one.

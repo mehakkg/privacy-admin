@@ -45,6 +45,9 @@ export interface AuditInput {
   requestId?: string | null;
   payload?: Record<string, unknown>;
   evidenceRef?: string | null;
+  /** Customer-centric denormalisation for the unified audit search (not hashed). */
+  customerId?: string | null;
+  eventDescription?: string | null;
 }
 
 function hashEntry(fields: {
@@ -99,6 +102,11 @@ export async function recordAction(
       ...fields,
       actorId: input.actor.id ?? null,
       payloadHash: hashEntry(fields),
+      // Denormalised, non-hashed columns for the unified audit search.
+      customerId: input.customerId ?? null,
+      sourceModule: input.action.split(".")[0] || null,
+      eventType: input.action,
+      eventDescription: input.eventDescription ?? null,
     },
     select: { id: true, seq: true, payloadHash: true },
   });
@@ -192,6 +200,7 @@ export async function verifyChain(): Promise<ChainVerification> {
 export interface AuditQuery {
   requestId?: string;
   targetId?: string;
+  customerId?: string;
   action?: string;
   actorRole?: string;
   from?: Date;
@@ -205,6 +214,7 @@ export async function searchAuditLog(query: AuditQuery = {}) {
 
   if (query.requestId) where.requestId = query.requestId;
   if (query.targetId) where.targetId = query.targetId;
+  if (query.customerId) where.customerId = query.customerId;
   if (query.action) where.action = { contains: query.action };
   if (query.actorRole) where.actorRole = query.actorRole;
   if (query.from || query.to) {

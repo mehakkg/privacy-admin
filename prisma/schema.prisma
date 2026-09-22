@@ -432,6 +432,16 @@ model AuditLogEntry {
   targetId   String
   requestId  String?
 
+  /// Customer-centric denormalisation for the Scenario 3 unified audit search.
+  /// These columns are NOT part of the hash (hashEntry covers a fixed field set),
+  /// so adding them leaves the tamper-evident chain and verifyChain() unaffected.
+  /// sourceModule/eventType are derived from `action`; customerId is set when the
+  /// action is about a specific Data Principal.
+  customerId       String?
+  sourceModule     String?
+  eventType        String?
+  eventDescription String?
+
   payloadJson String
   evidenceRef String?
 
@@ -444,6 +454,142 @@ model AuditLogEntry {
   @@index([requestId])
   @@index([targetType, targetId])
   @@index([action])
+  @@index([customerId])
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 3 — Audit Trail & Conflict Escalation
+//
+// Two workstreams:
+//  1. Evidence: a Grievance Officer's request → unified audit search →
+//     per-entry verification → structured export/delivery.
+//  2. Conflict: a DeletionInstruction (the SHARED interface a future Rights/DSR
+//     module writes into — defined once, here) → retention-conflict check →
+//     escalation compiler → immutable DPO ruling → linked execution.
+// ---------------------------------------------------------------------------
+
+model EvidenceRequest {
+  id          String    @id @default(cuid())
+  /// The Grievance Officer (or Admin, if logged manually) who requested it.
+  requestedBy String
+  customerId  String
+  dateFrom    DateTime?
+  dateTo      DateTime?
+  claimedEvent String
+  /// received | searching | verifying | exported | delivered
+  status      String    @default("received")
+  /// api | manual — did it arrive over the Grievance intake interface, or was
+  /// it logged by Admin for an out-of-band request?
+  source      String    @default("api")
+  /// The event-type hint that highlights (never filters) matching entries.
+  eventTypeHint String?
+  exportFormat  String?
+  deliveredAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  confirmations EvidenceEntryConfirmation[]
+
+  @@index([status])
+}
+
+/// One explicit confirm/reject decision on one audit entry for one request.
+/// The row's existence means "decided"; `confirmed` is the direction. Rejecting
+/// removes the entry from THIS request's bundle only — the AuditLogEntry is
+/// never touched.
+model EvidenceEntryConfirmation {
+  id         String   @id @default(cuid())
+  requestId  String
+  logEntryId String
+  confirmed  Boolean
+  /// Was this entry auto-highlighted by the event-type hint, or added manually
+  /// from outside the suggested set?
+  isSuggested Boolean @default(false)
+  decidedBy  String?
+  decidedAt  DateTime @default(now())
+
+  request EvidenceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, logEntryId])
+  @@index([requestId])
+}
+
+/// The SHARED deletion-instruction interface. A future Rights/DSR module writes
+/// into THIS table rather than inventing its own object. Defined once, here.
+model DeletionInstruction {
+  id         String    @id @default(cuid())
+  customerId String
+  scope      String
+  deadline   DateTime?
+  /// Where the instruction came from, e.g. "dsr:erasure", "manual", "grievance".
+  source     String
+  /// queued | conflict_detected | escalated | executed
+  status     String    @default("queued")
+  createdAt  DateTime  @default(now())
+  executedAt DateTime?
+  executedBy String?
+
+  conflict   RetentionConflict?
+  escalation ConflictEscalation?
+
+  @@index([status])
+  @@index([customerId])
+}
+
+model RetentionConflict {
+  id                    String   @id @default(cuid())
+  instructionId         String   @unique
+  obligationDescription String
+  /// The specific statute/regulation cited plainly — never a generic "conflict".
+  obligationReference   String
+  /// The RetentionException that triggered the block, for inline context.
+  retentionExceptionId  String?
+  detectedAt            DateTime @default(now())
+
+  instruction DeletionInstruction @relation(fields: [instructionId], references: [id], onDelete: Cascade)
+}
+
+model ConflictEscalation {
+  id                   String   @id @default(cuid())
+  instructionId        String   @unique
+  actionRequested      String
+  obligationInConflict String
+  /// JSON string[] of attached evidence references (retention record + the
+  /// original instruction are auto-attached; more can be added).
+  supportingEvidenceJson String @default("[]")
+  compiledBy           String
+  submittedAt          DateTime @default(now())
+
+  instruction DeletionInstruction @relation(fields: [instructionId], references: [id], onDelete: Cascade)
+  ruling      DPORuling?
+}
+
+/// Immutable once created. A correction is a NEW ruling that supersedes this one
+/// (supersedesId), never an edit — there is no update path in the UI or API.
+model DPORuling {
+  id           String   @id @default(cuid())
+  escalationId String   @unique
+  /// proceed | deny | modify
+  decision     String
+  reasoning    String
+  legalBasis   String
+  ruledBy      String
+  ruledAt      DateTime @default(now())
+  supersedesId String?
+
+  escalation ConflictEscalation @relation(fields: [escalationId], references: [id], onDelete: Cascade)
+  execution  RulingExecution?
+}
+
+model RulingExecution {
+  id         String   @id @default(cuid())
+  rulingId   String   @unique
+  executedBy String
+  executedAt DateTime @default(now())
+  /// Shared reference tying the escalation-raised and resolution-executed audit
+  /// entries into ONE thread.
+  threadRef  String
+
+  ruling DPORuling @relation(fields: [rulingId], references: [id], onDelete: Cascade)
 }
 
 /// Cross-persona notification. Written by the notification engine as a

@@ -117,6 +117,18 @@ export type NotificationEvent =
       ticketId: string;
       requestRef: string;
       reason: string;
+    }
+  // --- Scenario 3: retention-vs-erasure conflict escalation -------------------
+  | {
+      kind: "conflict.escalation_raised";
+      escalationId: string;
+      customerId: string;
+      obligation: string;
+    }
+  | {
+      kind: "conflict.ruling_issued";
+      escalationId: string;
+      decision: string;
     };
 
 interface Fanout {
@@ -249,6 +261,22 @@ function fanout(event: NotificationEvent): Fanout {
         severity: "critical",
       };
 
+    case "conflict.escalation_raised":
+      return {
+        roles: ["dpo"],
+        title: `Retention conflict awaiting your ruling`,
+        body: `A deletion for ${event.customerId} conflicts with a retention obligation (${event.obligation}). A ruling with reasoning and legal basis is required before it can proceed.`,
+        severity: "warning",
+      };
+
+    case "conflict.ruling_issued":
+      return {
+        roles: ["admin"],
+        title: `DPO ruling issued — ${event.decision}`,
+        body: `The DPO ruled "${event.decision}" on a retention conflict. Execute the ruling to carry it out; the escalation and its resolution are logged as one linked thread.`,
+        severity: "info",
+      };
+
     case "integration.sync_failed":
       return {
         roles: ["admin"],
@@ -275,7 +303,7 @@ function fanout(event: NotificationEvent): Fanout {
 /** The first-class category for an event kind (drives the bell + Settings config). */
 function categoryFor(kind: string): string {
   if (kind === "integration.sync_failed" || kind === "discovery.scan_failed") return "integration_sync_failure";
-  if (kind.startsWith("escalation")) return "dpo_approval_needed";
+  if (kind.startsWith("escalation") || kind.startsWith("conflict")) return "dpo_approval_needed";
   if (kind === "sla.threshold" || kind.startsWith("completion") || kind === "execution.verified" || kind === "execution.failed" || kind.startsWith("dprr")) return "dsr_sla_deadline";
   if (kind.startsWith("breach")) return "breach_clock";
   if (kind.startsWith("drift")) return "drift_detected";
@@ -290,6 +318,8 @@ function hrefFor(event: NotificationEvent): string | null {
     case "discovery.scan_failed": return "/discovery/sources";
     case "breach.detected": return `/breach/incidents/${event.incidentId}`;
     case "dprr.board_escalated": return `/requests/sla/${event.ticketId}`;
+    case "conflict.escalation_raised": return `/audit-trail/rulings/${event.escalationId}`;
+    case "conflict.ruling_issued": return `/audit-trail/rulings/${event.escalationId}`;
     case "escalation.raised":
     case "escalation.ruled": return "/access/approval-queue";
     case "sla.threshold":

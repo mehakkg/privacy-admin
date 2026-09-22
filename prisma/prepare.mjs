@@ -91,4 +91,6 @@ if (!POOLED) {
   run("Seeding Breach demo", "npx tsx prisma/patch-breach.ts", POOLED);
   // Idempotent: materialises DPRR tickets + routing/extension/escalation demo.
   run("Seeding DPRR demo", "npx tsx prisma/patch-dprr.ts", POOLED);
+  // Idempotent: seeds the Scenario 3 audit/evidence/conflict-escalation demo.
+  run("Seeding Audit & Escalation demo", "npx tsx prisma/patch-audit.ts", POOLED);
 }

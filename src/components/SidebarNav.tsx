@@ -51,6 +51,7 @@ const ICONS: Record<string, LucideIcon> = {
   breach: ShieldAlert,
   tprm: Handshake,
   risk: Gauge,
+  "audit-escalation": Scale,
   governance: ShieldCheck,
   settings: Settings,
   // retained keys still used by individual pages / fallbacks
