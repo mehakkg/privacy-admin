@@ -63,9 +63,11 @@ function Locked({ children }: { children: React.ReactNode }) {
 export function ProtectionRulesTable({
   rows,
   systems,
+  systemCategories = {},
 }: {
   rows: RuleRow[];
   systems: { id: string; name: string }[];
+  systemCategories?: Record<string, string[]>;
 }) {
   const { pending, result, run } = useAction();
   const [requestingRule, setRequestingRule] = useState(false);
@@ -126,6 +128,7 @@ export function ProtectionRulesTable({
             key={r.id}
             rule={r}
             systems={systems}
+            systemCategories={systemCategories}
             pending={pending}
             onSaveScope={(ids) => run(() => saveRuleScopeAction(r.id, ids))}
             onRequestException={(process, reason, narrowed) =>
@@ -154,12 +157,14 @@ export function ProtectionRulesTable({
 function RuleDrawer({
   rule,
   systems,
+  systemCategories = {},
   pending,
   onSaveScope,
   onRequestException,
 }: {
   rule: RuleRow;
   systems: { id: string; name: string }[];
+  systemCategories?: Record<string, string[]>;
   pending: boolean;
   onSaveScope: (ids: string[]) => void;
   onRequestException: (process: string, reason: string, narrowed: string) => void;
@@ -199,6 +204,23 @@ function RuleDrawer({
             </label>
           ))}
         </div>
+        {(() => {
+          // Flag any configured system that does not hold the rule's data
+          // category — a possible deviation from CISO's written specification.
+          const mismatched = scope
+            .map((id) => ({ id, cats: systemCategories[id] }))
+            .filter((s) => s.cats && s.cats.length > 0 && !s.cats.includes(rule.dataCategory))
+            .map((s) => systems.find((y) => y.id === s.id)?.name ?? s.id);
+          return mismatched.length > 0 ? (
+            <div className="notice warn compact" style={{ marginTop: 10 }}>
+              <span>
+                Scope may deviate from CISO&apos;s specification: {mismatched.join(", ")} do not hold{" "}
+                <strong>{rule.dataCategory}</strong> data. Confirm this is intended before saving — the
+                mismatch is flagged, not blocked.
+              </span>
+            </div>
+          ) : null;
+        })()}
         <div className="row" style={{ marginTop: 10 }}>
           <button className="btn primary sm" disabled={pending} onClick={() => onSaveScope(scope)}>
             {pending ? "Saving…" : "Save scope"}

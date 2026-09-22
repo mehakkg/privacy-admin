@@ -2051,6 +2051,11 @@ model Entity {
   /// Null = inherits the org-wide legal name.
   legalName String?
 
+  /// native | acquired — acquisition provenance (Screen 5).
+  source       String @default("native")
+  /// manual | bulk_imported | partial_import — how the entity's structure came in.
+  importStatus String @default("manual")
+
   userMappings EntityUserMapping[]
   notices      Notice[]
   activities   ProcessingActivity[]
@@ -2066,6 +2071,10 @@ model EntityUserMapping {
   accessScope String @default("single")
   additionalEntitiesJson String @default("[]")
   justification          String?
+  /// Computed at (bulk) mapping time: false when the user already has active
+  /// assignments under a different entity — such a user is excluded from the
+  /// silent bulk action and flagged for individual review.
+  validatedNoDualScope Boolean @default(true)
 
   entity Entity @relation(fields: [entityId], references: [id])
 
@@ -2090,7 +2099,55 @@ model ProtectionRuleException {
   approvedBy String?
   approvedAt DateTime @default(now())
 
+  // -- Scenario 6 investigation fields --------------------------------------
+  /// The specific rule clause/scope slice that blocked the process.
+  blockingClause String?
+  investigatedAt DateTime?
+  /// scope_adjusted | denied | pending — how the exception resolved.
+  resolution     String   @default("pending")
+
+  proposals ScopeAdjustmentProposal[]
+
   @@index([ruleId])
+}
+
+/// A proposal to narrow a rule's implemented scope to resolve an exception,
+/// gated by CISO approval. The original scope is preserved here (never
+/// overwritten) for traceability. The only resolutions are a CISO-approved
+/// adjustment or denial — there is no "disable the rule" path.
+model ScopeAdjustmentProposal {
+  id          String @id @default(cuid())
+  exceptionId String
+  /// The rule's implemented scope BEFORE the proposal — preserved in history.
+  originalScope String
+  proposedScope String
+  proposedBy    String
+  /// pending_ciso | approved | denied | counter_proposed
+  status        String @default("pending_ciso")
+  /// Set when the CISO returns a different scope for Admin to accept.
+  cisoCounterScope String?
+  decidedBy   String?
+  decidedAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  exception ProtectionRuleException @relation(fields: [exceptionId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+}
+
+/// A data source connected into the risk-analytics pipeline (Screen 4), with a
+/// system-suggested default metric set (editable before confirming).
+model RiskAnalyticsSource {
+  id          String @id @default(cuid())
+  /// The DiscoverySource this feeds from.
+  sourceId    String
+  name        String
+  kind        String
+  defaultMetricsJson String @default("[]")
+  connectedAt DateTime @default(now())
+  connectedBy String?
+
+  @@index([sourceId])
 }
 
 /// A role Admin can grant and edit.

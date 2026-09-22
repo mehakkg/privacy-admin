@@ -130,6 +130,7 @@ function navGroups(openRequests: number, role: string): NavEntry[] {
         { href: "/access/drift", label: "Drift", ready: true },
         { href: "/access/insights", label: "Insights", ready: true },
         { href: "/access/assessments", label: "Assessments", ready: true },
+        { href: "/access/entity-mapping", label: "User-to-entity mapping", ready: true },
         { href: "/access/organization", label: "Governance Setup", ready: true },
       ],
     },
@@ -140,7 +141,9 @@ function navGroups(openRequests: number, role: string): NavEntry[] {
       ready: true,
       children: [
         { href: "/analytics/risk", label: "Risk dashboard", ready: true },
+        { href: "/analytics/risk-sources", label: "Risk analytics sources", ready: true },
         { href: "/data-flow/protection-rules", label: "Protection rules", ready: true },
+        { href: "/risk/scope-adjustments", label: "Scope adjustments", ready: true },
         { href: "/risk/access-insights", label: "Access insights", ready: true },
         { href: "/risk/assessments", label: "Assessments", ready: true },
         { href: "/audit", label: "Audit & evidence", ready: true },
@@ -181,6 +184,7 @@ function navGroups(openRequests: number, role: string): NavEntry[] {
       children: [
         { href: "/settings/organization", label: "Organization", ready: true },
         { href: "/settings/users", label: "Users", ready: true },
+        { href: "/settings/entity-setup", label: "Entity setup", ready: true },
         { href: "/integrations/connected-systems", label: "Integrations", ready: true },
         { href: "/integrations/setup", label: "Integration setup", ready: true },
         { href: "/notifications/channels", label: "Notifications", ready: true },

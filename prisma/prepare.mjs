@@ -99,4 +99,6 @@ if (!POOLED) {
   run("Seeding Discovery governance demo", "npx tsx prisma/patch-scenario4.ts", POOLED);
   // Idempotent: seeds Scenario 6 data categories, notice variants, cookie category.
   run("Seeding Consent/Notices demo", "npx tsx prisma/patch-scenario6.ts", POOLED);
+  // Idempotent: seeds protection-rule exception + acquisition entity demo.
+  run("Seeding Protection/Entity demo", "npx tsx prisma/patch-scenario7.ts", POOLED);
 }

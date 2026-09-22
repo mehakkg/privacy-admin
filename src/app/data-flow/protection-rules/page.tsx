@@ -23,14 +23,25 @@ export default async function ProtectionRulesPage({
   const params = await searchParams;
   const term = (params.q ?? "").trim().toLowerCase();
 
-  const [rules, scopes, exceptions, systems] = await Promise.all([
+  const [rules, scopes, exceptions, systems, locations] = await Promise.all([
     db.protectionRule.findMany({ orderBy: { ruleName: "asc" } }),
     db.protectionRuleScope.findMany(),
     db.protectionRuleException.findMany(),
     db.connectedSystem.findMany({ orderBy: { name: "asc" } }),
+    db.dataLocation.findMany({ where: { systemId: { not: null } }, select: { systemId: true, dataCategoriesJson: true } }),
   ]);
 
   const scopeByRule = new Map(scopes.map((s) => [s.ruleId, decodeList(s.systemsJson)]));
+
+  // Per-system data categories, so configuring a scope onto a system that does
+  // not hold the rule's data category can be flagged (not silently accepted).
+  const systemCategories: Record<string, string[]> = {};
+  for (const l of locations) {
+    if (!l.systemId) continue;
+    const set = new Set(systemCategories[l.systemId] ?? []);
+    for (const c of decodeList(l.dataCategoriesJson)) set.add(c);
+    systemCategories[l.systemId] = [...set];
+  }
 
   let rows: RuleRow[] = rules.map((r) => {
     const scoped = scopeByRule.get(r.id) ?? [];
@@ -104,6 +115,7 @@ export default async function ProtectionRulesPage({
       <ProtectionRulesTable
         rows={rows}
         systems={systems.map((s) => ({ id: s.id, name: s.name }))}
+        systemCategories={systemCategories}
       />
     </Shell>
   );
