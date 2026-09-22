@@ -12,6 +12,7 @@ import {
   type EscalationSource, type RequestStatus, type RequestType,
 } from "@/lib/domain";
 import { GRIEVANCE_REDRESSAL_CEILING } from "@/lib/dpdp/statute";
+import { CHANNEL_ORIGIN_LABEL, CHANNEL_ORIGIN_TONE } from "@/lib/omnichannel";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +59,7 @@ export default async function DprrQueuePage({
     return {
       r, ticket, sla, currentDeadline, originalDeadline, owner, routingState,
       boardEscalated: ticket?.boardEscalated ?? false,
+      channelOrigin: ticket?.channelOrigin ?? "digital",
       extCount: ticket?.extensions.length ?? 0,
       ceilingAt: computeStatutoryCeiling(r.receivedAt),
     };
@@ -138,9 +140,14 @@ export default async function DprrQueuePage({
                   </div>
                 </td>
                 <td>
-                  <Pill tone={x.r.escalationSource === "dpb" ? "red" : x.r.escalationSource === "grievance_officer" ? "purple" : "gray"} dot={false}>
-                    {ESCALATION_SOURCE_LABEL[x.r.escalationSource as EscalationSource]}
-                  </Pill>
+                  <div className="cell-stack">
+                    <Pill tone={x.r.escalationSource === "dpb" ? "red" : x.r.escalationSource === "grievance_officer" ? "purple" : "gray"} dot={false}>
+                      {ESCALATION_SOURCE_LABEL[x.r.escalationSource as EscalationSource]}
+                    </Pill>
+                    {x.channelOrigin !== "digital" && (
+                      <Pill tone={CHANNEL_ORIGIN_TONE[x.channelOrigin] ?? "blue"} dot={false}>{CHANNEL_ORIGIN_LABEL[x.channelOrigin] ?? x.channelOrigin}</Pill>
+                    )}
+                  </div>
                 </td>
                 <td>
                   <div className="cell-stack">

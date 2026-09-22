@@ -66,6 +66,8 @@ function navGroups(openRequests: number, role: string): NavEntry[] {
       children: [
         { href: "/consent/notices", label: "Notices", ready: true },
         { href: "/consent/platform", label: "Consent collection", ready: true },
+        { href: "/consent/branch-capture", label: "Branch / BC-point capture", ready: true },
+        { href: "/consent/unification", label: "Omnichannel unification", ready: true },
         { href: "/consent/records", label: "Consent records", ready: true },
         { href: "/consent/integrity", label: "Artifact integrity", ready: true },
         // Cookie consent has a materially different feature set (script-blocking,
@@ -84,6 +86,8 @@ function navGroups(openRequests: number, role: string): NavEntry[] {
       badge: openRequests,
       children: [
         { href: "/requests", label: "Requests", ready: true },
+        { href: "/intake/assisted", label: "Assisted intake", ready: true },
+        { href: "/intake/identity-verification", label: "Identity verification", ready: true },
         { href: "/fulfillment", label: "Deletion fulfillment", ready: true },
         { href: "/escalations", label: "Escalations", ready: true },
         { href: "/requests/sla", label: "DPRR queue & SLA", ready: true },
@@ -188,6 +192,7 @@ function navGroups(openRequests: number, role: string): NavEntry[] {
         { href: "/integrations/connected-systems", label: "Integrations", ready: true },
         { href: "/integrations/setup", label: "Integration setup", ready: true },
         { href: "/notifications/channels", label: "Notifications", ready: true },
+        { href: "/notifications/delivery", label: "Delivery log", ready: true },
       ],
     },
   ];

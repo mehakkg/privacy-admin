@@ -101,4 +101,7 @@ if (!POOLED) {
   run("Seeding Consent/Notices demo", "npx tsx prisma/patch-scenario6.ts", POOLED);
   // Idempotent: seeds protection-rule exception + acquisition entity demo.
   run("Seeding Protection/Entity demo", "npx tsx prisma/patch-scenario7.ts", POOLED);
+  // Idempotent: seeds assisted/omnichannel demo (doc types, templates, offline
+  // queue, assisted channel tags, multi-channel deliveries, unification check).
+  run("Seeding Omnichannel demo", "npx tsx prisma/patch-omnichannel.ts", POOLED);
 }

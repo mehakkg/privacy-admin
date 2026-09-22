@@ -695,6 +695,16 @@ model Notification {
   createdAt DateTime  @default(now())
   readAt    DateTime?
 
+  /// Scenario 7 — multi-channel delivery. Null for ordinary in-app-only rows.
+  /// deliveryChannel: in_app | email | sms | call | branch_handoff
+  deliveryChannel String?
+  /// deliveryStatus: sent | delivered | failed | manual_pending
+  /// (branch_handoff is flagged manual_pending — never auto-delivered).
+  deliveryStatus  String?
+  deliveryDetail  String?
+  deliveredAt     DateTime?
+  deliveryRetries Int      @default(0)
+
   targetActor Actor?                @relation(fields: [targetActorId], references: [id])
   request     DataPrincipalRequest? @relation(fields: [requestId], references: [id])
 
@@ -1398,6 +1408,14 @@ model ConsentRecord {
   syncStatus String @default("synced")
   /// Branch capture: how identity was verified in person.
   idVerification String?
+
+  /// Scenario 7 — the surface this consent was captured on:
+  /// digital | assisted_branch | assisted_bc_point. Null for pre-Scenario-7 rows.
+  captureChannel String?
+  /// Scenario 7 — set ONLY when an offline-captured record is synced. It records
+  /// the upload time and is kept DISTINCT from collectedAt (the capture time),
+  /// which is locked at the moment of capture and NEVER overwritten by sync.
+  syncTimestamp DateTime?
 
   purposeTag PurposeTag? @relation(fields: [purposeTagId], references: [id])
 
@@ -2584,6 +2602,12 @@ model DPRRTicket {
   boardEscalated   Boolean   @default(false)
   boardEscalatedAt DateTime?
 
+  /// Scenario 7 — how this request reached us and how the Data Principal wants to
+  /// be told about it. channelOrigin: digital | assisted_branch | assisted_phone.
+  /// preferredNotificationChannel: email | sms | call | branch_handoff.
+  channelOrigin                String @default("digital")
+  preferredNotificationChannel String @default("email")
+
   createdAt DateTime @default(now())
 
   request    DataPrincipalRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
@@ -2648,6 +2672,105 @@ model DPRREscalation {
 
   ticket DPRRTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   @@index([ticketId])
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 7 — Assisted / omnichannel intake, in-person verification, branch &
+// offline consent capture, unification, multi-channel notification delivery.
+// These EXTEND DPRRTicket / ConsentRecord / Notification (fields added above);
+// the models below are genuinely new mechanisms with no existing equivalent.
+// ---------------------------------------------------------------------------
+
+/// Documented identity verification for an assisted request. An assisted request
+/// CANNOT be created without a linked, completed record here — the gate is
+/// enforced in the engine, not just the UI. "Verified" is only reachable through
+/// a specific method path, never a bare flag.
+model IdentityVerification {
+  id        String  @id @default(cuid())
+  /// Linked once the assisted request is created (Screen 1 sets this). Null while
+  /// the verification exists but no request has been raised against it yet.
+  requestId String?
+  /// otp | in_person_document | assisted_attestation
+  method    String
+  /// Required when method = in_person_document.
+  documentType String?
+  /// Required when method = assisted_attestation.
+  attestingEmployeeId String?
+  verifiedAt DateTime @default(now())
+  createdBy  String?
+  /// Set true once consumed by a created request, so it can't gate two requests.
+  consumed   Boolean  @default(false)
+
+  @@index([requestId])
+  @@index([consumed])
+}
+
+/// A shared consent template, reusable across branches / BC points, keyed by the
+/// product or campaign it belongs to. Closes the "pick templates from shared
+/// drives" gap — the library is central, not per-branch.
+model ConsentTemplate {
+  id               String  @id @default(cuid())
+  name             String
+  productOrCampaign String
+  /// JSON array of field descriptors for the capture form.
+  fieldConfigJson  String  @default("[]")
+  active           Boolean @default(true)
+  createdAt        DateTime @default(now())
+}
+
+/// The on-device local queue for offline consent capture. captured_at is LOCKED
+/// at the moment of local capture and becomes ConsentRecord.collectedAt on sync —
+/// it is never recalculated. A failed sync increments retryCount and stays
+/// visibly failed with a retry path; it is never silently dropped.
+model OfflineConsentQueue {
+  id             String @id @default(cuid())
+  consentDraftId String @unique
+  deviceId       String
+  subjectRef     String
+  templateId     String?
+  purposeTagId   String?
+  /// assisted_branch | assisted_bc_point
+  captureChannel String @default("assisted_bc_point")
+  idVerification String?
+  /// LOCKED at capture. Becomes ConsentRecord.collectedAt verbatim on sync.
+  capturedAt     DateTime
+  /// queued | syncing | synced | failed
+  syncStatus     String @default("queued")
+  retryCount     Int    @default(0)
+  lastError      String?
+  /// The ConsentRecord this queued item became, once synced.
+  syncedConsentId String?
+  createdAt      DateTime @default(now())
+
+  @@index([deviceId])
+  @@index([syncStatus])
+}
+
+/// Content-managed guidance for the in-person verification screen: the list of
+/// acceptable document types, editable as data (seeded/patched) so policy can
+/// change without a code deploy.
+model IdDocumentType {
+  id        String  @id @default(cuid())
+  label     String
+  note      String?
+  active    Boolean @default(true)
+  sortOrder Int     @default(0)
+}
+
+/// One active unification run comparing DPRRTicket + ConsentRecord rows across
+/// every channel. Not a passive banner — each row is a real comparison result,
+/// naming the specific channel/records when a discrepancy is found.
+model UnificationCheck {
+  id                String  @id @default(cuid())
+  runAt             DateTime @default(now())
+  discrepancyFound  Boolean  @default(false)
+  /// Specific detail — which channel and which records failed to land. Null clean.
+  discrepancyDetail String?
+  /// Per-channel snapshot counts, so a drill-down can show exactly what was compared.
+  summaryJson       String   @default("{}")
+  runBy             String?
+
+  @@index([runAt])
 }
 
 // ---------------------------------------------------------------------------
