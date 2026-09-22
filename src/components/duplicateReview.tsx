@@ -16,6 +16,7 @@ export interface DupRow {
   id: string;
   similarityScore: number;
   resolution: string;
+  matchReason: string | null;
   a: { id: string; fieldPath: string; sourceName: string; detectedType: string; maskedSample: string; lastVerified: string | null };
   b: { id: string; fieldPath: string; sourceName: string; detectedType: string; maskedSample: string; lastVerified: string | null };
 }
@@ -94,6 +95,20 @@ export function DuplicateReview({ rows }: { rows: DupRow[] }) {
                 text="Similarity is computed from the values and the field names. Below about 90% the match is worth treating with suspicion."
               />
             </div>
+
+            {/* Match reasoning — the flag is never a black box. */}
+            <div className="cell-sub" style={{ marginBottom: 8 }}>
+              Matched on: {row.matchReason ?? `${row.a.detectedType === row.b.detectedType ? `${row.a.detectedType} (exact)` : `${row.a.detectedType}/${row.b.detectedType}`}; ${row.similarityScore}% similarity`}
+            </div>
+            {/* Disputed fields highlighted by default. */}
+            {(() => {
+              const disputed = [
+                row.a.detectedType !== row.b.detectedType ? "Type" : null,
+                row.a.fieldPath !== row.b.fieldPath ? "Field name" : null,
+                row.a.sourceName !== row.b.sourceName ? "Source" : null,
+              ].filter(Boolean) as string[];
+              return disputed.length ? <div className="row" style={{ gap: 4, flexWrap: "wrap", marginBottom: 10 }}><span className="cell-sub">Disputed:</span>{disputed.map((d) => <Pill key={d} tone="yellow" dot={false}>{d}</Pill>)}</div> : null;
+            })()}
 
             <div className="grid-2">
               {[row.a, row.b].map((side, i) => (

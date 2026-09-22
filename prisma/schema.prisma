@@ -1657,6 +1657,15 @@ model ClassifiedField {
   reviewState    String  @default("pending")
   overriddenType String?
   overrideReason String?
+  /// Scenario 4: required reason CATEGORY for an override — mis_tagged |
+  /// reclassified | other. The free-text overrideReason sits alongside it.
+  overrideReasonCategory String?
+  /// The classification rule that matched, surfaced so a finding is never a
+  /// black box (e.g. "PAN pattern (10-char alphanumeric)").
+  matchedRule String?
+  /// Scenario 4: high-risk findings are auto-isolated. Releasing/sharing a
+  /// quarantined field goes through a ShareApprovalRequest, never a direct share.
+  quarantined Boolean @default(false)
   /// True when Admin overrode a field the system marked HIGH confidence. Logged
   /// distinctly from an ordinary needs-review override, because it is evidence
   /// the detector is wrong about that pattern, not just that this row was.
@@ -1693,6 +1702,7 @@ model ClassifiedField {
   rotCandidate  ROTCandidate?
   duplicatesAsA DuplicatePair[] @relation("DuplicateFieldA")
   duplicatesAsB DuplicatePair[] @relation("DuplicateFieldB")
+  shareApprovals ShareApprovalRequest[]
 
   @@index([sourceId])
   @@index([confidence])
@@ -1750,6 +1760,9 @@ model DuplicatePair {
 
   /// 0-100.
   similarityScore Int
+  /// Scenario 4: why the pair matched, so the flag is never a black box
+  /// (e.g. "email (exact), phone (exact), name (94% similarity)").
+  matchReason     String?
   /// unresolved | merge | keep_both | keep_one
   resolution      String  @default("unresolved")
   /// When resolution is keep_one, which one survives.
@@ -2511,4 +2524,79 @@ model DPRREscalation {
 
   ticket DPRRTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   @@index([ticketId])
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 4 — Discovery & Classification (new governance mechanisms)
+// ---------------------------------------------------------------------------
+
+/// Singleton holding the governance-set parameters Admin operates within but
+/// cannot edit: the DPO-approved identity-match confidence threshold, and the
+/// CISO-approved integration field schema.
+model DiscoveryGovernance {
+  id String @id @default("singleton")
+  /// DPO-approved confidence threshold for identity resolution (percent).
+  identityMatchThreshold Int @default(92)
+  /// JSON string[] of CISO-approved integration target field names.
+  cisoApprovedFieldsJson String @default("[]")
+  updatedAt DateTime @updatedAt
+}
+
+/// A gate on sharing/releasing a quarantined high-risk finding. The share action
+/// is replaced by a request that routes to the DPO/CISO for approval.
+model ShareApprovalRequest {
+  id       String @id @default(cuid())
+  fieldId  String
+  /// pending | approved | denied
+  status       String @default("pending")
+  /// dpo | ciso — who must approve, by governance structure.
+  approverRole String
+  requestedBy  String
+  requestedAt  DateTime @default(now())
+  decidedBy    String?
+  decidedAt    DateTime?
+  decisionNote String?
+
+  field ClassifiedField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([fieldId])
+}
+
+/// An integration connection with its field mapping validated against the CISO-
+/// approved schema, and drift monitoring enabled by default at connect time.
+model IntegrationConnection {
+  id     String @id @default(cuid())
+  name   String
+  vendor String
+  /// realtime | hourly | daily
+  syncFrequency String @default("daily")
+  /// JSON of [{ target, source, valid }]: the field mapping. Save is blocked
+  /// while any mapping targets a field outside the CISO-approved schema.
+  fieldMappingJson String @default("[]")
+  /// Monitoring for silent vendor API changes — on by default, set as part of
+  /// the same connect action, never a separate later step.
+  monitoringEnabled Boolean @default(true)
+  /// draft | connected
+  status       String @default("draft")
+  connectedAt  DateTime?
+  createdAt    DateTime @default(now())
+
+  @@index([status])
+}
+
+/// A record of an identity-resolution run executed at the DPO-approved threshold.
+model IdentityResolutionRun {
+  id        String @id @default(cuid())
+  /// The DPO-approved threshold in force at run time (percent). Displayed, not
+  /// editable by Admin.
+  threshold Int
+  /// running | complete
+  status       String @default("running")
+  startedAt    DateTime @default(now())
+  completedAt  DateTime?
+  pairsFlagged Int @default(0)
+  runBy        String?
+
+  @@index([status])
 }

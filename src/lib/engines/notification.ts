@@ -136,6 +136,13 @@ export type NotificationEvent =
       instructionId: string;
       customerId: string;
       systemCount: number;
+    }
+  // --- Scenario 4: share-approval for a quarantined high-risk finding ---------
+  | {
+      kind: "discovery.share_approval_needed";
+      requestId: string;
+      approverRole: "dpo" | "ciso";
+      fieldPath: string;
     };
 
 interface Fanout {
@@ -284,6 +291,14 @@ function fanout(event: NotificationEvent): Fanout {
         severity: "info",
       };
 
+    case "discovery.share_approval_needed":
+      return {
+        roles: [event.approverRole],
+        title: `Approval needed to share a quarantined finding`,
+        body: `A high-risk finding (${event.fieldPath}) is quarantined. Sharing it requires your approval.`,
+        severity: "warning",
+      };
+
     case "fulfillment.completed":
       return {
         roles: ["grievance_officer", "dpo"],
@@ -318,7 +333,7 @@ function fanout(event: NotificationEvent): Fanout {
 /** The first-class category for an event kind (drives the bell + Settings config). */
 function categoryFor(kind: string): string {
   if (kind === "integration.sync_failed" || kind === "discovery.scan_failed") return "integration_sync_failure";
-  if (kind.startsWith("escalation") || kind.startsWith("conflict")) return "dpo_approval_needed";
+  if (kind.startsWith("escalation") || kind.startsWith("conflict") || kind === "discovery.share_approval_needed") return "dpo_approval_needed";
   if (kind === "sla.threshold" || kind.startsWith("completion") || kind === "execution.verified" || kind === "execution.failed" || kind.startsWith("dprr") || kind.startsWith("fulfillment")) return "dsr_sla_deadline";
   if (kind.startsWith("breach")) return "breach_clock";
   if (kind.startsWith("drift")) return "drift_detected";
@@ -336,6 +351,7 @@ function hrefFor(event: NotificationEvent): string | null {
     case "conflict.escalation_raised": return `/audit-trail/rulings/${event.escalationId}`;
     case "conflict.ruling_issued": return `/audit-trail/rulings/${event.escalationId}`;
     case "fulfillment.completed": return `/fulfillment/${event.instructionId}`;
+    case "discovery.share_approval_needed": return `/discovery/quarantine`;
     case "escalation.raised":
     case "escalation.ruled": return "/access/approval-queue";
     case "sla.threshold":

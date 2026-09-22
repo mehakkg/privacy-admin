@@ -95,4 +95,6 @@ if (!POOLED) {
   run("Seeding Audit & Escalation demo", "npx tsx prisma/patch-audit.ts", POOLED);
   // Idempotent: seeds the Scenario 1 cross-system deletion-fulfilment demo.
   run("Seeding Fulfilment demo", "npx tsx prisma/patch-fulfillment.ts", POOLED);
+  // Idempotent: seeds Scenario 4 discovery governance + quarantine demo.
+  run("Seeding Discovery governance demo", "npx tsx prisma/patch-scenario4.ts", POOLED);
 }

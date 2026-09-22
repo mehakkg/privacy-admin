@@ -49,6 +49,7 @@ export default async function DuplicatesPage() {
     id: p.id,
     similarityScore: p.similarityScore,
     resolution: p.resolution,
+    matchReason: p.matchReason,
     a: side(p.fieldA),
     b: side(p.fieldB),
   }));
