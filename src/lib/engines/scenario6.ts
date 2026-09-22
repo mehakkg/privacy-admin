@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { db } from "@/lib/db";
-import { audited, type AuditActor } from "@/lib/engines/audit";
+import { db, governanceDb } from "@/lib/db";
+import { audited, recordAction, type AuditActor } from "@/lib/engines/audit";
 import { isCombinedGovernance } from "@/lib/governance";
 import { DEVICE_MATRIX } from "@/lib/scenario6";
 import type { TxClient } from "@/lib/tx";
@@ -21,20 +21,21 @@ export type PurposeTagInput =
 
 export async function tagFieldsToPurpose(fieldIds: string[], choice: PurposeTagInput, actor: AuditActor) {
   if (fieldIds.length === 0) throw Object.assign(new Error("Select at least one field."), { name: "ValidationError" });
-  await audited(
-    { actor, action: "datamap.fields_tagged", targetType: "ClassifiedField", targetId: fieldIds[0], eventDescription: `Tagged ${fieldIds.length} field(s) to a purpose (${choice.mode})`, payload: { count: fieldIds.length, mode: choice.mode } },
-    async (tx: TxClient) => {
-      let purposeTagId: string;
-      if (choice.mode === "existing") {
-        purposeTagId = choice.existingPurposeTagId;
-      } else {
-        if (!choice.proposed.name.trim()) throw Object.assign(new Error("Name the proposed purpose."), { name: "ValidationError" });
-        const pt = await tx.purposeTag.create({ data: { name: choice.proposed.name.trim(), description: choice.proposed.description.trim(), lawfulBasis: choice.proposed.legalBasis, retention: choice.proposed.retention.trim() || "To be set by DPO", status: "pending_dpo_approval", approvedBy: "—", approvedAt: new Date(), proposedBy: actor.label, proposedAt: new Date() } });
-        purposeTagId = pt.id;
-      }
-      await tx.classifiedField.updateMany({ where: { id: { in: fieldIds } }, data: { purposeTagId } });
-    },
-  );
+  if (choice.mode === "existing") {
+    // ClassifiedField is not governance-owned — the ordinary audited path works.
+    await audited(
+      { actor, action: "datamap.fields_tagged", targetType: "ClassifiedField", targetId: fieldIds[0], eventDescription: `Tagged ${fieldIds.length} field(s) to an existing purpose`, payload: { count: fieldIds.length, mode: "existing" } },
+      (tx: TxClient) => tx.classifiedField.updateMany({ where: { id: { in: fieldIds } }, data: { purposeTagId: choice.existingPurposeTagId } }),
+    );
+    return;
+  }
+  // Propose-new creates a PENDING PurposeTag (governance-owned) → governanceDb.
+  if (!choice.proposed.name.trim()) throw Object.assign(new Error("Name the proposed purpose."), { name: "ValidationError" });
+  await governanceDb.$transaction(async (tx) => {
+    const pt = await tx.purposeTag.create({ data: { name: choice.proposed.name.trim(), description: choice.proposed.description.trim(), lawfulBasis: choice.proposed.legalBasis, retention: choice.proposed.retention.trim() || "To be set by DPO", status: "pending_dpo_approval", approvedBy: "—", approvedAt: new Date(), proposedBy: actor.label, proposedAt: new Date() } });
+    await tx.classifiedField.updateMany({ where: { id: { in: fieldIds } }, data: { purposeTagId: pt.id } });
+    await recordAction(tx as never, { actor, action: "datamap.fields_tagged", targetType: "ClassifiedField", targetId: fieldIds[0], customerId: null, eventDescription: `Tagged ${fieldIds.length} field(s) to a proposed purpose`, payload: { count: fieldIds.length, mode: "propose", purpose: choice.proposed.name.trim() } });
+  });
 }
 
 // ---- Screen 2: data category CRUD ------------------------------------------
@@ -184,21 +185,21 @@ export async function publishAllVariants(noticeId: string, actor: AuditActor) {
 
 export async function proposeCookieCategory(name: string, description: string, defaultState: string, actor: AuditActor) {
   if (!name.trim() || !description.trim()) throw Object.assign(new Error("Name and description are required."), { name: "ValidationError" });
-  return audited(
-    { actor, action: "cookie.category_proposed", targetType: "CookieCategory", targetId: name.trim(), eventDescription: `Proposed cookie category ${name.trim()} (default ${defaultState})`, payload: { defaultState } },
-    (tx: TxClient) => tx.cookieCategory.create({ data: { name: name.trim(), description: description.trim(), defaultState: defaultState === "on" ? "on" : "off", status: "pending_dpo_approval", custom: true, proposedBy: actor.label, proposedAt: new Date() } }),
-  );
+  // A proposal creates a PENDING governance-owned CookieCategory → governanceDb.
+  await governanceDb.$transaction(async (tx) => {
+    await recordAction(tx as never, { actor, action: "cookie.category_proposed", targetType: "CookieCategory", targetId: name.trim(), eventDescription: `Proposed cookie category ${name.trim()} (default ${defaultState})`, payload: { defaultState } });
+    await tx.cookieCategory.create({ data: { name: name.trim(), description: description.trim(), defaultState: defaultState === "on" ? "on" : "off", status: "pending_dpo_approval", custom: true, proposedBy: actor.label, proposedAt: new Date() } });
+  });
 }
 
 export async function decideCookieCategory(id: string, approve: boolean, actor: AuditActor) {
   const combined = await isCombinedGovernance();
   if (!(actor.role === "dpo" || (combined && actor.role === "admin"))) throw Object.assign(new Error("Only the DPO can approve a cookie category. Switch role to decide."), { name: "UnauthorisedRulingError" });
-  await audited(
-    { actor, action: approve ? "cookie.category_approved" : "cookie.category_rejected", targetType: "CookieCategory", targetId: id, eventDescription: `${approve ? "Approved" : "Rejected"} a proposed cookie category`, payload: { selfApproved: combined && actor.role === "admin" } },
-    (tx: TxClient) => approve
-      ? tx.cookieCategory.update({ where: { id }, data: { status: "approved", approvedBy: actor.label, approvedAt: new Date() } })
-      : tx.cookieCategory.delete({ where: { id } }),
-  );
+  await governanceDb.$transaction(async (tx) => {
+    await recordAction(tx as never, { actor, action: approve ? "cookie.category_approved" : "cookie.category_rejected", targetType: "CookieCategory", targetId: id, eventDescription: `${approve ? "Approved" : "Rejected"} a proposed cookie category`, payload: { selfApproved: combined && actor.role === "admin" } });
+    if (approve) await tx.cookieCategory.update({ where: { id }, data: { status: "approved", approvedBy: actor.label, approvedAt: new Date() } });
+    else await tx.cookieCategory.delete({ where: { id } });
+  });
 }
 
 // ---- Screen 8: script compliance scan (canonical engine) -------------------
