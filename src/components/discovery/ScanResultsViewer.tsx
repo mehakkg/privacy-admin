@@ -2,11 +2,12 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { ShieldAlert, Pencil, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 import { Pill, Chip, Notice } from "@/components/ui";
 import { Modal } from "@/components/Modal";
 import { ActionError } from "@/components/actions";
-import { overrideClassificationAction, quarantineFieldAction, bulkOnboardSourcesAction } from "@/app/actions/scenario4";
+import { overrideClassificationAction, bulkOnboardSourcesAction } from "@/app/actions/scenario4";
 import { RISK_LEVELS, RISK_LABEL, RISK_TONE, SOURCE_KIND_LABEL, OVERRIDE_REASON_CATEGORIES } from "@/lib/scenario4";
 import type { ActionResult } from "@/app/actions/requests";
 
@@ -64,7 +65,7 @@ export function ScanResultsViewer({ findings, newSources }: { findings: Finding[
               {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
               <Pill tone={RISK_TONE[risk]} dot={false}>{RISK_LABEL[risk]}</Pill>
               <span className="cell-sub">{rows.length} finding{rows.length === 1 ? "" : "s"}</span>
-              {risk === "high" && rows.length > 0 && <span className="cell-sub" style={{ color: "var(--red)" }}><ShieldAlert size={12} style={{ verticalAlign: "-2px" }} /> review first</span>}
+              {risk === "high" && rows.length > 0 && <span className="cell-sub" style={{ color: "var(--red)" }}><ShieldAlert size={12} style={{ verticalAlign: "-2px" }} /> review first · auto-quarantined on flag</span>}
             </button>
             {!isCollapsed && (
               <div className="table-wrap">
@@ -79,7 +80,7 @@ export function ScanResultsViewer({ findings, newSources }: { findings: Finding[
                         <td><span className="cell-sub"><Sparkles size={11} style={{ verticalAlign: "-1px" }} /> {f.matchedRule}</span></td>
                         <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                           <button className="btn ghost xs" onClick={() => { setReasonOpen(f); setOv({ type: f.effectiveType, category: "", note: "" }); }}><Pencil size={12} /> Override</button>
-                          {f.risk === "high" && !f.quarantined && <button className="btn ghost xs" disabled={pending} onClick={() => run(() => quarantineFieldAction(f.id))}>Quarantine</button>}
+                          {f.quarantined && <Link href="/discovery/quarantine" className="row-link" style={{ fontSize: 12, marginLeft: 8 }}>In quarantine →</Link>}
                         </td>
                       </tr>
                     ))}

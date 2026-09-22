@@ -45,15 +45,16 @@ async function main() {
       for (let i = 0; i < specs.length; i++) {
         const s = specs[i];
         await prisma.classifiedField.create({
-          data: { sourceId: sources[i % sources.length].id, fieldPath: s.path, detectedType: s.type, confidence: s.conf, maskedSample: s.sample, sensitivityTier: s.tier, matchedRule: s.rule, reviewState: "pending", quarantined: s.tier === "high" && i === 0 },
+          data: { sourceId: sources[i % sources.length].id, fieldPath: s.path, detectedType: s.type, confidence: s.conf, maskedSample: s.sample, sensitivityTier: s.tier, matchedRule: s.rule, reviewState: "pending", quarantined: s.tier === "high" },
         });
       }
       console.log(`patch-scenario4: seeded ${specs.length} classified fields.`);
     }
-  } else if ((await prisma.classifiedField.count({ where: { quarantined: true } })) === 0) {
-    const highRisk = await prisma.classifiedField.findFirst({ where: { sensitivityTier: "high", quarantined: false }, orderBy: { fieldPath: "asc" } });
-    if (highRisk) await prisma.classifiedField.update({ where: { id: highRisk.id }, data: { quarantined: true } });
   }
+
+  // Auto-quarantine every high-risk finding on flag (idempotent). High risk is
+  // isolated automatically — never dependent on a manual action.
+  await prisma.classifiedField.updateMany({ where: { sensitivityTier: "high", quarantined: false }, data: { quarantined: true } });
 
   // Seed near-duplicate pairs (from existing classified fields, across different
   // sources) so the identity-resolution run flags them and the near-duplicate

@@ -40,13 +40,18 @@ export async function scheduleScan(sourceIds: string[], schedule: string, offPea
 
 // ---- SCREEN 3: Classification override with reason category ----------------
 
+const HIGH_RISK_TYPES = ["pan", "aadhaar", "financial", "kyc", "health", "card", "biometric"];
+
 export async function overrideClassification(fieldId: string, newType: string, category: string, note: string, actor: AuditActor) {
   if (!["mis_tagged", "reclassified", "other"].includes(category)) throw Object.assign(new Error("Pick a reason category."), { name: "ValidationError" });
   if (!note.trim()) throw Object.assign(new Error("A note is required alongside the category."), { name: "ValidationError" });
   const field = await db.classifiedField.findUniqueOrThrow({ where: { id: fieldId }, include: { source: true } });
+  // Reclassifying a field TO a high-risk type flags it high-risk, which auto-
+  // quarantines it — isolation follows the flag, never a manual step.
+  const nowHighRisk = HIGH_RISK_TYPES.includes(newType.trim().toLowerCase());
   await audited(
     { actor, action: "discovery.classification_overridden", targetType: "ClassifiedField", targetId: fieldId, eventDescription: `Reclassified ${field.fieldPath} → ${newType} (${category})`, payload: { detectedType: field.detectedType, overriddenTo: newType, category, note, wasHighConfidence: field.confidence === "high" } },
-    (tx: TxClient) => tx.classifiedField.update({ where: { id: fieldId }, data: { reviewState: "overridden", overriddenType: newType, overrideReason: note.trim(), overrideReasonCategory: category, highConfidenceOverride: field.confidence === "high", reviewedByActorId: actor.id ?? null, reviewedAt: new Date() } }),
+    (tx: TxClient) => tx.classifiedField.update({ where: { id: fieldId }, data: { reviewState: "overridden", overriddenType: newType, overrideReason: note.trim(), overrideReasonCategory: category, highConfidenceOverride: field.confidence === "high", reviewedByActorId: actor.id ?? null, reviewedAt: new Date(), ...(nowHighRisk ? { sensitivityTier: "high", quarantined: true } : {}) } }),
   );
 }
 
