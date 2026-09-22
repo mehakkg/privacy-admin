@@ -25,7 +25,32 @@ async function main() {
 
   // Quarantine one high-risk finding (if the discovery demo has one) so the gate
   // screen is demonstrable.
-  if ((await prisma.classifiedField.count({ where: { quarantined: true } })) === 0) {
+  // Seed classified fields across the existing sources if the discovery demo
+  // data never landed on this DB, so the results/quarantine/duplicate screens
+  // have content. Idempotent.
+  if ((await prisma.classifiedField.count()) === 0) {
+    const sources = await prisma.discoverySource.findMany({ orderBy: { name: "asc" }, take: 8 });
+    if (sources.length > 0) {
+      const specs = [
+        { path: "customers.pan_number", type: "pan", tier: "high", conf: "high", sample: "AB••••1234F", rule: "PAN pattern (5 letters, 4 digits, 1 letter)" },
+        { path: "kyc.aadhaar", type: "aadhaar", tier: "high", conf: "high", sample: "••••••••9012", rule: "Aadhaar pattern (12 digits, Verhoeff checksum)" },
+        { path: "billing.card_number", type: "financial", tier: "high", conf: "high", sample: "••••••••••••4242", rule: "PAN card (Luhn-valid 16 digits)" },
+        { path: "profiles.email", type: "email", tier: "medium", conf: "high", sample: "a•••@example.in", rule: "Email pattern (local@domain)" },
+        { path: "profiles.phone", type: "phone", tier: "medium", conf: "high", sample: "+91 ••••• •5512", rule: "E.164 phone pattern" },
+        { path: "profiles.full_name", type: "identity", tier: "medium", conf: "needs_review", sample: "A••• N•••", rule: "Name dictionary + column-name heuristic" },
+        { path: "contacts.email", type: "email", tier: "medium", conf: "high", sample: "k•••@example.in", rule: "Email pattern (local@domain)" },
+        { path: "prefs.country", type: "behavioural", tier: "low", conf: "high", sample: "IN", rule: "ISO country-code enum" },
+        { path: "prefs.segment", type: "marketing", tier: "low", conf: "needs_review", sample: "high-value", rule: "Free-text marketing attribute" },
+      ];
+      for (let i = 0; i < specs.length; i++) {
+        const s = specs[i];
+        await prisma.classifiedField.create({
+          data: { sourceId: sources[i % sources.length].id, fieldPath: s.path, detectedType: s.type, confidence: s.conf, maskedSample: s.sample, sensitivityTier: s.tier, matchedRule: s.rule, reviewState: "pending", quarantined: s.tier === "high" && i === 0 },
+        });
+      }
+      console.log(`patch-scenario4: seeded ${specs.length} classified fields.`);
+    }
+  } else if ((await prisma.classifiedField.count({ where: { quarantined: true } })) === 0) {
     const highRisk = await prisma.classifiedField.findFirst({ where: { sensitivityTier: "high", quarantined: false }, orderBy: { fieldPath: "asc" } });
     if (highRisk) await prisma.classifiedField.update({ where: { id: highRisk.id }, data: { quarantined: true } });
   }
