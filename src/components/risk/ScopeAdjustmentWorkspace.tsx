@@ -12,7 +12,25 @@ import type { ActionResult } from "@/app/actions/requests";
 export interface Proposal { id: string; originalScope: string; proposedScope: string; status: string; cisoCounterScope: string | null; proposedBy: string; decidedBy: string | null }
 export interface ExceptionView { id: string; ruleName: string; dataCategory: string; process: string; blockingClause: string | null; currentScope: string; investigatedAt: string | null; resolution: string; proposals: Proposal[] }
 
-export function ScopeAdjustmentWorkspace({ exceptions, role }: { exceptions: ExceptionView[]; role: string }) {
+/** A stored scope is either a JSON array of connected-system IDs (the implemented
+ *  scope) or a free-text narrower scope (a proposal). Render IDs as their system
+ *  names; leave free text untouched. */
+function readableScope(raw: string, names: Record<string, string>): string {
+  const trimmed = (raw ?? "").trim();
+  if (trimmed.startsWith("[")) {
+    try {
+      const ids = JSON.parse(trimmed);
+      if (Array.isArray(ids)) {
+        return ids.length ? ids.map((id) => names[id] ?? id).join(", ") : "No systems in scope";
+      }
+    } catch {
+      /* not JSON — fall through to the raw string */
+    }
+  }
+  return trimmed;
+}
+
+export function ScopeAdjustmentWorkspace({ exceptions, role, systemNames = {} }: { exceptions: ExceptionView[]; role: string; systemNames?: Record<string, string> }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [result, setResult] = useState<ActionResult | null>(null);
@@ -41,7 +59,7 @@ export function ScopeAdjustmentWorkspace({ exceptions, role }: { exceptions: Exc
                 <div className="notice-title"><ShieldAlert size={14} style={{ verticalAlign: "-2px", marginRight: 6 }} />Blocked: {e.process}</div>
                 <div>Blocked by the <strong>{e.ruleName}</strong> rule ({e.dataCategory}). Blocking clause: {e.blockingClause ?? "the rule's current implemented scope"}.</div>
               </div>
-              <div className="kv"><span className="k">Current implemented scope</span><span className="mono">{e.currentScope}</span></div>
+              <div className="kv"><span className="k">Current implemented scope</span><span className="mono">{readableScope(e.currentScope, systemNames)}</span></div>
 
               {/* Investigate → propose (Screen 3). */}
               {!e.investigatedAt && e.resolution === "pending" && (
@@ -67,8 +85,8 @@ export function ScopeAdjustmentWorkspace({ exceptions, role }: { exceptions: Exc
                 <div style={{ marginTop: 12 }}>
                   <div className="section-label">Original vs proposed scope</div>
                   <div className="dprr-grid" style={{ marginTop: 4 }}>
-                    <div className="card"><div className="card-body"><span className="cell-sub">Original (preserved)</span><div className="mono">{active.originalScope}</div></div></div>
-                    <div className="card"><div className="card-body"><span className="cell-sub">Proposed</span><div className="mono">{active.status === "counter_proposed" ? active.cisoCounterScope : active.proposedScope}</div></div></div>
+                    <div className="card"><div className="card-body"><span className="cell-sub">Original (preserved)</span><div className="mono">{readableScope(active.originalScope, systemNames)}</div></div></div>
+                    <div className="card"><div className="card-body"><span className="cell-sub">Proposed</span><div className="mono">{readableScope((active.status === "counter_proposed" ? active.cisoCounterScope : active.proposedScope) ?? "", systemNames)}</div></div></div>
                   </div>
                   <p className="cell-sub" style={{ margin: "8px 0" }}>Status: <Pill tone={PROPOSAL_STATUS_TONE[active.status]} dot={false}>{PROPOSAL_STATUS_LABEL[active.status]}</Pill> · proposed by {active.proposedBy}</p>
 
@@ -90,7 +108,7 @@ export function ScopeAdjustmentWorkspace({ exceptions, role }: { exceptions: Exc
 
                   {active.status === "counter_proposed" && (
                     <Notice tone="info" title="CISO counter-proposed a different scope">
-                      The CISO returned <span className="mono">{active.cisoCounterScope}</span>. <button className="btn xs primary" disabled={pending} onClick={() => run(() => acceptCounterProposalAction(active.id))}>Accept counter-proposal</button>
+                      The CISO returned <span className="mono">{readableScope(active.cisoCounterScope ?? "", systemNames)}</span>. <button className="btn xs primary" disabled={pending} onClick={() => run(() => acceptCounterProposalAction(active.id))}>Accept counter-proposal</button>
                     </Notice>
                   )}
                 </div>
