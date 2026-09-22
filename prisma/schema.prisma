@@ -528,44 +528,93 @@ model DeletionInstruction {
   executedAt DateTime?
   executedBy String?
 
-  // Scenario 1 fulfillment lifecycle (over the same shared object).
-  scopeConfirmedAt DateTime?
-  /// Set when the immutable completion evidence has been compiled + notified.
-  completedAt      DateTime?
+  /// 1:1 link to the Scenario 1 RightsFulfillmentRequest this deletion serves,
+  /// when it came in through the fulfilment intake. The retention gate remains
+  /// the SAME Scenario 3 block on this shared object.
+  fulfillmentRequestId String? @unique
 
-  conflict   RetentionConflict?
-  escalation ConflictEscalation?
-  systems    DeletionSystemStatus[]
+  conflict           RetentionConflict?
+  escalation         ConflictEscalation?
+  fulfillmentRequest RightsFulfillmentRequest? @relation(fields: [fulfillmentRequestId], references: [id])
 
   @@index([status])
   @@index([customerId])
 }
 
-/// Per-system/processor deletion status for one instruction — the shared
-/// completion-checklist shape (confirmed / pending / manual-required / failed),
-/// consistent with the access-revocation and breach-processor checklists.
-model DeletionSystemStatus {
-  id            String  @id @default(cuid())
-  instructionId String
-  name          String
+// ---------------------------------------------------------------------------
+// Scenario 1 — Rights Fulfillment Execution & Cross-System Verification.
+// The intake object wraps a SHARED DeletionInstruction (Scenario 3); it does
+// not re-model deletion, retention or the audit log.
+// ---------------------------------------------------------------------------
+
+model RightsFulfillmentRequest {
+  id         String    @id @default(cuid())
+  /// grievance_escalation | manual
+  source     String    @default("grievance_escalation")
+  customerId String
+  deadline   DateTime?
+  /// received | scope_confirmed | retention_check | executing | verifying | complete
+  status     String    @default("received")
+  scopeConfirmedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  instruction DeletionInstruction?
+  systems     SystemCompletionStatus[]
+  evidence    CompletionEvidenceRecord?
+
+  @@index([status])
+  @@index([customerId])
+}
+
+/// Per-system/processor completion status — the shape rendered by the shared
+/// MultiSystemCompletionChecklist. Three statuses incl. manual-verification-
+/// required, which the other consumers of the checklist don't need.
+model SystemCompletionStatus {
+  id        String @id @default(cuid())
+  requestId String
+  name      String
   /// automated | manual | processor
-  kind          String  @default("automated")
-  /// pending | confirmed | manual_required | failed
-  status        String  @default("pending")
-  confirmationRef String?
-  errorDetail     String?
-  /// Manual verification: never inferred — an explicit note is required.
-  manualNote      String?
-  verifiedBy      String?
-  /// True when Admin added this system by hand (lookup missed it); addNote required.
+  systemType String @default("automated")
+  /// pending | confirmed | manual_verification_required | failed
+  status     String @default("pending")
+  confirmationReference String?
+  /// Required when a manual path sets status=confirmed.
+  verifiedBy       String?
+  verificationNote String?
+  /// True when Admin added this system by hand (lookup missed it); note required.
   addedManually   Boolean @default(false)
   addNote         String?
-  attemptCount    Int     @default(0)
-  decidedAt       DateTime?
+  createdAt DateTime @default(now())
+  decidedAt DateTime?
 
-  instruction DeletionInstruction @relation(fields: [instructionId], references: [id], onDelete: Cascade)
+  request       RightsFulfillmentRequest     @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  investigation FailedDeletionInvestigation?
 
-  @@index([instructionId])
+  @@index([requestId])
+}
+
+model FailedDeletionInvestigation {
+  id                 String   @id @default(cuid())
+  systemCompletionId String   @unique
+  errorDetail        String
+  attemptCount       Int      @default(1)
+  escalated          Boolean  @default(false)
+  resolvedAt         DateTime?
+  createdAt          DateTime @default(now())
+
+  system SystemCompletionStatus @relation(fields: [systemCompletionId], references: [id], onDelete: Cascade)
+}
+
+model CompletionEvidenceRecord {
+  id                         String    @id @default(cuid())
+  requestId                  String    @unique
+  compiledAt                 DateTime  @default(now())
+  /// JSON string[] of confirmation references (+ manual notes) assembled.
+  systemReferencesJson       String    @default("[]")
+  notifiedGrievanceOfficerAt DateTime?
+  notifiedDpoAt              DateTime?
+
+  request RightsFulfillmentRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
 }
 
 model RetentionConflict {

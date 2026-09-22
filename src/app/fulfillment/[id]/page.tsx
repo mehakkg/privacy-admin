@@ -2,55 +2,58 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
 import { PageHead, formatDate } from "@/components/ui";
-import { FulfillmentWorkspace, type FulfillmentView, type SystemRow } from "@/components/fulfillment/FulfillmentWorkspace";
+import { FulfillmentWorkspace, type FulfillmentView } from "@/components/fulfillment/FulfillmentWorkspace";
+import type { ChecklistSystem } from "@/components/shared/MultiSystemCompletionChecklist";
 import { evaluateSla } from "@/lib/engines/sla";
 
 export const dynamic = "force-dynamic";
 
 export default async function FulfillmentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const inst = await db.deletionInstruction.findUnique({
+  const req = await db.rightsFulfillmentRequest.findUnique({
     where: { id },
-    include: { systems: { orderBy: { name: "asc" } }, conflict: true, escalation: { include: { ruling: true } } },
+    include: {
+      systems: { include: { investigation: true }, orderBy: { name: "asc" } },
+      instruction: { include: { conflict: true, escalation: { include: { ruling: true } } } },
+      evidence: true,
+    },
   });
-  if (!inst) notFound();
+  if (!req) notFound();
 
   const [principal, locations] = await Promise.all([
-    db.dataPrincipal.findUnique({ where: { id: inst.customerId }, select: { displayName: true } }),
-    db.dataLocation.findMany({ where: { principalId: inst.customerId }, include: { system: true, processor: true } }),
+    db.dataPrincipal.findUnique({ where: { id: req.customerId }, select: { displayName: true } }),
+    db.dataLocation.findMany({ where: { principalId: req.customerId }, include: { system: true, processor: true } }),
   ]);
 
-  // Data-location lookup preview (Screen 2) — what would be included on confirm.
-  const preview = new Map<string, { name: string; kind: string }>();
+  const preview = new Map<string, { name: string; systemType: string }>();
   for (const l of locations) {
-    if (l.system) preview.set(`s:${l.system.id}`, { name: l.system.name, kind: l.system.hasApi ? "automated" : "manual" });
-    if (l.processor) preview.set(`p:${l.processor.id}`, { name: l.processor.name, kind: "processor" });
+    if (l.system) preview.set(`s:${l.system.id}`, { name: l.system.name, systemType: l.system.hasApi ? "automated" : "manual" });
+    if (l.processor) preview.set(`p:${l.processor.id}`, { name: l.processor.name, systemType: "processor" });
   }
 
-  const cleared = (!inst.conflict && inst.status === "queued") || inst.escalation?.ruling?.decision === "proceed" || inst.escalation?.ruling?.decision === "modify";
-  const sla = inst.deadline ? evaluateSla(inst.createdAt, inst.deadline) : null;
+  const inst = req.instruction;
+  const cleared = Boolean(inst && ((!inst.conflict && inst.status === "queued") || inst.escalation?.ruling?.decision === "proceed" || inst.escalation?.ruling?.decision === "modify"));
+  const sla = req.deadline ? evaluateSla(req.createdAt, req.deadline) : null;
+  const deadlineDays = req.deadline ? Math.max(0, Math.round((req.deadline.getTime() - req.createdAt.getTime()) / 86_400_000)) : null;
 
-  const systems: SystemRow[] = inst.systems.map((s) => ({
-    id: s.id, name: s.name, kind: s.kind, status: s.status, confirmationRef: s.confirmationRef,
-    errorDetail: s.errorDetail, manualNote: s.manualNote, verifiedBy: s.verifiedBy, addedManually: s.addedManually,
-    addNote: s.addNote, attemptCount: s.attemptCount,
+  const systems: ChecklistSystem[] = req.systems.map((s) => ({
+    id: s.id, name: s.name, systemType: s.systemType, status: s.status,
+    confirmationReference: s.confirmationReference, verifiedBy: s.verifiedBy, verificationNote: s.verificationNote,
+    errorDetail: s.investigation?.errorDetail ?? null, attemptCount: s.investigation?.attemptCount ?? 0, addedManually: s.addedManually,
   }));
 
   const v: FulfillmentView = {
-    id: inst.id, customerId: inst.customerId, customerName: principal?.displayName ?? inst.customerId,
-    scope: inst.scope, source: inst.source,
-    deadlineLabel: sla?.label ?? null, deadlineBand: sla?.band ?? null,
-    status: inst.status,
-    retention: {
-      conflicted: Boolean(inst.conflict), cleared,
-      rulingDecision: inst.escalation?.ruling?.decision ?? null,
-      deletionHref: `/audit-trail/deletions/${inst.id}`,
-    },
-    scopeConfirmed: Boolean(inst.scopeConfirmedAt),
+    requestId: req.id, customerId: req.customerId, customerName: principal?.displayName ?? req.customerId,
+    scope: inst?.scope ?? "—", source: req.source,
+    deadlineLabel: sla?.label ?? null, deadlineBand: sla?.band ?? null, deadlineDays,
+    status: req.status,
+    retention: { conflicted: Boolean(inst?.conflict), cleared, rulingDecision: inst?.escalation?.ruling?.decision ?? null, deletionHref: inst ? `/audit-trail/deletions/${inst.id}` : "/audit-trail/deletions" },
+    scopeConfirmed: Boolean(req.scopeConfirmedAt),
     lookupPreview: [...preview.values()],
     systems,
-    executed: inst.status === "executed" && inst.systems.length > 0,
-    completedAt: inst.completedAt ? formatDate(inst.completedAt) : null,
+    executed: req.status === "verifying" || req.status === "complete",
+    completed: req.status === "complete",
+    completedAt: req.evidence?.compiledAt ? formatDate(req.evidence.compiledAt) : null,
   };
 
   return (
@@ -58,7 +61,7 @@ export default async function FulfillmentDetailPage({ params }: { params: Promis
       <PageHead
         crumbs={[{ label: "Deletion requests", href: "/fulfillment" }, { label: v.customerName }]}
         title="Fulfil deletion request"
-        titleTip="Confirm scope from the data-location lookup, pass the shared retention gate, execute across every system at once, track per-system completion, and compile the immutable completion evidence."
+        titleTip="Confirm scope from the data-location lookup, pass the shared retention gate, execute across every system at once, track per-system completion via the shared checklist, and compile the immutable completion evidence."
       />
       <FulfillmentWorkspace v={v} />
     </Shell>
