@@ -129,6 +129,13 @@ export type NotificationEvent =
       kind: "conflict.ruling_issued";
       escalationId: string;
       decision: string;
+    }
+  // --- Scenario 1: cross-system deletion fulfilment complete ------------------
+  | {
+      kind: "fulfillment.completed";
+      instructionId: string;
+      customerId: string;
+      systemCount: number;
     };
 
 interface Fanout {
@@ -277,6 +284,14 @@ function fanout(event: NotificationEvent): Fanout {
         severity: "info",
       };
 
+    case "fulfillment.completed":
+      return {
+        roles: ["grievance_officer", "dpo"],
+        title: `Deletion complete — ${event.customerId}`,
+        body: `Erasure is confirmed across all ${event.systemCount} systems and processors. The completion record is compiled and the statutory deadline is closed.`,
+        severity: "info",
+      };
+
     case "integration.sync_failed":
       return {
         roles: ["admin"],
@@ -304,7 +319,7 @@ function fanout(event: NotificationEvent): Fanout {
 function categoryFor(kind: string): string {
   if (kind === "integration.sync_failed" || kind === "discovery.scan_failed") return "integration_sync_failure";
   if (kind.startsWith("escalation") || kind.startsWith("conflict")) return "dpo_approval_needed";
-  if (kind === "sla.threshold" || kind.startsWith("completion") || kind === "execution.verified" || kind === "execution.failed" || kind.startsWith("dprr")) return "dsr_sla_deadline";
+  if (kind === "sla.threshold" || kind.startsWith("completion") || kind === "execution.verified" || kind === "execution.failed" || kind.startsWith("dprr") || kind.startsWith("fulfillment")) return "dsr_sla_deadline";
   if (kind.startsWith("breach")) return "breach_clock";
   if (kind.startsWith("drift")) return "drift_detected";
   if (kind === "retention.blocked" || kind.startsWith("policy")) return "policy_violation";
@@ -320,6 +335,7 @@ function hrefFor(event: NotificationEvent): string | null {
     case "dprr.board_escalated": return `/requests/sla/${event.ticketId}`;
     case "conflict.escalation_raised": return `/audit-trail/rulings/${event.escalationId}`;
     case "conflict.ruling_issued": return `/audit-trail/rulings/${event.escalationId}`;
+    case "fulfillment.completed": return `/fulfillment/${event.instructionId}`;
     case "escalation.raised":
     case "escalation.ruled": return "/access/approval-queue";
     case "sla.threshold":

@@ -77,6 +77,7 @@ function navGroups(openRequests: number, role: string): NavEntry[] {
       badge: openRequests,
       children: [
         { href: "/requests", label: "Requests", ready: true },
+        { href: "/fulfillment", label: "Deletion fulfillment", ready: true },
         { href: "/escalations", label: "Escalations", ready: true },
         { href: "/requests/sla", label: "DPRR queue & SLA", ready: true },
       ],

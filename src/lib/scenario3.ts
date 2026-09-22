@@ -31,3 +31,12 @@ export function executionLabel(decision: string, ruledAtLabel: string): string {
   const verb = decision === "proceed" ? "Proceed with deletion" : decision === "deny" ? "Deny the deletion and retain" : "Apply the modified deletion";
   return `${verb} per DPO ruling of ${ruledAtLabel}`;
 }
+
+// ---- Scenario 1: cross-system deletion fulfilment -------------------------
+export const SYS_STATUS = ["pending", "confirmed", "manual_required", "failed"] as const;
+export const SYS_STATUS_LABEL: Record<string, string> = {
+  pending: "Pending", confirmed: "Confirmed", manual_required: "Manual required", failed: "Failed",
+};
+export const SYS_STATUS_TONE: Record<string, "gray" | "green" | "yellow" | "red"> = {
+  pending: "gray", confirmed: "green", manual_required: "yellow", failed: "red",
+};

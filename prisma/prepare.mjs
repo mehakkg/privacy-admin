@@ -93,4 +93,6 @@ if (!POOLED) {
   run("Seeding DPRR demo", "npx tsx prisma/patch-dprr.ts", POOLED);
   // Idempotent: seeds the Scenario 3 audit/evidence/conflict-escalation demo.
   run("Seeding Audit & Escalation demo", "npx tsx prisma/patch-audit.ts", POOLED);
+  // Idempotent: seeds the Scenario 1 cross-system deletion-fulfilment demo.
+  run("Seeding Fulfilment demo", "npx tsx prisma/patch-fulfillment.ts", POOLED);
 }

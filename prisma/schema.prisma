@@ -528,11 +528,44 @@ model DeletionInstruction {
   executedAt DateTime?
   executedBy String?
 
+  // Scenario 1 fulfillment lifecycle (over the same shared object).
+  scopeConfirmedAt DateTime?
+  /// Set when the immutable completion evidence has been compiled + notified.
+  completedAt      DateTime?
+
   conflict   RetentionConflict?
   escalation ConflictEscalation?
+  systems    DeletionSystemStatus[]
 
   @@index([status])
   @@index([customerId])
+}
+
+/// Per-system/processor deletion status for one instruction — the shared
+/// completion-checklist shape (confirmed / pending / manual-required / failed),
+/// consistent with the access-revocation and breach-processor checklists.
+model DeletionSystemStatus {
+  id            String  @id @default(cuid())
+  instructionId String
+  name          String
+  /// automated | manual | processor
+  kind          String  @default("automated")
+  /// pending | confirmed | manual_required | failed
+  status        String  @default("pending")
+  confirmationRef String?
+  errorDetail     String?
+  /// Manual verification: never inferred — an explicit note is required.
+  manualNote      String?
+  verifiedBy      String?
+  /// True when Admin added this system by hand (lookup missed it); addNote required.
+  addedManually   Boolean @default(false)
+  addNote         String?
+  attemptCount    Int     @default(0)
+  decidedAt       DateTime?
+
+  instruction DeletionInstruction @relation(fields: [instructionId], references: [id], onDelete: Cascade)
+
+  @@index([instructionId])
 }
 
 model RetentionConflict {
