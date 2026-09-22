@@ -10,7 +10,7 @@ import { DEVICE_STATUS_TONE, DEVICE_STATUS_LABEL, VARIANT_PUBLISH_TONE, VARIANT_
 import type { ActionResult } from "@/app/actions/requests";
 
 export interface DeviceCell { id: string | null; device: string; browser: string; method: string; status: string; detail: string | null }
-export interface VariantView { id: string; language: string; inherit: boolean; content: string; publishStatus: string; stale: boolean; checks: DeviceCell[] }
+export interface VariantView { id: string; language: string; region: string | null; inherit: boolean; content: string; publishStatus: string; stale: boolean; checks: DeviceCell[] }
 export interface ReleaseView { noticeId: string; noticeName: string; base: string; variants: VariantView[] }
 
 export function NoticeReleaseWorkspace({ v }: { v: ReleaseView }) {
@@ -28,12 +28,21 @@ export function NoticeReleaseWorkspace({ v }: { v: ReleaseView }) {
     <div>
       <ActionError result={result} />
 
+      {/* Approved notice content — locked, read-only here (Approved-Policy treatment). */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-head"><Lock size={13} style={{ verticalAlign: "-2px", marginRight: 6 }} />Approved notice content — locked</div>
+        <div className="card-body">
+          <p className="cell-sub" style={{ margin: "0 0 8px" }}>This is the DPO-approved base content. It is read-only during release; variants inherit or override it, but the base cannot be edited here.</p>
+          <div className="locked-content">{v.base || <em className="cell-sub">No base content.</em>}</div>
+        </div>
+      </div>
+
       {v.variants.map((vr) => {
         const allPass = vr.checks.length > 0 && vr.checks.every((c) => c.status === "pass");
         return (
           <div key={vr.id} className="card" style={{ marginBottom: 16 }}>
             <div className="card-head">
-              {vr.language}
+              {vr.language}{vr.region ? ` · ${vr.region}` : ""}
               <span className="row" style={{ gap: 6, marginLeft: 8, alignItems: "center" }}>
                 <Pill tone={vr.inherit ? "gray" : "blue"} dot={false}>{vr.inherit ? "Inheriting base" : "Overridden"}</Pill>
                 <Pill tone={VARIANT_PUBLISH_TONE[vr.publishStatus] ?? "gray"} dot={false}>{VARIANT_PUBLISH_LABEL[vr.publishStatus] ?? vr.publishStatus}</Pill>

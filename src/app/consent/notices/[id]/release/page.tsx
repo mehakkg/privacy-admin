@@ -24,7 +24,7 @@ export default async function NoticeReleasePage({ params }: { params: Promise<{ 
       return c ? { id: c.id, device: c.device, browser: c.browser, method: c.method, status: c.status, detail: c.detail } : { id: null, device: d.device, browser: d.browser, method: d.method, status: "not_run", detail: null };
     });
     const stale = vr.inherit && vr.baseHashAtReview != null && vr.baseHashAtReview !== currentBase;
-    return { id: vr.id, language: vr.language, inherit: vr.inherit, content: vr.content, publishStatus: vr.publishStatus, stale, checks };
+    return { id: vr.id, language: vr.language, region: vr.region, inherit: vr.inherit, content: vr.content, publishStatus: vr.publishStatus, stale, checks };
   });
 
   const view: ReleaseView = { noticeId: notice.id, noticeName: notice.name, base: notice.content ?? "", variants };

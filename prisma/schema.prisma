@@ -1019,6 +1019,8 @@ model NoticeVariant {
   id       String @id @default(cuid())
   noticeId String
   language String
+  /// Region this variant serves (e.g. IN-MH). Null = all regions for the language.
+  region   String?
   content  String @default("")
 
   /// True = inherit base content; false = overridden with its own content.
@@ -1349,6 +1351,8 @@ model CookieScanFinding {
   firedBeforeConsent Boolean @default(false)
   /// Auto-blocked by the scan on flag (undisclosed or pre-consent firing).
   autoBlocked Boolean @default(false)
+  /// manual | scheduled — which trigger produced this finding (same engine).
+  triggerSource String @default("manual")
   /// Plain-language but specific technical explanation of the issue.
   technicalDetail String?
   /// open | categorised | blocked | dismissed

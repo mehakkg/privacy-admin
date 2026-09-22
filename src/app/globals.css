@@ -3455,3 +3455,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 .map-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .map-row .input { flex: 1; }
 .input-invalid { border-color: var(--red) !important; }
+
+/* ---- Scenario 5/6: locked notice content + selected category row ---- */
+.locked-content { white-space: pre-wrap; font-size: 13px; line-height: 1.55; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-subtle); color: var(--text-2); max-height: 220px; overflow-y: auto; }
+.pick-row.sel { background: var(--bg-selected); border-radius: 6px; }

@@ -233,10 +233,10 @@ export async function runScriptComplianceScan(actor: AuditActor, trigger: "manua
     const existing = await db.cookieScanFinding.findFirst({ where: { scriptName: s.name, page: s.page } });
     if (existing) {
       if (existing.status === "open" || existing.status === "blocked") {
-        await db.cookieScanFinding.update({ where: { id: existing.id }, data: { disclosed, firedBeforeConsent: s.firedBeforeConsent, autoBlocked: true, status: "blocked", technicalDetail: detail } });
+        await db.cookieScanFinding.update({ where: { id: existing.id }, data: { disclosed, firedBeforeConsent: s.firedBeforeConsent, autoBlocked: true, status: "blocked", technicalDetail: detail, triggerSource: trigger } });
       }
     } else {
-      await db.cookieScanFinding.create({ data: { scriptName: s.name, vendor: s.vendor, page: s.page, disclosed, firedBeforeConsent: s.firedBeforeConsent, autoBlocked: true, status: "blocked", technicalDetail: detail } });
+      await db.cookieScanFinding.create({ data: { scriptName: s.name, vendor: s.vendor, page: s.page, disclosed, firedBeforeConsent: s.firedBeforeConsent, autoBlocked: true, status: "blocked", technicalDetail: detail, triggerSource: trigger } });
     }
   }
   await audited(
