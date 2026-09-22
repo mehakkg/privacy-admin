@@ -23,9 +23,16 @@ async function main() {
     }
   }
 
-  // 2) Notice language variants (one stale) on the first notice that has none.
-  const notice = await prisma.notice.findFirst({ where: { variants: { none: {} } }, select: { id: true, content: true } })
+  // 2) Notice language variants (one stale). Create a demo notice if the DB has
+  //    none, so the release page (variants + device QA + publish gate) has data.
+  let notice = await prisma.notice.findFirst({ where: { variants: { none: {} } }, select: { id: true, content: true } })
     ?? await prisma.notice.findFirst({ select: { id: true, content: true } });
+  if (!notice) {
+    notice = await prisma.notice.create({
+      data: { name: "Customer Privacy Notice", status: "draft", content: "We collect identity, contact and transaction data to open and service your accounts, meet KYC and regulatory obligations, and prevent fraud. You may withdraw consent and exercise your rights at any time.", currentVersion: "v1.0", origin: "scratch" },
+      select: { id: true, content: true },
+    });
+  }
   if (notice && (await prisma.noticeVariant.count({ where: { noticeId: notice.id } })) === 0) {
     const base = hash(notice.content ?? "");
     await prisma.noticeVariant.create({ data: { noticeId: notice.id, language: "English", inherit: true, baseHashAtReview: base, publishStatus: "draft" } });
