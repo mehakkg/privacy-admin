@@ -98,7 +98,7 @@ export function DuplicateReview({ rows }: { rows: DupRow[] }) {
 
             {/* Match reasoning — the flag is never a black box. */}
             <div className="cell-sub" style={{ marginBottom: 8 }}>
-              Matched on: {row.matchReason ?? `${row.a.detectedType === row.b.detectedType ? `${row.a.detectedType} (exact)` : `${row.a.detectedType}/${row.b.detectedType}`}; ${row.similarityScore}% similarity`}
+              Matched on: {(row.matchReason ?? `${row.a.detectedType === row.b.detectedType ? `${row.a.detectedType} (exact)` : `${row.a.detectedType}/${row.b.detectedType}`}; ${row.similarityScore}% similarity`).replace(/^matched on:\s*/i, "")}
             </div>
             {/* Disputed fields highlighted by default. */}
             {(() => {

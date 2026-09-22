@@ -87,7 +87,7 @@ export async function requestShareApproval(fieldId: string, actor: AuditActor) {
     { actor, action: "discovery.share_requested", targetType: "ClassifiedField", targetId: fieldId, eventDescription: `Requested approval to share quarantined ${field.fieldPath}`, payload: { approverRole } },
     (tx: TxClient) => tx.shareApprovalRequest.create({ data: { fieldId, approverRole, requestedBy: actor.label } }),
   );
-  await emit(db, { kind: "discovery.share_approval_needed", requestId: req.id, approverRole: approverRole as "dpo" | "ciso", fieldPath: field.fieldPath });
+  await emit(db, { kind: "discovery.share_approval_needed", shareRequestId: req.id, approverRole: approverRole as "dpo" | "ciso", fieldPath: field.fieldPath });
   return req;
 }
 
@@ -137,7 +137,7 @@ export async function runIdentityResolution(actor: AuditActor) {
     flagged += 1;
     if (!p.matchReason) {
       const same = p.fieldA.detectedType === p.fieldB.detectedType ? `${p.fieldA.detectedType} (exact)` : `${p.fieldA.detectedType}/${p.fieldB.detectedType}`;
-      await db.duplicatePair.update({ where: { id: p.id }, data: { matchReason: `Matched on: ${same}; field name ${p.similarityScore}% similarity` } });
+      await db.duplicatePair.update({ where: { id: p.id }, data: { matchReason: `${same}; field name ${p.similarityScore}% similarity` } });
     }
   }
 

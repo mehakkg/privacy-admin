@@ -140,7 +140,7 @@ export type NotificationEvent =
   // --- Scenario 4: share-approval for a quarantined high-risk finding ---------
   | {
       kind: "discovery.share_approval_needed";
-      requestId: string;
+      shareRequestId: string;
       approverRole: "dpo" | "ciso";
       fieldPath: string;
     };
