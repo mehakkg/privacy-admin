@@ -1974,6 +1974,12 @@ model DiscoverySource {
   /// dimension on the inventory, never a separate inventory.
   entityId String?
 
+  /// How this source got here: dlp_synced (read-only pass-through, scheduling +
+  /// execution deferred to DLP — the existing behaviour) or manually_added (an
+  /// Admin-registered source that gets real in-product scan configuration and is
+  /// tagged distinctly so it's never confused with a DLP-governed source).
+  provenance String @default("dlp_synced")
+
   fields    ClassifiedField[]
   scanRuns  ScanRun[]
   ropaSuggestions RopaSuggestion[]

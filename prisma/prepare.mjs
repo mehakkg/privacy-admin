@@ -115,4 +115,6 @@ if (!POOLED) {
   run("Seeding Data Map states demo", "npx tsx prisma/patch-datamap-states.ts", POOLED);
   // Idempotent: promotes a few fields to approved + seeds pending ROPA suggestions.
   run("Seeding ROPA suggestions demo", "npx tsx prisma/patch-ropa-suggestions.ts", POOLED);
+  // Idempotent: seeds manually-added sources (provenance + no-automated-scan state).
+  run("Seeding manual sources demo", "npx tsx prisma/patch-manual-sources.ts", POOLED);
 }

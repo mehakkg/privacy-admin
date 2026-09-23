@@ -39,19 +39,18 @@ function navGroups(openRequests: number, role: string): NavEntry[] {
       label: "Data Map",
       href: "/discovery/sources",
       ready: true,
+      // Consolidated to exactly 7: the five folded sub-concerns (Scan
+      // configuration → Sources detail; Scan results → Review Queue; Data
+      // categories → Data Inventory filter; Quarantine + Identity resolution →
+      // Review Queue tabs) keep their routes but no longer have a top-level home.
       children: [
         { href: "/data-map/sources", label: "Sources", ready: true },
-        { href: "/discovery/scan-config", label: "Scan configuration", ready: true },
-        { href: "/discovery/scan-results", label: "Scan results", ready: true },
         { href: "/data-map/processing-activities", label: "Processing activities", ready: true },
-        { href: "/fiduciaries", label: "Fiduciaries", ready: true },
         { href: "/discovery/inventory", label: "Data inventory", ready: true },
-        { href: "/data-map/categories", label: "Data categories", ready: true },
         { href: "/discovery/triage", label: "Review queue", ready: true },
-        { href: "/discovery/quarantine", label: "Quarantine", ready: true },
-        { href: "/discovery/identity-resolution", label: "Identity resolution", ready: true },
         { href: "/data-flow/map", label: "Data flow", ready: true },
         { href: "/discovery/ropa", label: "ROPA", ready: true },
+        { href: "/fiduciaries", label: "Fiduciaries", ready: true },
       ],
     },
     {

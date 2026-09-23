@@ -4,12 +4,14 @@ import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
 import { Card, Chip, KeyValue, Notice, PageHead, Pill, formatDate, formatDateTime } from "@/components/ui";
 import { sourceStatus, SOURCE_STATUS_LABEL, SOURCE_STATUS_TONE, SOURCE_KIND_LABEL } from "@/lib/sources";
+import { ScanConfigPanel } from "@/components/datamap/ScanConfigPanel";
 
 export const dynamic = "force-dynamic";
 
-const TABS = ["overview", "history"] as const;
+const TABS = ["overview", "scan", "history"] as const;
 type Tab = (typeof TABS)[number];
-const TAB_LABEL: Record<Tab, string> = { overview: "Overview", history: "Scan History" };
+const TAB_LABEL: Record<Tab, string> = { overview: "Overview", scan: "Scan configuration", history: "Scan History" };
+const SCHEDULE_LABEL: Record<string, string> = { on_demand: "On demand", daily: "Daily", weekly: "Weekly", monthly: "Monthly" };
 
 const CLOSED = new Set(["closed", "completed", "rejected", "fulfilled"]);
 
@@ -40,6 +42,8 @@ export default async function SourceDetailPage({
   const runs = source.scanRuns;
   // Scan history is DLP's; we can't reach it when the source connection is down.
   const historyUnavailable = source.connectionState === "failed";
+  const manual = source.provenance === "manually_added";
+  const noConnection = manual && source.connectionState === "untested";
 
   // "Currently referenced by" — open requests whose execution targets this
   // source's system facet, so disconnecting isn't done blind.
@@ -65,9 +69,10 @@ export default async function SourceDetailPage({
         title={source.name}
         subtitle={
           <span className="row" style={{ gap: 8 }}>
-            <Pill tone={SOURCE_STATUS_TONE[status]}>{SOURCE_STATUS_LABEL[status]}</Pill>
+            {noConnection ? <Pill tone="orange">No automated scan</Pill> : <Pill tone={SOURCE_STATUS_TONE[status]}>{SOURCE_STATUS_LABEL[status]}</Pill>}
+            <Pill tone={manual ? "blue" : "gray"} dot={false}>{manual ? "Manually added" : "DLP-synced"}</Pill>
             <Chip>{SOURCE_KIND_LABEL[source.kind] ?? source.kind}</Chip>
-            <span className="cell-sub">{source._count.fields} fields (DLP)</span>
+            <span className="cell-sub">{source._count.fields} fields</span>
           </span>
         }
       />
@@ -126,6 +131,27 @@ export default async function SourceDetailPage({
             )}
           </Card>
         </div>
+      )}
+
+      {tab === "scan" && (
+        <Card title="Scan configuration">
+          {manual ? (
+            <ScanConfigPanel sourceId={source.id} schedule={source.scanSchedule} depth={source.scanDepth} noConnection={noConnection} />
+          ) : (
+            <div className="stack" style={{ gap: 12 }}>
+              <Notice tone="policy" title="Scheduling lives in DLP">
+                This is a DLP-synced source — its scan scheduling and execution are governed in DLP, not here. This screen is a read-only pass-through, unchanged.
+              </Notice>
+              <KeyValue
+                rows={[
+                  ["Cadence (from DLP)", SCHEDULE_LABEL[source.scanSchedule] ?? source.scanSchedule],
+                  ["Depth (from DLP)", source.scanDepth],
+                  ["Off-peak window", source.offPeakWindow ?? "—"],
+                ]}
+              />
+            </div>
+          )}
+        </Card>
       )}
 
       {tab === "history" && (

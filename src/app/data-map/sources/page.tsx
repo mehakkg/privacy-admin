@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
 import { CompactFilterBar } from "@/components/CompactFilterBar";
@@ -32,10 +31,14 @@ export default async function SourcesPage({
   let rows: SourceRow[] = sources.map((s) => {
     const ent = s.entityId ? entityById.get(s.entityId) : null;
     const origin = (ent?.source === "acquired" ? "acquired" : "native") as "native" | "acquired";
+    const provenance = (s.provenance === "manually_added" ? "manually_added" : "dlp_synced") as "dlp_synced" | "manually_added";
     return {
       id: s.id, name: s.name, kind: s.kind, health: sourceHealth(s, now),
       lastSync: s.lastScanned ? s.lastScanned.toISOString() : null, fields: s._count.fields,
       origin, entityName: ent?.name ?? null, approved: s.dpoApprovedForScanning,
+      provenance,
+      // A manually-added source with no live connection has no automated scan.
+      noConnection: provenance === "manually_added" && s.connectionState === "untested",
     };
   });
 
@@ -51,8 +54,7 @@ export default async function SourcesPage({
     <Shell active="/data-map/sources" title="Data Map / Sources">
       <PageHead
         title="Sources"
-        titleTip="Every connected source with its connection health, volume and origin at a glance — a stale or failed source is flagged, not something you discover by accident."
-        actions={<Link href="/onboarding/sources" className="btn primary sm">+ Add source</Link>}
+        titleTip="Every connected source with its connection health, volume and origin at a glance — a stale or failed source is flagged, not something you discover by accident. DLP-synced sources are read-only; manually-added sources get in-product scan configuration."
       />
 
       <div className="stat-row" style={{ marginBottom: 16 }}>
