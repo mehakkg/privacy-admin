@@ -9,11 +9,13 @@ import { Modal } from "@/components/Modal";
 import { ActionError } from "@/components/actions";
 import { overrideClassificationAction, bulkOnboardSourcesAction } from "@/app/actions/scenario4";
 import { RISK_LEVELS, RISK_LABEL, RISK_TONE, SOURCE_KIND_LABEL, OVERRIDE_REASON_CATEGORIES } from "@/lib/scenario4";
+import { Tabs } from "@/components/Tabs";
 import type { ActionResult } from "@/app/actions/requests";
 
 export interface Finding {
   id: string; fieldPath: string; sourceName: string; sourceKind: string;
   detectedType: string; effectiveType: string; risk: string; matchedRule: string; quarantined: boolean; overridden: boolean;
+  scanType: "regular" | "deep"; isNew: boolean;
 }
 export interface NewSource { id: string; name: string; kind: string }
 
@@ -26,11 +28,19 @@ export function ScanResultsViewer({ findings, newSources }: { findings: Finding[
   const [reasonOpen, setReasonOpen] = useState<Finding | null>(null);
   const [ov, setOv] = useState({ type: "", category: "", note: "" });
   const [selSources, setSelSources] = useState<string[]>([]);
+  // Regular vs Deep are distinct tabs (never blended); default view shows only
+  // findings new since last review, with an explicit full-history toggle.
+  const [scanTab, setScanTab] = useState<"regular" | "deep">("regular");
+  const [showAll, setShowAll] = useState(false);
 
   const run = (op: () => Promise<ActionResult>, after?: () => void) => start(async () => { const r = await op(); setResult(r); if (r.ok) { after?.(); router.refresh(); } });
 
-  const kinds = useMemo(() => [...new Set(findings.map((f) => f.sourceKind))], [findings]);
-  const filtered = kindFilter ? findings.filter((f) => f.sourceKind === kindFilter) : findings;
+  const inTab = findings.filter((f) => f.scanType === scanTab);
+  const newCount = { regular: findings.filter((f) => f.scanType === "regular" && f.isNew).length, deep: findings.filter((f) => f.scanType === "deep" && f.isNew).length };
+  const kinds = useMemo(() => [...new Set(inTab.map((f) => f.sourceKind))], [inTab]);
+  const filtered = inTab
+    .filter((f) => (showAll ? true : f.isNew))
+    .filter((f) => (kindFilter ? f.sourceKind === kindFilter : true));
   const byRisk = (risk: string) => filtered.filter((f) => f.risk === risk);
 
   return (
@@ -50,11 +60,23 @@ export function ScanResultsViewer({ findings, newSources }: { findings: Finding[
         </div>
       )}
 
+      <Tabs
+        tabs={[{ key: "regular", label: "Regular Scan", badge: newCount.regular }, { key: "deep", label: "Deep Scan", badge: newCount.deep }]}
+        active={scanTab}
+        onChange={(k) => { setKindFilter(""); setScanTab(k as "regular" | "deep"); }}
+      />
+
       <div className="row" style={{ gap: 8, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
-        <span className="cell-sub">Source type:</span>
+        <button className={`btn xs${!showAll ? " primary" : ""}`} onClick={() => setShowAll(false)}>New since last review</button>
+        <button className={`btn xs${showAll ? " primary" : ""}`} onClick={() => setShowAll(true)}>Show all history</button>
+        <span style={{ marginLeft: 12 }} className="cell-sub">Source type:</span>
         <button className={`btn xs${!kindFilter ? " primary" : ""}`} onClick={() => setKindFilter("")}>All</button>
         {kinds.map((k) => <button key={k} className={`btn xs${kindFilter === k ? " primary" : ""}`} onClick={() => setKindFilter(k)}>{SOURCE_KIND_LABEL[k] ?? k}</button>)}
       </div>
+
+      {!showAll && filtered.length === 0 && (
+        <Notice tone="ok" title="Nothing new to review">No new {scanTab} scan findings since your last review. Switch to “Show all history” to see everything.</Notice>
+      )}
 
       {RISK_LEVELS.map((risk) => {
         const rows = byRisk(risk);

@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
  *  quarantine, and bulk-onboard of newly discovered sources. */
 export default async function ScanResultsPage() {
   const [fields, newSources] = await Promise.all([
-    db.classifiedField.findMany({ include: { source: { select: { name: true, kind: true } } }, orderBy: { sensitivityTier: "asc" }, take: 500 }),
+    db.classifiedField.findMany({ include: { source: { select: { name: true, kind: true, scanDepth: true } } }, orderBy: { sensitivityTier: "asc" }, take: 500 }),
     db.discoverySource.findMany({ where: { availableAsScanTarget: false }, orderBy: { name: "asc" }, take: 50 }),
   ]);
 
@@ -19,6 +19,10 @@ export default async function ScanResultsPage() {
     detectedType: f.detectedType, effectiveType: f.overriddenType ?? f.detectedType, risk: f.sensitivityTier,
     matchedRule: f.matchedRule ?? `${f.detectedType} pattern · ${f.confidence === "high" ? "high confidence" : "needs review"}`,
     quarantined: f.quarantined, overridden: f.reviewState === "overridden",
+    // Regular vs Deep is the source's scan depth; "new since last review" is a
+    // field the reviewer hasn't actioned yet (still pending).
+    scanType: f.source.scanDepth === "deep" ? "deep" : "regular",
+    isNew: f.reviewState === "pending",
   }));
   const news: NewSource[] = newSources.map((s) => ({ id: s.id, name: s.name, kind: s.kind }));
 

@@ -107,4 +107,6 @@ if (!POOLED) {
   // Idempotent: seeds consent-infrastructure demo (entity-scoped consent, webhooks,
   // 21/22 language variants, expired consent for the sweep, legacy-import template).
   run("Seeding Consent-infra demo", "npx tsx prisma/patch-scenario8.ts", POOLED);
+  // Idempotent: seeds cookie-compliance demo (scan schedule + manual/scheduled findings).
+  run("Seeding Cookie-compliance demo", "npx tsx prisma/patch-scenario9.ts", POOLED);
 }

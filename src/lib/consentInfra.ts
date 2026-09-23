@@ -27,6 +27,7 @@ export const EXPIRY_BEHAVIOR_LABEL: Record<string, string> = {
 export const EXPIRY_ACTION_LABEL: Record<string, string> = {
   auto_withdraw: "Auto-withdrawn",
   reconsent_triggered: "Re-consent triggered",
+  reconsent_policy_change: "Re-consent (policy change)",
 };
 
 // ---- Webhook delivery ----------------------------------------------------

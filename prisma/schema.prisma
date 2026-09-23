@@ -2854,6 +2854,34 @@ model PurposeExpiryConfig {
   updatedAt    DateTime @updatedAt
 }
 
+/// Scenario 9 — schedule for the cookie/script compliance scan. Singleton. The
+/// scan itself is the existing Scenario-5 engine; this just adds cadence + last/
+/// next-run visibility on top of the manual trigger.
+model CookieScanSchedule {
+  id        String   @id @default("cookie")
+  /// on_demand | monthly
+  cadence   String   @default("on_demand")
+  lastRunAt DateTime?
+  nextRunAt DateTime?
+  updatedBy String?
+  updatedAt DateTime @updatedAt
+}
+
+/// Scenario 9 — a published cookie-policy version. Publishing a new version is a
+/// SECOND re-consent trigger (alongside retention-based expiry), so returning
+/// visitors are re-prompted under the new policy rather than silently continuing.
+model CookiePolicyVersion {
+  id                 String   @id @default(cuid())
+  version            String
+  summary            String?
+  publishedAt        DateTime @default(now())
+  publishedBy        String?
+  reconsentTriggered Boolean  @default(false)
+  affectedCount      Int      @default(0)
+
+  @@index([publishedAt])
+}
+
 /// A logged consent-expiry action. Expiry NEVER deletes the artifact — it is a
 /// status change (or a re-consent trigger) recorded here as historical evidence.
 model ConsentExpiryLog {

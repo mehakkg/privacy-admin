@@ -5,10 +5,10 @@ import { useRouter } from "next/navigation";
 import { Play, ShieldAlert, CheckCircle2, Ban } from "lucide-react";
 import { Pill, Notice } from "@/components/ui";
 import { ActionError } from "@/components/actions";
-import { runScriptComplianceScanAction, categorizeScriptAction } from "@/app/actions/scenario6";
+import { runScriptComplianceScanAction, categorizeScriptAction, proposeCookieCategoryAction } from "@/app/actions/scenario6";
 import type { ActionResult } from "@/app/actions/requests";
 
-export interface FlaggedScript { id: string; scriptName: string; vendor: string | null; page: string; disclosed: boolean; firedBeforeConsent: boolean; status: string; technicalDetail: string | null }
+export interface FlaggedScript { id: string; scriptName: string; vendor: string | null; page: string; disclosed: boolean; firedBeforeConsent: boolean; status: string; technicalDetail: string | null; triggerSource: string; suggestedCategory: string | null }
 export interface CatOpt { id: string; name: string }
 
 export function ScriptScanViewer({ flagged, categories, lastScan }: { flagged: FlaggedScript[]; categories: CatOpt[]; lastScan: string | null }) {
@@ -16,7 +16,9 @@ export function ScriptScanViewer({ flagged, categories, lastScan }: { flagged: F
   const [busy, start] = useTransition();
   const [result, setResult] = useState<(ActionResult & { flagged?: number }) | null>(null);
   const [pick, setPick] = useState<Record<string, string>>({});
-  const run = (op: () => Promise<ActionResult & { flagged?: number }>) => start(async () => { const r = await op(); setResult(r); if (r.ok) router.refresh(); });
+  const [proposeFor, setProposeFor] = useState<string | null>(null);
+  const [proposal, setProposal] = useState({ name: "", description: "" });
+  const run = (op: () => Promise<ActionResult & { flagged?: number }>, after?: () => void) => start(async () => { const r = await op(); setResult(r); if (r.ok) { after?.(); router.refresh(); } });
   const open = flagged.filter((f) => f.status === "blocked" || f.status === "open");
 
   return (
@@ -43,15 +45,33 @@ export function ScriptScanViewer({ flagged, categories, lastScan }: { flagged: F
                 <span className="cell-sub mono">{f.page}</span>
                 <Pill tone="red" dot={false}>{!f.disclosed ? "Undisclosed" : "Pre-consent firing"}</Pill>
                 {f.status === "blocked" && <Pill tone="gray" dot={false}><Ban size={11} style={{ verticalAlign: "-1px" }} /> Auto-blocked</Pill>}
+                {/* Screen 3 — scan-source tag, so a scheduled finding and a manual
+                    finding are distinguishable in the same list. */}
+                <Pill tone={f.triggerSource === "scheduled" ? "blue" : "gray"} dot={false}>{f.triggerSource === "scheduled" ? "Scheduled scan" : "Manual scan"}</Pill>
               </div>
               <p className="cell-sub" style={{ margin: "8px 0" }}><ShieldAlert size={12} style={{ verticalAlign: "-2px", color: "var(--red)" }} /> {f.technicalDetail}</p>
               <div className="add-element-form" style={{ flexWrap: "wrap" }}>
                 <select className="input" value={pick[f.id] ?? ""} onChange={(e) => setPick({ ...pick, [f.id]: e.target.value })}>
-                  <option value="">Categorise into…</option>
+                  <option value="">Assign existing category…</option>
                   {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
                 <button className="btn sm primary" disabled={busy || !pick[f.id]} onClick={() => run(() => categorizeScriptAction(f.id, pick[f.id]))}>Categorise &amp; unblock</button>
+                {/* Screen 4 — when no existing category fits, propose a new one into
+                    Scenario 5's governance flow, pre-filled from this finding. */}
+                <button className="btn sm" onClick={() => { setProposeFor(proposeFor === f.id ? null : f.id); setProposal({ name: f.suggestedCategory ?? "", description: `Proposed from flagged script "${f.scriptName}"${f.vendor ? ` (${f.vendor})` : ""} on ${f.page}.` }); }}>Propose new category →</button>
               </div>
+              {proposeFor === f.id && (
+                <div className="notice info" style={{ marginTop: 10 }}>
+                  <div className="notice-title">Propose a new cookie category</div>
+                  <p className="cell-sub" style={{ margin: "0 0 8px" }}>No existing category fits. This routes to the DPO for approval — Admin cannot self-approve a category.</p>
+                  <div className="add-element-form" style={{ flexWrap: "wrap" }}>
+                    <input className="input" placeholder="Category name" value={proposal.name} onChange={(e) => setProposal({ ...proposal, name: e.target.value })} />
+                    <input className="input" style={{ minWidth: 260 }} placeholder="Description" value={proposal.description} onChange={(e) => setProposal({ ...proposal, description: e.target.value })} />
+                    <button className="btn sm primary" disabled={busy || !proposal.name.trim()} onClick={() => run(() => proposeCookieCategoryAction(proposal.name.trim(), proposal.description.trim(), "off"), () => setProposeFor(null))}>Submit to DPO</button>
+                    <button className="btn sm ghost" onClick={() => setProposeFor(null)}>Cancel</button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         ))

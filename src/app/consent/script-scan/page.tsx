@@ -16,7 +16,7 @@ export default async function ScriptScanPage() {
 
   const flagged: FlaggedScript[] = findings
     .filter((f) => !f.disclosed || f.firedBeforeConsent || f.status === "blocked")
-    .map((f) => ({ id: f.id, scriptName: f.scriptName, vendor: f.vendor, page: f.page, disclosed: f.disclosed, firedBeforeConsent: f.firedBeforeConsent, status: f.status, technicalDetail: f.technicalDetail }));
+    .map((f) => ({ id: f.id, scriptName: f.scriptName, vendor: f.vendor, page: f.page, disclosed: f.disclosed, firedBeforeConsent: f.firedBeforeConsent, status: f.status, technicalDetail: f.technicalDetail, triggerSource: f.triggerSource, suggestedCategory: f.suggestedCategory }));
   const cats: CatOpt[] = categories;
   const blocked = flagged.filter((f) => f.status === "blocked").length;
 
