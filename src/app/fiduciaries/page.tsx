@@ -4,12 +4,11 @@ import { Shell } from "@/components/Shell";
 import { CompactFilterBar } from "@/components/CompactFilterBar";
 import { Notice, PageHead } from "@/components/ui";
 import {
-  EntitiesTable,
   UserMappingTable,
-  type EntityRow,
   type MappingRow,
 } from "@/components/entityConfig";
-import { decodeObject, decodeList } from "@/lib/codec/json";
+import { EntityHierarchy, type EntityNode } from "@/components/entity/EntityHierarchy";
+import { decodeList } from "@/lib/codec/json";
 
 export const dynamic = "force-dynamic";
 
@@ -38,23 +37,35 @@ export default async function FiduciariesPage({
   const params = await searchParams;
   const tab = params.tab === "mapping" ? "mapping" : "entities";
 
-  const [entities, mappings] = await Promise.all([
+  const [entities, mappings, roleCounts] = await Promise.all([
     db.entity.findMany({ include: { _count: { select: { userMappings: true } } }, orderBy: { name: "asc" } }),
     db.entityUserMapping.findMany({ include: { entity: true } }),
+    db.roleAssignment.groupBy({ by: ["entityId"], where: { status: "active" }, _count: true }),
   ]);
 
   const nameById = new Map(entities.map((e) => [e.id, e.name]));
+  const roleCountByEntity = new Map(roleCounts.map((r) => [r.entityId, r._count]));
 
-  const entityRows: EntityRow[] = entities.map((e) => ({
-    id: e.id,
-    name: e.name,
-    kind: e.kind,
-    parentName: e.hierarchyParentId ? (nameById.get(e.hierarchyParentId) ?? null) : null,
-    sdfStatus: e.sdfStatus,
-    sdfHistory: decodeObject<{ status: string; note: string; at: string }[]>(e.sdfHistoryJson) ?? [],
-    mergerPending: e.mergerPending,
-    usersMapped: e._count.userMappings,
-  }));
+  // Governance-completeness — the SAME definition Onboarding's is_fully_configured
+  // uses: governanceStructure set AND >= 1 active role assigned. Missing items are
+  // named so an incomplete (esp. newly acquired) entity is never mistaken for a
+  // fully configured one.
+  const entityNodes: EntityNode[] = entities.map((e) => {
+    const missing: string[] = [];
+    if (!e.governanceStructure) missing.push("a governance structure");
+    if ((roleCountByEntity.get(e.id) ?? 0) < 1) missing.push("a role assignment");
+    return {
+      id: e.id,
+      name: e.name,
+      kind: e.kind,
+      parentId: e.hierarchyParentId ?? null,
+      source: (e.source === "acquired" ? "acquired" : "native") as "native" | "acquired",
+      complete: missing.length === 0,
+      missing,
+      usersMapped: e._count.userMappings,
+    };
+  });
+  const incomplete = entityNodes.filter((e) => !e.complete).length;
 
   let mappingRows: MappingRow[] = mappings.map((m) => ({
     id: m.id,
@@ -108,10 +119,14 @@ export default async function FiduciariesPage({
       </nav>
 
       {tab === "entities" ? (
-        <EntitiesTable
-          rows={entityRows}
-          parents={entities.map((e) => ({ id: e.id, name: e.name }))}
-        />
+        <>
+          {incomplete > 0 && (
+            <div className="notice warn compact" style={{ marginBottom: 12 }}>
+              <span><strong>{incomplete}</strong> entit{incomplete === 1 ? "y is" : "ies are"} incomplete — a missing governance decision or role assignment is a live governance gap.</span>
+            </div>
+          )}
+          <EntityHierarchy entities={entityNodes} />
+        </>
       ) : (
         <>
           <CompactFilterBar

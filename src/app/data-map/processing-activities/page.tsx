@@ -31,7 +31,7 @@ export default async function ProcessingActivitiesPage({
   const tab = params.tab === "fiduciaries" ? "fiduciaries" : "activities";
   const term = (params.q ?? "").trim().toLowerCase();
 
-  const [activities, purposes, processors, entities, fields] = await Promise.all([
+  const [activities, purposes, processors, entities, fields, openEscalations] = await Promise.all([
     db.processingActivity.findMany({
       include: {
         entity: true,
@@ -47,7 +47,22 @@ export default async function ProcessingActivitiesPage({
     db.dataProcessor.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.entity.findMany({ include: { _count: { select: { userMappings: true } } }, orderBy: { name: "asc" } }),
     db.classifiedField.findMany({ include: { source: true } }),
+    // Open escalations, matched to an activity below via their contextJson snapshot
+    // (there is no activity FK on Escalation — the reference travels in context).
+    db.escalation.findMany({ where: { status: "open" }, select: { id: true, referenceCode: true, contextJson: true } }),
   ]);
+
+  /** An open escalation references an activity when its context snapshot names the
+   *  activity (by id or name) or one of its purposes. Returns count + a deep link. */
+  const escalationsFor = (activityId: string, activityName: string, purposeNames: (string | null)[]): { count: number; href: string } | undefined => {
+    const matched = openEscalations.filter((e) => {
+      const ctx = e.contextJson ?? "";
+      return ctx.includes(activityId) || ctx.includes(activityName) || purposeNames.some((p) => p && ctx.includes(p));
+    });
+    if (matched.length === 0) return undefined;
+    const ref = matched[0].referenceCode ?? `ESC-${matched[0].id.slice(-6)}`;
+    return { count: matched.length, href: `/escalations?status=open&q=${encodeURIComponent(ref)}` };
+  };
 
   // Inventory match: field name → a classified field, by first significant word.
   const fieldMatch = (name: string): SegElement["inventory"] => {
@@ -76,6 +91,7 @@ export default async function ProcessingActivitiesPage({
     })),
     // Old element-first rows → surfaced as legacy, never silently migrated.
     legacyElements: a.elements.map((e) => ({ id: e.id, elementName: e.elementName, purposeName: e.purposeTag?.name ?? null })),
+    openEscalations: escalationsFor(a.id, a.activity, a.purposeSegments.map((s) => s.purposeTag?.name ?? null)),
   }));
 
   // Compact Filter Bar: search + rollup severity filter, so incomplete activities

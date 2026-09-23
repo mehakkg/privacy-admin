@@ -31,6 +31,9 @@ export interface FlowEdge {
   dpiaRef: string | null;
   processorName: string | null;
   status: "documented" | "undisclosed";
+  /** True when the connection lands with a processor in a cross-border,
+   *  non-notified jurisdiction — a risk flag distinct from "undisclosed". */
+  crossBorder?: boolean;
   manual: boolean;
 }
 
@@ -278,15 +281,16 @@ export function FlowCanvas({
                 const y2 = b.y + NH / 2;
                 const mx = (x1 + x2) / 2;
                 const und = e.status === "undisclosed";
+                const xb = !und && e.crossBorder;
                 const lit = onPath(e.fromId) && onPath(e.toId) && (!highlight || highlight.edgeSet.has(e.id));
                 return (
                   <g key={e.id} className="flow-edge-hit" opacity={edgeDim(e.id)} onClick={() => setSelected({ kind: "edge", id: e.id })} style={{ cursor: "pointer" }}>
                     <path
                       d={`M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`}
                       fill="none"
-                      stroke={und ? "var(--red)" : "var(--border-strong)"}
-                      strokeWidth={und ? 2.2 : lit ? 2.4 : 1.6}
-                      strokeDasharray={und ? "7 5" : undefined}
+                      stroke={und ? "var(--red)" : xb ? "var(--yellow)" : "var(--border-strong)"}
+                      strokeWidth={und ? 2.2 : xb ? 2.2 : lit ? 2.4 : 1.6}
+                      strokeDasharray={und || xb ? "7 5" : undefined}
                     />
                     {/* fat invisible hit line */}
                     <path

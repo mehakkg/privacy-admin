@@ -20,8 +20,11 @@ export interface RopaRow {
   status: string;
   dismissedReason: string | null;
   activityId: string | null;
+  confidence: string;
   fields: RopaField[];
 }
+
+const CONF_TONE: Record<string, "green" | "yellow" | "gray"> = { high: "green", medium: "yellow", low: "gray" };
 
 function useRun() {
   const router = useRouter();
@@ -47,12 +50,18 @@ export function RopaRecommendations({ rows, tab }: { rows: RopaRow[]; tab: strin
       <div className="table-wrap">
         <table className="dtable">
           <thead>
-            <tr><th>Source</th><th>Purpose</th><th>Subject type</th><th>Fields</th><th>Generated</th>{tab !== "pending" && <th>{tab === "accepted" ? "Register entry" : "Reason"}</th>}</tr>
+            <tr><th>Source</th><th>Confidence</th><th>Purpose</th><th>Subject type</th><th>Fields</th><th>Generated</th>{tab !== "pending" && <th>{tab === "accepted" ? "Register entry" : "Reason"}</th>}</tr>
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.id} className="clickable" onClick={() => setOpenId(r.id)}>
-                <td className="cell-primary">{r.sourceName}</td>
+              <tr key={r.id} className="clickable ropa-suggestion-row" onClick={() => setOpenId(r.id)}>
+                <td>
+                  <div className="cell-stack">
+                    <span className="cell-primary">{r.sourceName}</span>
+                    <Pill tone="purple" dot={false}>Suggested</Pill>
+                  </div>
+                </td>
+                <td><Pill tone={CONF_TONE[r.confidence] ?? "gray"} dot={false}>{r.confidence}</Pill></td>
                 <td>{r.purposeName ? <Chip>{r.purposeName}</Chip> : <Pill tone="yellow">Unassigned — needs DPO tagging</Pill>}</td>
                 <td>{r.subjectType ? <Chip>{r.subjectType}</Chip> : <span className="muted">—</span>}</td>
                 <td className="cell-sub">{r.fieldCount}</td>
@@ -67,7 +76,7 @@ export function RopaRecommendations({ rows, tab }: { rows: RopaRow[]; tab: strin
               </tr>
             ))}
             {rows.length === 0 && (
-              <tr><td colSpan={tab === "pending" ? 5 : 6}><div className="empty">
+              <tr><td colSpan={tab === "pending" ? 6 : 7}><div className="empty">
                 {tab === "pending" ? (
                   <>
                     <p style={{ margin: "0 0 12px" }}>No pending suggestions. Refresh to regenerate from the latest approved classifications.</p>

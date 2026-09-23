@@ -109,4 +109,6 @@ if (!POOLED) {
   run("Seeding Consent-infra demo", "npx tsx prisma/patch-scenario8.ts", POOLED);
   // Idempotent: seeds cookie-compliance demo (scan schedule + manual/scheduled findings).
   run("Seeding Cookie-compliance demo", "npx tsx prisma/patch-scenario9.ts", POOLED);
+  // Idempotent: seeds one open escalation referencing an activity (Data Map Screen 2 badge).
+  run("Seeding Data Map escalation demo", "npx tsx prisma/patch-datamap-escalation.ts", POOLED);
 }

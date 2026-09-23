@@ -2,50 +2,63 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
 import { CompactFilterBar } from "@/components/CompactFilterBar";
-import { InfoTip, PageHead, Pill, Stat, formatDate } from "@/components/ui";
-import { sourceStatus, SOURCE_STATUS_LABEL, SOURCE_STATUS_TONE, SOURCE_STATUS_TIP, SOURCE_KIND_LABEL } from "@/lib/sources";
+import { PageHead, Stat } from "@/components/ui";
+import { sourceHealth } from "@/lib/sources";
+import { SourcesView, type SourceRow } from "@/components/datamap/SourcesView";
 
 export const dynamic = "force-dynamic";
 
 /**
- * SOURCES — a connection/status registry, deliberately thin. It answers one
- * question: what's connected, and is it approved to be scanned. Detection,
- * scheduling and execution belong to DLP; the one governance decision native
- * here is scan-scope approval, kept prominent.
+ * SOURCES — a connection/health glance registry. Connection health is read from
+ * the SAME derived status the notification system uses (a Failed/Stale source is
+ * never indistinguishable from a healthy one), and an acquired-entity source is
+ * tagged distinctly from a native one.
  */
 export default async function SourcesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string; type?: string }>;
+  searchParams: Promise<{ q?: string; status?: string; type?: string; origin?: string }>;
 }) {
   const params = await searchParams;
   const term = (params.q ?? "").trim().toLowerCase();
+  const now = new Date();
 
-  const sources = await db.discoverySource.findMany({
-    include: { _count: { select: { fields: true } } },
-    orderBy: { name: "asc" },
+  const [sources, entities] = await Promise.all([
+    db.discoverySource.findMany({ include: { _count: { select: { fields: true } } }, orderBy: { name: "asc" } }),
+    db.entity.findMany({ select: { id: true, name: true, source: true } }),
+  ]);
+  const entityById = new Map(entities.map((e) => [e.id, e]));
+
+  let rows: SourceRow[] = sources.map((s) => {
+    const ent = s.entityId ? entityById.get(s.entityId) : null;
+    const origin = (ent?.source === "acquired" ? "acquired" : "native") as "native" | "acquired";
+    return {
+      id: s.id, name: s.name, kind: s.kind, health: sourceHealth(s, now),
+      lastSync: s.lastScanned ? s.lastScanned.toISOString() : null, fields: s._count.fields,
+      origin, entityName: ent?.name ?? null, approved: s.dpoApprovedForScanning,
+    };
   });
 
-  let rows = sources.map((s) => ({ s, status: sourceStatus(s) }));
-  if (params.status) rows = rows.filter((r) => r.status === params.status);
-  if (params.type) rows = rows.filter((r) => r.s.kind === params.type);
-  if (term) rows = rows.filter((r) => r.s.name.toLowerCase().includes(term) || r.s.kind.includes(term));
+  if (params.status) rows = rows.filter((r) => r.health === params.status);
+  if (params.type) rows = rows.filter((r) => r.kind === params.type);
+  if (params.origin) rows = rows.filter((r) => r.origin === params.origin);
+  if (term) rows = rows.filter((r) => r.name.toLowerCase().includes(term) || r.kind.includes(term));
 
-  const awaiting = sources.filter((s) => sourceStatus(s) === "awaiting_approval").length;
-  const failed = sources.filter((s) => sourceStatus(s) === "failed").length;
+  const failed = rows.filter((r) => r.health === "failed").length;
+  const stale = rows.filter((r) => r.health === "stale").length;
 
   return (
     <Shell active="/data-map/sources" title="Data Map / Sources">
       <PageHead
         title="Sources"
-        titleTip="What's connected, and whether it's approved to be scanned. Connection status is read from DLP; the one decision this screen owns is DPO scope approval."
+        titleTip="Every connected source with its connection health, volume and origin at a glance — a stale or failed source is flagged, not something you discover by accident."
         actions={<Link href="/onboarding/sources" className="btn primary sm">+ Add source</Link>}
       />
 
       <div className="stat-row" style={{ marginBottom: 16 }}>
         <Stat label="Sources" value={sources.length} />
-        <Stat label="Awaiting approval" value={awaiting} tone={awaiting ? "yellow" : undefined} />
-        <Stat label="Last scan failed" value={failed} tone={failed ? "red" : undefined} />
+        <Stat label="Stale" value={stale} tone={stale ? "yellow" : undefined} />
+        <Stat label="Failed" value={failed} tone={failed ? "red" : undefined} />
       </div>
 
       <CompactFilterBar
@@ -53,10 +66,11 @@ export default async function SourcesPage({
         searchPlaceholder="Search sources…"
         facets={[
           { key: "status", label: "Status", options: [
-            { value: "current", label: "Current" },
-            { value: "never_scanned", label: "Never scanned" },
+            { value: "healthy", label: "Healthy" },
+            { value: "stale", label: "Stale" },
+            { value: "failed", label: "Failed" },
             { value: "awaiting_approval", label: "Awaiting approval" },
-            { value: "failed", label: "Last scan failed" },
+            { value: "never_scanned", label: "Never scanned" },
           ] },
           { key: "type", label: "Type", options: [
             { value: "database", label: "Database" },
@@ -64,38 +78,14 @@ export default async function SourcesPage({
             { value: "saas", label: "SaaS tool" },
             { value: "file_share", label: "File share" },
           ] },
+          { key: "origin", label: "Origin", options: [
+            { value: "native", label: "Native" },
+            { value: "acquired", label: "Acquired" },
+          ] },
         ]}
       />
 
-      <div className="table-wrap">
-        <table className="dtable">
-          <thead>
-            <tr><th>Name</th><th>Type</th><th>Status</th><th>Last scanned <span className="cell-sub">(DLP)</span></th><th>Fields <span className="cell-sub">(DLP)</span></th></tr>
-          </thead>
-          <tbody>
-            {rows.map(({ s, status }) => (
-              <tr key={s.id}>
-                <td><Link href={`/data-map/sources/${s.id}`} className="row-link">{s.name}</Link></td>
-                <td className="cell-sub">{SOURCE_KIND_LABEL[s.kind] ?? s.kind}</td>
-                <td>
-                  <span className="row" style={{ gap: 5 }}>
-                    <Pill tone={SOURCE_STATUS_TONE[status]}>{SOURCE_STATUS_LABEL[status]}</Pill>
-                    <InfoTip align="left" text={SOURCE_STATUS_TIP[status]} />
-                  </span>
-                </td>
-                <td className="cell-sub">{s.lastScanned ? formatDate(s.lastScanned) : "—"}</td>
-                <td className="mono cell-sub">{s._count.fields}</td>
-              </tr>
-            ))}
-            {rows.length === 0 && (
-              <tr><td colSpan={5}><div className="empty">
-                <p style={{ margin: "0 0 12px" }}>{sources.length === 0 ? "No sources connected yet." : "No source matches this view."}</p>
-                <Link href="/onboarding/sources" className="btn primary sm">Add a source</Link>
-              </div></td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <SourcesView rows={rows} />
     </Shell>
   );
 }

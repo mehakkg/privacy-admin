@@ -43,6 +43,9 @@ export interface ActivityRow {
   entityName: string | null;
   segments: PurposeSegment[];
   legacyElements: LegacyElement[];
+  /** Open escalations referencing this activity's purposes/elements (deep-links
+   *  into the Escalations screen). Absent/zero → no badge shown. */
+  openEscalations?: { count: number; href: string };
 }
 export interface InventoryField { id: string; path: string }
 
@@ -206,6 +209,12 @@ function ActivityListRow({
         <ChevronRight size={15} className="muted pa-row-caret" />
         <span className="pa-row-name">{a.activity}</span>
         <Pill tone={roll.tone}>{roll.label}</Pill>
+        {a.openEscalations && a.openEscalations.count > 0 && (
+          <Link href={a.openEscalations.href} onClick={stop} className="esc-badge" title="A pending decision is blocking this activity — open it in Escalations">
+            <AlertTriangle size={11} />
+            {a.openEscalations.count} pending escalation{a.openEscalations.count === 1 ? "" : "s"}
+          </Link>
+        )}
       </div>
 
       <div className="pa-row-actions" onClick={stop}>

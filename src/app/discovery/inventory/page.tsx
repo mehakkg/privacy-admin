@@ -55,6 +55,8 @@ export default async function InventoryPage({
     entity?: string;
     q?: string;
     untagged?: string;
+    datacat?: string;
+    linkage?: string;
     page?: string;
   }>;
 }) {
@@ -72,6 +74,11 @@ export default async function InventoryPage({
     ...(purposeIds.length ? { purposeTagId: { in: purposeIds } } : {}),
     ...(params.subject ? { dataSubjectType: params.subject } : {}),
     ...(params.entity ? { source: { entityId: params.entity } } : {}),
+    ...(params.datacat ? { dataCategoryId: params.datacat } : {}),
+    // Purpose-link status: Unassigned (no inventory-level purpose) is the field's
+    // most important governance fact, so it is a first-class filter.
+    ...(params.linkage === "unassigned" ? { purposeTagId: null } : {}),
+    ...(params.linkage === "linked" ? { purposeTagId: { not: null } } : {}),
     // `untagged` wins over a purpose selection: asking for both is
     // contradictory, and the toggle is the more explicit intent.
     ...(params.untagged === "1" ? { purposeTagId: null } : {}),
@@ -90,7 +97,7 @@ export default async function InventoryPage({
     db.classifiedField.count({ where }),
     db.classifiedField.findMany({
       where,
-      include: { source: true, purposeTag: true },
+      include: { source: true, purposeTag: true, dataCategory: true },
       orderBy: [{ sourceId: "asc" }, { fieldPath: "asc" }],
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
@@ -100,6 +107,27 @@ export default async function InventoryPage({
     db.classifiedField.count({ where: { purposeTagId: null } }),
   ]);
   const processors = await db.dataProcessor.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } });
+  const dataCategories = await db.dataCategory.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } });
+
+  // Purpose-link COUNT per field: the field's own purpose plus every distinct
+  // purpose it serves through a Processing Activity (ActivityPurposeElement →
+  // ActivityPurpose.purposeTagId) — the same linkage Processing Activities reads.
+  const fieldIds = fields.map((f) => f.id);
+  const fieldPaths = fields.map((f) => f.fieldPath);
+  const apElements = await db.activityPurposeElement.findMany({
+    where: { OR: [{ classifiedFieldId: { in: fieldIds } }, { fieldName: { in: fieldPaths } }] },
+    include: { activityPurpose: { select: { purposeTagId: true } } },
+  });
+  const purposesByField = new Map<string, Set<string>>();
+  for (const f of fields) { const set = new Set<string>(); if (f.purposeTagId) set.add(f.purposeTagId); purposesByField.set(f.id, set); }
+  for (const el of apElements) {
+    const pt = el.activityPurpose?.purposeTagId;
+    if (!pt) continue;
+    if (el.classifiedFieldId && purposesByField.has(el.classifiedFieldId)) { purposesByField.get(el.classifiedFieldId)!.add(pt); continue; }
+    const f = fields.find((x) => x.fieldPath === el.fieldName);
+    if (f) purposesByField.get(f.id)!.add(pt);
+  }
+  const linkCount = (id: string) => purposesByField.get(id)?.size ?? 0;
   const purposeOpts = purposes.map((p) => ({ id: p.id, name: p.name, retention: p.retention, lawfulBasis: p.lawfulBasis }));
 
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -159,6 +187,17 @@ export default async function InventoryPage({
             label: "Sensitivity",
             options: ["high", "medium", "low"].map((c) => ({ value: c, label: c })),
           },
+          {
+            key: "linkage",
+            label: "Purpose link",
+            options: [
+              { value: "linked", label: "Linked" },
+              { value: "unassigned", label: "Unassigned" },
+            ],
+          },
+          ...(dataCategories.length > 0
+            ? [{ key: "datacat", label: "Data category", options: dataCategories.map((c) => ({ value: c.id, label: c.name })) }]
+            : []),
           {
             key: "purpose",
             label: "Purpose",
@@ -242,7 +281,12 @@ export default async function InventoryPage({
                     </div>
                   </td>
                   <td className="cell-sub">{f.source.name}</td>
-                  <td className="cell-sub">{f.category ?? "—"}</td>
+                  <td>
+                    <div className="cell-stack">
+                      <span className="cell-sub">{f.category ?? "—"}</span>
+                      {f.dataCategory && <Pill tone="blue" dot={false}>{f.dataCategory.name}</Pill>}
+                    </div>
+                  </td>
                   <td>
                     <Pill tone={SENSITIVITY_TONE[f.sensitivityTier] ?? "gray"}>
                       {f.sensitivityTier}
@@ -255,6 +299,7 @@ export default async function InventoryPage({
                       // approved purpose; otherwise the badge says what's needed.
                       <span className="cell-stack">
                         <span className="cell-sub">{f.purposeTag.name}</span>
+                        {(() => { const n = linkCount(f.id); return <Pill tone="green" dot={false}>Linked to {n} purpose{n === 1 ? "" : "s"}</Pill>; })()}
                         {f.purposeTag.status === "approved" ? (
                           <Pill tone="green" dot={false}>Consent API: Available</Pill>
                         ) : (
@@ -264,7 +309,7 @@ export default async function InventoryPage({
                     ) : (
                       // Flagged, never blank.
                       <span className="row" style={{ gap: 5, alignItems: "center" }}>
-                        <Pill tone="yellow">Untagged</Pill>
+                        <Pill tone="yellow">Unassigned</Pill>
                         <Pill tone="gray" dot={false}>Consent API: not yet linked to an approved purpose</Pill>
                         <TagToPurposeButton fieldId={f.id} fieldPath={f.fieldPath} purposes={purposeOpts} processors={processors} />
                         <InfoTip
