@@ -1,14 +1,10 @@
 import type { ReactNode } from "react";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/session";
-import { countUnread, listNotifications } from "@/lib/engines/notification";
-import { NotificationBell } from "@/components/NotificationBell";
+import { countUnread } from "@/lib/engines/notification";
 import { requireOnboardingGate } from "@/lib/guards/onboardingGate";
-import { ROLE_LABEL } from "@/lib/domain";
-import { RoleSwitcher } from "@/components/RoleSwitcher";
-import { ThemeToggle } from "@/components/ThemeToggle";
-import { ProfileMenu } from "@/components/ProfileMenu";
-import { SidebarNav, type NavEntry } from "@/components/SidebarNav";
+import { ShellFrame } from "@/components/ShellFrame";
+import { type NavEntry } from "@/components/SidebarNav";
 
 /**
  * Admin module navigation.
@@ -228,11 +224,11 @@ function initialsOf(name: string): string {
 
 export async function Shell({
   active,
-  title,
   children,
 }: {
   active: string;
-  title: string;
+  /** Kept for call-site compatibility; the shell no longer shows a title bar. */
+  title?: string;
   children: ReactNode;
 }) {
   // Single chokepoint for the onboarding gate. Every page in the module renders
@@ -244,46 +240,29 @@ export async function Shell({
   }
 
   const session = await getSession();
-  const [openRequests, unread, recent] = await Promise.all([
+  const [openRequests, unread] = await Promise.all([
     db.dataPrincipalRequest.count({
       where: { status: { notIn: ["closed", "rejected"] } },
     }),
     countUnread(session.role),
-    listNotifications(session.role, 12),
   ]);
-  const bellItems = recent.map((n) => ({
-    id: n.id, category: n.category, severity: n.severity, title: n.title, body: n.body,
-    createdAt: n.createdAt.toISOString(), read: n.readAt != null, href: n.linkedHref,
-  }));
+
+  const name = session.actor.label;
+  const email = `${name.toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/(^\.|\.$)/g, "")}@privacyconsole.in`;
 
   return (
-    <div className="app">
-      <aside className="sidebar">
-        <div className="sidebar-logo">
-          <div className="sidebar-logo-mark">P</div>
-          <div className="sidebar-logo-words">
-            <span className="sidebar-logo-name">Privacy Admin</span>
-            <span className="sidebar-logo-sub">PRIVACY CONSOLE</span>
-          </div>
-        </div>
-        <SidebarNav groups={navGroups(openRequests, session.role)} active={active} />
-      </aside>
-
-      <div className="main">
-        <header className="topbar">
-          <span className="topbar-title">{title}</span>
-          <span className="topbar-spacer" />
-          <NotificationBell items={bellItems} unread={unread} />
-          <ThemeToggle />
-          <RoleSwitcher current={session.role} />
-          <ProfileMenu
-            initials={initialsOf(session.actor.label)}
-            name={session.actor.label}
-            role={ROLE_LABEL[session.role]}
-          />
-        </header>
-        <main className="main-body">{children}</main>
-      </div>
-    </div>
+    <ShellFrame
+      nav={navGroups(openRequests, session.role)}
+      active={active}
+      brandName="Privacy Admin"
+      brandCaption="PRIVACY CONSOLE"
+      initials={initialsOf(name)}
+      name={name}
+      email={email}
+      currentRole={session.role}
+      unread={unread}
+    >
+      {children}
+    </ShellFrame>
   );
 }

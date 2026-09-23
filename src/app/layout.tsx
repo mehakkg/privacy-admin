@@ -17,19 +17,14 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="en" data-theme="light">
       <head>
         {/*
-          Applies the stored theme before first paint. Doing this in a React
-          effect instead would render light, then correct on hydration — a
-          visible flash on every navigation, which defeats the point of a
-          toggle meant for flipping back and forth.
+          The Privacy Console shell ships a single light theme (navy sidebar,
+          white canvas) — there is no dark mode or theme switcher. data-theme
+          is pinned to "light" so the prefers-color-scheme dark rules, which are
+          guarded by :not([data-theme="light"]), never apply.
         */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `try{var t=localStorage.getItem('privacy-admin.theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark')}catch(e){}`,
-          }}
-        />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         <link
