@@ -9,7 +9,9 @@ import { ratioOnWhite, normalizeHex, AA_NORMAL } from "@/lib/wcag";
 import { saveBrandingAction, saveEntityBrandingAction, removeEntityBrandingAction, type BrandingInput } from "@/app/actions/orgProfile";
 import type { ActionResult } from "@/app/actions/requests";
 
-export interface BrandingValue { logoUrl: string | null; primaryColor: string | null; faviconUrl: string | null }
+import { BRANDING_SURFACES } from "@/lib/consentInfra";
+
+export interface BrandingValue { logoUrl: string | null; primaryColor: string | null; faviconUrl: string | null; targetSurfaces?: string[] }
 export interface EntityBranding { id: string; name: string; branding: BrandingValue | null }
 
 function readFileAsDataUrl(file: File, cb: (url: string) => void) {
@@ -40,8 +42,14 @@ export function OrgBrandingForm({
   const [result, setResult] = useState<ActionResult | null>(null);
   const [b, setB] = useState<BrandingValue>(initial);
 
+  const surfaces = b.targetSurfaces ?? ["notices", "preference_center"];
+  const toggleSurface = (key: string) => setB((s) => {
+    const cur = s.targetSurfaces ?? ["notices", "preference_center"];
+    const next = cur.includes(key) ? cur.filter((x) => x !== key) : [...cur, key];
+    return { ...s, targetSurfaces: next };
+  });
   const err = contrastError(b.primaryColor);
-  const save = () => start(async () => { const r = await saveBrandingAction(b as BrandingInput); setResult(r); if (r.ok) router.refresh(); });
+  const save = () => start(async () => { const r = await saveBrandingAction({ ...b, targetSurfaces: surfaces } as BrandingInput); setResult(r); if (r.ok) router.refresh(); });
 
   return (
     <div>
@@ -78,6 +86,19 @@ export function OrgBrandingForm({
               <label className="btn sm"><Upload size={13} /> {b.faviconUrl ? "Replace" : "Upload"} favicon<input type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) readFileAsDataUrl(f, (u) => setB((s) => ({ ...s, faviconUrl: u }))); }} /></label>
               {b.faviconUrl && <button className="btn ghost sm" onClick={() => setB({ ...b, faviconUrl: null })}>Remove</button>}
             </div>
+          </div>
+
+          <div className="stack" style={{ gap: 3 }}>
+            <span className="section-label">Apply this branding to</span>
+            <div className="stack" style={{ gap: 4 }}>
+              {BRANDING_SURFACES.map((s) => (
+                <label key={s.key} className="row" style={{ gap: 8 }}>
+                  <input type="checkbox" checked={surfaces.includes(s.key)} onChange={() => toggleSurface(s.key)} />
+                  <span>{s.label}</span>
+                </label>
+              ))}
+            </div>
+            <span className="cell-sub">The Preference Center inherits org-wide branding by default — the same inheritance model as Notices. A per-entity override below can narrow it.</span>
           </div>
 
           <div className="row" style={{ marginTop: 4 }}>

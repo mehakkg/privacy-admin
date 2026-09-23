@@ -1417,6 +1417,17 @@ model ConsentRecord {
   /// which is locked at the moment of capture and NEVER overwritten by sync.
   syncTimestamp DateTime?
 
+  /// Scenario 8 — the business unit this consent belongs to, so business-unit
+  /// isolation can be actively verified. Null = org-wide / unscoped.
+  entityId String?
+  /// Scenario 8 — honesty flag for legacy bulk imports. null for freshly-captured
+  /// consent; realtime_capture | verified_capture_date | unverifiable_date for
+  /// imports, so an import is never silently treated as a real-time capture.
+  provenance String?
+  /// Scenario 8 — when this record was brought in by a legacy import (the real,
+  /// hashed event), distinct from collectedAt (the possibly-uncertain capture date).
+  importedAt DateTime?
+
   purposeTag PurposeTag? @relation(fields: [purposeTagId], references: [id])
 
   verificationChecks VerificationCheck[]
@@ -1424,6 +1435,7 @@ model ConsentRecord {
 
   @@index([channelOrigin])
   @@index([syncStatus])
+  @@index([entityId])
 }
 
 /// A spot-check: recompute the artifact's hash from stored content and compare to
@@ -2348,6 +2360,11 @@ model OrganizationBranding {
   logoUrl      String?
   primaryColor String?
   faviconUrl   String?
+  /// Scenario 8 — which surfaces this branding applies to: JSON array of
+  /// "notices" | "preference_center". Default covers both. The Preference Center
+  /// inherits the org default the same way Notices do, unless a per-entity row
+  /// narrows or overrides it.
+  targetSurfacesJson String @default("[\"notices\",\"preference_center\"]")
   updatedAt    DateTime @updatedAt
   updatedBy    String?
 }
@@ -2771,6 +2788,84 @@ model UnificationCheck {
   runBy             String?
 
   @@index([runAt])
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 8 — consent-infrastructure completeness: legacy import provenance,
+// business-unit isolation verification, webhook delivery testing, language
+// variant/QA coverage, auto-expiry, and API retrievability. These EXTEND
+// ConsentRecord / PurposeTag / OrganizationBranding / Webhook / NoticeVariant /
+// NoticeDeviceCheck (fields above / reused); the models below are new mechanisms.
+// ---------------------------------------------------------------------------
+
+/// A reusable legacy-system → current-schema field mapping, saved so a second
+/// import from the same source doesn't re-map by hand.
+model LegacyImportTemplate {
+  id           String  @id @default(cuid())
+  name         String
+  sourceSystem String
+  /// JSON array of { legacyField, schemaField }.
+  mappingJson  String  @default("[]")
+  createdAt    DateTime @default(now())
+  createdBy    String?
+}
+
+/// One delivery attempt of a webhook event, with the response and retry count, so
+/// retry/failure handling can be confirmed rather than assumed.
+model WebhookDelivery {
+  id         String  @id @default(cuid())
+  webhookId  String
+  event      String
+  /// delivered | failed | retrying
+  status     String  @default("delivered")
+  responseCode Int?
+  attemptAt  DateTime @default(now())
+  retryCount Int     @default(0)
+  detail     String?
+  isTest     Boolean @default(true)
+
+  @@index([webhookId])
+}
+
+/// One active business-unit isolation test: a real scoped query proving entity A
+/// cannot read entity B's consent data. Names the specific pair on failure.
+model IsolationCheck {
+  id         String  @id @default(cuid())
+  runAt      DateTime @default(now())
+  entityAName String
+  entityBName String
+  /// how many of B's records leaked into A's scoped query (0 = isolated).
+  leakedCount Int    @default(0)
+  passed     Boolean @default(true)
+  detail     String?
+  runBy      String?
+
+  @@index([runAt])
+}
+
+/// Admin-owned expiry behaviour per purpose (kept OFF the governance-locked
+/// PurposeTag). Reads PurposeTag.retention (DPO-set) but the enforcement choice
+/// is operational: auto_withdraw | trigger_reconsent.
+model PurposeExpiryConfig {
+  id           String  @id @default(cuid())
+  purposeTagId String  @unique
+  behavior     String  @default("auto_withdraw")
+  updatedBy    String?
+  updatedAt    DateTime @updatedAt
+}
+
+/// A logged consent-expiry action. Expiry NEVER deletes the artifact — it is a
+/// status change (or a re-consent trigger) recorded here as historical evidence.
+model ConsentExpiryLog {
+  id              String  @id @default(cuid())
+  consentRecordId String
+  purposeName     String?
+  /// auto_withdraw | reconsent_triggered
+  action          String
+  processedAt     DateTime @default(now())
+  detail          String?
+
+  @@index([consentRecordId])
 }
 
 // ---------------------------------------------------------------------------

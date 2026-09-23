@@ -250,11 +250,22 @@ export default async function InventoryPage({
                   </td>
                   <td>
                     {f.purposeTag ? (
-                      <span className="cell-sub">{f.purposeTag.name}</span>
+                      // Consent API availability is COMPUTED from the purpose linkage —
+                      // no separate config. Available the moment it's tagged to an
+                      // approved purpose; otherwise the badge says what's needed.
+                      <span className="cell-stack">
+                        <span className="cell-sub">{f.purposeTag.name}</span>
+                        {f.purposeTag.status === "approved" ? (
+                          <Pill tone="green" dot={false}>Consent API: Available</Pill>
+                        ) : (
+                          <Pill tone="yellow" dot={false}>Consent API: purpose awaiting approval</Pill>
+                        )}
+                      </span>
                     ) : (
                       // Flagged, never blank.
                       <span className="row" style={{ gap: 5, alignItems: "center" }}>
                         <Pill tone="yellow">Untagged</Pill>
+                        <Pill tone="gray" dot={false}>Consent API: not yet linked to an approved purpose</Pill>
                         <TagToPurposeButton fieldId={f.id} fieldPath={f.fieldPath} purposes={purposeOpts} processors={processors} />
                         <InfoTip
                           align="left"

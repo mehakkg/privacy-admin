@@ -4,6 +4,8 @@ import { useEffect, useState, useTransition } from "react";
 import { ShieldCheck, ShieldAlert, X, Clock, Download, Search } from "lucide-react";
 import { Stat, Pill } from "@/components/ui";
 import { runSpotCheckAction, type SpotCheckResult } from "@/app/actions/consentIntegrity";
+import { apiRetrievabilityCheckAction } from "@/app/actions/consentInfra";
+import type { ApiCheckResult } from "@/lib/engines/consentInfra";
 
 export interface ChangeAttempt { at: string; by: string; summary: string }
 export interface ArtifactRow {
@@ -67,11 +69,22 @@ function VerificationDrawer({ row, onClose }: { row: ArtifactRow; onClose: () =>
   const [, start] = useTransition();
   const [res, setRes] = useState<SpotCheckResult | null>(null);
   const [running, setRunning] = useState(true);
+  const [tab, setTab] = useState<"hash" | "api">("hash");
+  const [apiRes, setApiRes] = useState<ApiCheckResult | null>(null);
+  const [apiRunning, setApiRunning] = useState(false);
 
   useEffect(() => {
     setRunning(true);
     start(async () => { const r = await runSpotCheckAction(row.id); setRes(r); setRunning(false); });
   }, [row.id]);
+
+  // Lazily run the API retrievability check the first time that tab is opened.
+  useEffect(() => {
+    if (tab === "api" && !apiRes && !apiRunning) {
+      setApiRunning(true);
+      start(async () => { const r = await apiRetrievabilityCheckAction(row.id); setApiRes(r); setApiRunning(false); });
+    }
+  }, [tab, apiRes, apiRunning, row.id]);
 
   const matched = res?.matched;
 
@@ -97,7 +110,14 @@ function VerificationDrawer({ row, onClose }: { row: ArtifactRow; onClose: () =>
       <aside className="drawer-panel" style={{ background: "var(--bg)", width: "min(560px, 96vw)" }} onClick={(e) => e.stopPropagation()}>
         <div className="drawer-head drawer-sticky"><strong>Verification — {row.subject}</strong><button className="icon-btn" onClick={onClose} aria-label="Close"><X size={16} /></button></div>
         <div className="drawer-body">
-          {running || !res ? (
+          <nav className="stepper" style={{ marginBottom: 14 }}>
+            <button className={`step${tab === "hash" ? " active" : ""}`} onClick={() => setTab("hash")}><span className="step-label">Hash Check</span></button>
+            <button className={`step${tab === "api" ? " active" : ""}`} onClick={() => setTab("api")}><span className="step-label">API Retrievability</span></button>
+          </nav>
+
+          {tab === "api" ? (
+            <ApiCheckPanel res={apiRes} running={apiRunning} />
+          ) : running || !res ? (
             <div className="empty" style={{ padding: 28 }}><p style={{ margin: 0 }}>Recomputing hash and comparing…</p></div>
           ) : (
             <>
@@ -134,5 +154,30 @@ function VerificationDrawer({ row, onClose }: { row: ArtifactRow; onClose: () =>
         </div>
       </aside>
     </div>
+  );
+}
+
+/** API Retrievability tab — shows the ACTUAL Consent API payload for this
+ *  artifact and flags any missing granular field with the same severity as a
+ *  hash mismatch. */
+function ApiCheckPanel({ res, running }: { res: ApiCheckResult | null; running: boolean }) {
+  if (running || !res) return <div className="empty" style={{ padding: 28 }}><p style={{ margin: 0 }}>Calling the Consent API for this artifact…</p></div>;
+  if (!res.ok) return <div className={`integrity-verdict mismatch`}><ShieldAlert size={22} /> {res.error}</div>;
+  const passed = res.passed;
+  return (
+    <>
+      <div className={`integrity-verdict ${passed ? "ok" : "mismatch"}`}>
+        {passed ? <ShieldCheck size={22} /> : <ShieldAlert size={22} />}
+        {passed ? "API returns correct granular, timestamped, purpose-specific data" : "API response is incomplete — flagged, same severity as a hash mismatch"}
+      </div>
+      {!passed && res.gaps && res.gaps.length > 0 && (
+        <div className="hash-box mismatch" style={{ marginBottom: 12 }}>
+          <div className="section-label">Missing / incorrect fields</div>
+          <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>{res.gaps.map((g, i) => <li key={i} className="cell-sub">{g}</li>)}</ul>
+        </div>
+      )}
+      <div className="section-label">Actual API response</div>
+      <pre className="hash-box mono" style={{ whiteSpace: "pre-wrap", fontSize: 12, marginTop: 4 }}>{JSON.stringify(res.payload, null, 2)}</pre>
+    </>
   );
 }

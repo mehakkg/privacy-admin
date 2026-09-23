@@ -104,4 +104,7 @@ if (!POOLED) {
   // Idempotent: seeds assisted/omnichannel demo (doc types, templates, offline
   // queue, assisted channel tags, multi-channel deliveries, unification check).
   run("Seeding Omnichannel demo", "npx tsx prisma/patch-omnichannel.ts", POOLED);
+  // Idempotent: seeds consent-infrastructure demo (entity-scoped consent, webhooks,
+  // 21/22 language variants, expired consent for the sweep, legacy-import template).
+  run("Seeding Consent-infra demo", "npx tsx prisma/patch-scenario8.ts", POOLED);
 }

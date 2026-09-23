@@ -46,7 +46,7 @@ export async function setEntityLegalNameAction(entityId: string, legalName: stri
   );
 }
 
-export interface BrandingInput { logoUrl: string | null; primaryColor: string | null; faviconUrl: string | null }
+export interface BrandingInput { logoUrl: string | null; primaryColor: string | null; faviconUrl: string | null; targetSurfaces?: string[] }
 
 /** Server-side WCAG gate — the hard block holds even if the UI is bypassed. */
 function assertContrast(primaryColor: string | null) {
@@ -62,10 +62,11 @@ export async function saveBrandingAction(input: BrandingInput): Promise<ActionRe
       { actor, action: "org.branding_saved", targetType: "OrganizationBranding", targetId: "org", payload: { primaryColor: input.primaryColor } },
       async (tx: TxClient) => {
         assertContrast(input.primaryColor);
+        const surfaces = input.targetSurfaces && input.targetSurfaces.length ? JSON.stringify(input.targetSurfaces) : undefined;
         return tx.organizationBranding.upsert({
           where: { id: "brand_org" },
-          update: { logoUrl: input.logoUrl, primaryColor: input.primaryColor, faviconUrl: input.faviconUrl, updatedBy: actor.label },
-          create: { id: "brand_org", entityId: null, logoUrl: input.logoUrl, primaryColor: input.primaryColor, faviconUrl: input.faviconUrl, updatedBy: actor.label },
+          update: { logoUrl: input.logoUrl, primaryColor: input.primaryColor, faviconUrl: input.faviconUrl, ...(surfaces ? { targetSurfacesJson: surfaces } : {}), updatedBy: actor.label },
+          create: { id: "brand_org", entityId: null, logoUrl: input.logoUrl, primaryColor: input.primaryColor, faviconUrl: input.faviconUrl, ...(surfaces ? { targetSurfacesJson: surfaces } : {}), updatedBy: actor.label },
         });
       },
     ),

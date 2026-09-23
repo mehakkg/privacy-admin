@@ -35,10 +35,13 @@ export default async function OrganizationSettingsPage({
   ]);
 
   const orgDefaultRow = brandingRows.find((r) => !r.entityId) ?? null;
+  let orgSurfaces: string[] = ["notices", "preference_center"];
+  try { const parsed = orgDefaultRow?.targetSurfacesJson ? JSON.parse(orgDefaultRow.targetSurfacesJson) : null; if (Array.isArray(parsed)) orgSurfaces = parsed; } catch { /* keep default */ }
   const orgDefault: BrandingValue = {
     logoUrl: orgDefaultRow?.logoUrl ?? null,
     primaryColor: orgDefaultRow?.primaryColor ?? null,
     faviconUrl: orgDefaultRow?.faviconUrl ?? null,
+    targetSurfaces: orgSurfaces,
   };
   const orgName = org?.displayName || org?.legalName || org?.name || "Your Organization";
 

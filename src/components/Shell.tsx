@@ -76,6 +76,12 @@ function navGroups(openRequests: number, role: string): NavEntry[] {
         { href: "/consent/cookies", label: "Cookie consent", ready: true },
         { href: "/consent/cookie-categories", label: "Cookie categories", ready: true },
         { href: "/consent/script-scan", label: "Script compliance scan", ready: true },
+        { href: "/consent/legacy-import", label: "Legacy import", ready: true },
+        { href: "/consent/languages", label: "Language variants", ready: true },
+        { href: "/consent/language-qa", label: "Language rendering QA", ready: true },
+        { href: "/consent/expiry", label: "Auto-expiry & re-consent", ready: true },
+        { href: "/consent/isolation", label: "Business-unit isolation", ready: true },
+        { href: "/consent/webhooks", label: "Webhook delivery", ready: true },
       ],
     },
     {
