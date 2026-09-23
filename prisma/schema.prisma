@@ -1496,6 +1496,41 @@ model ProtectionRule {
   definition String
   approvedBy String
   approvedAt DateTime
+
+  /// Approval lifecycle. Seeded rules are "approved"; a rule proposed through the
+  /// Rule Library (from a template or custom) starts pending_ciso_approval and only
+  /// reaches Approved Policy / the implementation screen once the CISO approves.
+  status         String  @default("approved")
+  proposedBy     String?
+  proposedAt     DateTime?
+  rejectionReason String?
+  /// Provenance: which library template this was composed from (null = fully
+  /// custom, no template origin), the tier, and the statutory citation carried
+  /// from a DPDP-specific template.
+  sourceTemplateId  String?
+  tier              String?
+  statutoryCitation String?
+}
+
+/// A pre-composed starting point for a Protection Rule, mirroring the Role Library
+/// (system vs custom) and Cookie Category (standard vs custom) splits. A template
+/// only pre-fills the definition the CISO still reviews — it never pre-empts
+/// authorization, and every tier converges on the same downstream flow.
+model ProtectionRuleTemplate {
+  id            String @id @default(cuid())
+  /// baseline_pii | dpdp_specific | custom
+  tier          String
+  name          String
+  piiCategory   String
+  /// masking | encryption | tokenization
+  defaultMethod String
+  suggestedScope String
+  strictness    String  @default("high")
+  definition    String  @default("")
+  /// Populated for dpdp_specific only; null for baseline_pii; null for custom
+  /// until the CISO adds one.
+  statutoryCitation String?
+  sortOrder     Int     @default(0)
 }
 
 // ---------------------------------------------------------------------------

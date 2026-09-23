@@ -117,4 +117,6 @@ if (!POOLED) {
   run("Seeding ROPA suggestions demo", "npx tsx prisma/patch-ropa-suggestions.ts", POOLED);
   // Idempotent: seeds manually-added sources (provenance + no-automated-scan state).
   run("Seeding manual sources demo", "npx tsx prisma/patch-manual-sources.ts", POOLED);
+  // Idempotent: seeds Protection Rule Library templates (baseline_pii + dpdp_specific).
+  run("Seeding rule templates", "npx tsx prisma/patch-rule-templates.ts", POOLED);
 }

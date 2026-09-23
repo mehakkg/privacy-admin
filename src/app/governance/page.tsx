@@ -51,7 +51,7 @@ export default async function GovernancePage({
     db.purposeTag.findMany({ where: { status: { notIn: ["pending_dpo_approval", "rejected"] } }, orderBy: { name: "asc" } }),
     db.noticeVersion.findMany({ orderBy: { version: "desc" } }),
     db.cookieCategory.findMany({ orderBy: { name: "asc" } }),
-    db.protectionRule.findMany({ orderBy: { dataCategory: "asc" } }),
+    db.protectionRule.findMany({ where: { status: "approved" }, orderBy: { dataCategory: "asc" } }),
     // Ratified roles only: system, or approved custom. Drafts/pending don't appear.
     db.rBACRole.findMany({
       where: { OR: [{ roleType: "system" }, { roleType: "custom", status: "approved" }] },

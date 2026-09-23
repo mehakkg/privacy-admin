@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
 import { CompactFilterBar } from "@/components/CompactFilterBar";
@@ -23,12 +24,15 @@ export default async function ProtectionRulesPage({
   const params = await searchParams;
   const term = (params.q ?? "").trim().toLowerCase();
 
-  const [rules, scopes, exceptions, systems, locations] = await Promise.all([
-    db.protectionRule.findMany({ orderBy: { ruleName: "asc" } }),
+  const [rules, scopes, exceptions, systems, locations, pendingCount] = await Promise.all([
+    // Only approved rules are implementable here; a rule proposed in the Library
+    // stays out of this screen until the CISO approves it.
+    db.protectionRule.findMany({ where: { status: "approved" }, orderBy: { ruleName: "asc" } }),
     db.protectionRuleScope.findMany({ select: { ruleId: true, systemsJson: true, fieldsJson: true } }),
     db.protectionRuleException.findMany(),
     db.connectedSystem.findMany({ orderBy: { name: "asc" } }),
     db.dataLocation.findMany({ where: { systemId: { not: null } }, select: { systemId: true, dataCategoriesJson: true } }),
+    db.protectionRule.count({ where: { status: "pending_ciso_approval" } }),
   ]);
 
   const scopeByRule = new Map(scopes.map((s) => [s.ruleId, decodeList(s.systemsJson)]));
@@ -82,6 +86,11 @@ export default async function ProtectionRulesPage({
       <PageHead
         title="Protection rules"
         titleTip="Rule definitions are set by your CISO. You implement the technical scope — which systems and fields each rule applies to."
+        actions={
+          <Link href="/data-flow/protection-rules/library" className="btn primary sm">
+            New rule from library{pendingCount > 0 ? ` (${pendingCount} pending)` : ""} →
+          </Link>
+        }
       />
 
       <div className="stat-row" style={{ marginBottom: 16 }}>

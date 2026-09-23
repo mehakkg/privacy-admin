@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Lock } from "lucide-react";
 import { ListDetail, type Column } from "@/components/ListDetail";
@@ -8,7 +9,6 @@ import { Notice, Pill } from "@/components/ui";
 import { ActionError } from "@/components/actions";
 import {
   requestExceptionAction,
-  requestRuleAction,
   saveRuleScopeAction,
 } from "@/app/actions/dataflow";
 import type { ActionResult } from "@/app/actions/requests";
@@ -73,7 +73,6 @@ export function ProtectionRulesTable({
   systemCategories?: Record<string, string[]>;
 }) {
   const { pending, result, run } = useAction();
-  const [requestingRule, setRequestingRule] = useState(false);
 
   const columns: Column<RuleRow>[] = [
     {
@@ -141,16 +140,13 @@ export function ProtectionRulesTable({
         )}
       />
 
-      {/* The only path to a new rule — above the fold, not buried. No add button. */}
+      {/* The single path to a new rule is the Rule Library — three tiers, all
+          routing through the same CISO propose→approve flow. */}
       <div className="row" style={{ marginTop: 12 }}>
-        <button className="btn sm" onClick={() => setRequestingRule((v) => !v)}>
-          Request a new protection rule →
-        </button>
+        <Link href="/data-flow/protection-rules/library" className="btn sm primary">
+          Create a rule from the library →
+        </Link>
       </div>
-
-      {requestingRule && (
-        <RequestRuleForm pending={pending} onRequest={(cat, reason) => run(() => requestRuleAction(cat, reason), () => setRequestingRule(false))} />
-      )}
 
       <ActionError result={result} />
     </div>
@@ -312,33 +308,3 @@ function RuleDrawer({
   );
 }
 
-function RequestRuleForm({
-  pending,
-  onRequest,
-}: {
-  pending: boolean;
-  onRequest: (category: string, reason: string) => void;
-}) {
-  const [cat, setCat] = useState("kyc");
-  const [reason, setReason] = useState("");
-  return (
-    <div className="notice info" style={{ marginTop: 10 }}>
-      <div className="notice-title">Request a new protection rule from the CISO</div>
-      <p className="cell-sub" style={{ margin: "0 0 8px" }}>
-        Admin cannot create a rule. This raises an escalation to the CISO, who
-        owns the definition — the only way a new rule comes to exist.
-      </p>
-      <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-        <select className="input sm" value={cat} onChange={(e) => setCat(e.target.value)}>
-          {["identity", "contact", "kyc", "financial", "transaction", "marketing", "behavioural", "support"].map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </select>
-        <input className="input sm" style={{ minWidth: 240 }} placeholder="Why is it needed?" value={reason} onChange={(e) => setReason(e.target.value)} />
-        <button className="btn primary sm" disabled={pending || !reason.trim()} onClick={() => onRequest(cat, reason)}>
-          Raise request
-        </button>
-      </div>
-    </div>
-  );
-}
