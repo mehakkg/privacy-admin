@@ -111,4 +111,6 @@ if (!POOLED) {
   run("Seeding Cookie-compliance demo", "npx tsx prisma/patch-scenario9.ts", POOLED);
   // Idempotent: seeds one open escalation referencing an activity (Data Map Screen 2 badge).
   run("Seeding Data Map escalation demo", "npx tsx prisma/patch-datamap-escalation.ts", POOLED);
+  // Idempotent: seeds Data Map demo states (failed/acquired/stale sources, entity hierarchy).
+  run("Seeding Data Map states demo", "npx tsx prisma/patch-datamap-states.ts", POOLED);
 }

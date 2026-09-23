@@ -53,11 +53,13 @@ export default async function ProcessingActivitiesPage({
   ]);
 
   /** An open escalation references an activity when its context snapshot names the
-   *  activity (by id or name) or one of its purposes. Returns count + a deep link. */
-  const escalationsFor = (activityId: string, activityName: string, purposeNames: (string | null)[]): { count: number; href: string } | undefined => {
+   *  activity specifically — by id (the precise link) or by its exact name. A
+   *  shared purpose is deliberately NOT enough, or one escalation would light up
+   *  every activity using that purpose. Returns count + a deep link. */
+  const escalationsFor = (activityId: string, activityName: string): { count: number; href: string } | undefined => {
     const matched = openEscalations.filter((e) => {
       const ctx = e.contextJson ?? "";
-      return ctx.includes(activityId) || ctx.includes(activityName) || purposeNames.some((p) => p && ctx.includes(p));
+      return ctx.includes(activityId) || ctx.includes(`"${activityName}"`);
     });
     if (matched.length === 0) return undefined;
     const ref = matched[0].referenceCode ?? `ESC-${matched[0].id.slice(-6)}`;
@@ -91,7 +93,7 @@ export default async function ProcessingActivitiesPage({
     })),
     // Old element-first rows → surfaced as legacy, never silently migrated.
     legacyElements: a.elements.map((e) => ({ id: e.id, elementName: e.elementName, purposeName: e.purposeTag?.name ?? null })),
-    openEscalations: escalationsFor(a.id, a.activity, a.purposeSegments.map((s) => s.purposeTag?.name ?? null)),
+    openEscalations: escalationsFor(a.id, a.activity),
   }));
 
   // Compact Filter Bar: search + rollup severity filter, so incomplete activities
