@@ -113,4 +113,6 @@ if (!POOLED) {
   run("Seeding Data Map escalation demo", "npx tsx prisma/patch-datamap-escalation.ts", POOLED);
   // Idempotent: seeds Data Map demo states (failed/acquired/stale sources, entity hierarchy).
   run("Seeding Data Map states demo", "npx tsx prisma/patch-datamap-states.ts", POOLED);
+  // Idempotent: promotes a few fields to approved + seeds pending ROPA suggestions.
+  run("Seeding ROPA suggestions demo", "npx tsx prisma/patch-ropa-suggestions.ts", POOLED);
 }
