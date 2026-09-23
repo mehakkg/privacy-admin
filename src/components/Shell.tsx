@@ -44,6 +44,7 @@ function navGroups(openRequests: number, role: string): NavEntry[] {
         { href: "/discovery/scan-config", label: "Scan configuration", ready: true },
         { href: "/discovery/scan-results", label: "Scan results", ready: true },
         { href: "/data-map/processing-activities", label: "Processing activities", ready: true },
+        { href: "/fiduciaries", label: "Fiduciaries", ready: true },
         { href: "/discovery/inventory", label: "Data inventory", ready: true },
         { href: "/data-map/categories", label: "Data categories", ready: true },
         { href: "/discovery/triage", label: "Review queue", ready: true },
