@@ -153,6 +153,7 @@ function navGroups(openRequests: number, role: string): NavEntry[] {
       children: [
         { href: "/analytics/risk", label: "Risk dashboard", ready: true },
         { href: "/analytics/risk-sources", label: "Risk analytics sources", ready: true },
+        { href: "/data-flow/protection-rules/library", label: "Protection rule library", ready: true },
         { href: "/data-flow/protection-rules", label: "Protection rules", ready: true },
         { href: "/risk/scope-adjustments", label: "Scope adjustments", ready: true },
         { href: "/risk/access-insights", label: "Access insights", ready: true },
