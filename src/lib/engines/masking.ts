@@ -238,32 +238,40 @@ async function tenantFloor(code: string, channel: string | null): Promise<Rule |
 }
 
 /**
- * Direct edit of a tenant-governed rule. Allowed only when every proposed rule is
- * equal-or-stricter than the current one (tightening) AND meets the floor.
- * A loosening change must go through a proposal, so this refuses it.
+ * Direct edit of a tenant rule (or adding a tenant rule to a no-rule field).
+ * Allowed only when every proposed rule is equal-or-stricter than the current one
+ * (tightening) AND meets the floor. A loosening change must go through a proposal.
+ * A field governed below by a locked layer (regional/baseline) cannot get a direct
+ * tenant edit here — that path is a proposal.
  */
 export async function editTenantRule(code: string, patches: RulePatch[], actor: AuditActor) {
   const field = await db.maskingField.findUnique({ where: { code }, include: { layerRules: true, channelRules: true } });
   if (!field) throw err("NotFoundError", "That field no longer exists.");
   const tenant = field.layerRules.find((l) => l.layer === "tenant");
-  if (!tenant) throw err("ForbiddenError", "This field is not tenant-governed; changes must be proposed.");
-  if (tenant.locked) throw err("ForbiddenError", "This rule is governed and cannot be edited directly.");
+  const governedBelow = field.layerRules.some((l) => l.layer !== "tenant");
+  if (tenant?.locked) throw err("ForbiddenError", "This rule is governed and cannot be edited directly.");
+  // No tenant layer and a governed layer beneath → overriding it is a proposal.
+  if (!tenant && governedBelow) throw err("NeedsApproval", "This field is governed by a template; a tenant override must be proposed for DPO approval.");
+  const adding = !tenant;
 
   for (const p of patches) {
     if (p.family === "synthetic" && p.channel !== "nonprod") throw err("ValidationError", "Synthetic value is only allowed on the Non-prod channel.");
     const floor = await tenantFloor(code, p.channel);
     if (floor && strictness(p as Rule) < strictness(floor)) throw err("FloorError", `Weaker than the floor (${ruleLabel(floor)}).`);
-    const current = p.channel
-      ? (field.channelRules.find((c) => c.layer === "tenant" && c.channel === p.channel) ?? tenant)
-      : tenant;
-    if (strictness(p as Rule) < strictness(ruleOf(current))) {
-      throw err("NeedsApproval", "This change loosens the current rule, so it needs DPO approval. Submit it as a proposal instead.");
+    if (!adding) {
+      const current = p.channel
+        ? (field.channelRules.find((c) => c.layer === "tenant" && c.channel === p.channel) ?? tenant!)
+        : tenant!;
+      if (strictness(p as Rule) < strictness(ruleOf(current))) {
+        throw err("NeedsApproval", "This change loosens the current rule, so it needs DPO approval. Submit it as a proposal instead.");
+      }
     }
   }
 
   return audited(
-    { actor, action: "masking.rule_edited", targetType: "MaskingField", targetId: code, eventDescription: `Tightened the tenant rule for ${code}`, payload: { code, changes: patches.map((p) => ({ channel: p.channel ?? "default", rule: ruleLabel(p as Rule) })) } },
+    { actor, action: "masking.rule_edited", targetType: "MaskingField", targetId: code, eventDescription: `${adding ? "Added a" : "Tightened the"} tenant rule for ${code}`, payload: { code, added: adding, changes: patches.map((p) => ({ channel: p.channel ?? "default", rule: ruleLabel(p as Rule) })) } },
     async (tx) => {
+      let tenantId = tenant?.id ?? null;
       for (const p of patches) {
         if (p.channel) {
           await tx.maskingChannelRule.upsert({
@@ -271,8 +279,11 @@ export async function editTenantRule(code: string, patches: RulePatch[], actor: 
             update: { family: p.family, paramsJson: encodeObject(p.params) },
             create: { fieldCode: code, layer: "tenant", channel: p.channel, family: p.family, paramsJson: encodeObject(p.params) },
           });
+        } else if (tenantId) {
+          await tx.maskingLayerRule.update({ where: { id: tenantId }, data: { family: p.family, paramsJson: encodeObject(p.params) } });
         } else {
-          await tx.maskingLayerRule.update({ where: { id: tenant.id }, data: { family: p.family, paramsJson: encodeObject(p.params) } });
+          const created = await tx.maskingLayerRule.create({ data: { fieldCode: code, layer: "tenant", family: p.family, paramsJson: encodeObject(p.params), locked: false } });
+          tenantId = created.id;
         }
       }
     },
