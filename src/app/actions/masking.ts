@@ -6,7 +6,6 @@ import {
   saveRule,
   unlockRule,
   createField,
-  simulateConcurrentEdit,
   checkCodeCollision,
   type CreateFieldInput,
   type Collision,
@@ -74,17 +73,6 @@ export async function createFieldAction(input: CreateFieldInput): Promise<Maskin
   const { actor } = await getSession();
   try {
     await createField(input, actor);
-    touch();
-    return { ok: true };
-  } catch (e) {
-    return fail(e);
-  }
-}
-
-export async function simulateConcurrentEditAction(id: string): Promise<MaskingActionResult> {
-  const { actor } = await getSession();
-  try {
-    await simulateConcurrentEdit(id, actor);
     touch();
     return { ok: true };
   } catch (e) {

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Save, GitBranchPlus, RefreshCw, AlertTriangle, EyeOff } from "lucide-react";
 import { Pill } from "@/components/ui";
 import { runMaskCore, MASK_METHODS, METHOD_LABEL, tierBadge, TIER_TONE, type MaskResult } from "@/lib/masking";
-import { saveRuleAction, simulateConcurrentEditAction, type MaskingActionResult } from "@/app/actions/masking";
+import { saveRuleAction, type MaskingActionResult } from "@/app/actions/masking";
 
 /**
  * SCREEN 3 — Edit Rule with optimistic locking.
@@ -74,9 +74,11 @@ export function EditRule({
 
   const simulate = () =>
     start(async () => {
-      const r = await simulateConcurrentEditAction(ruleId);
-      // Keep loadedVersion stale on purpose; don't refresh the form.
-      if (r.ok) { setSimulated(true); setResult(null); setSaved(false); }
+      // A plain fetch, NOT a server action: a server action would auto-revalidate
+      // this route and refresh the form to the new version, discarding exactly the
+      // stale state the conflict test needs. fetch leaves loadedVersion untouched.
+      const res = await fetch(`/api/v1/admin/masking-rules/${ruleId}/simulate-concurrent`, { method: "POST" });
+      if (res.ok) { setSimulated(true); setResult(null); setSaved(false); }
     });
 
   const reloadLatest = () =>
