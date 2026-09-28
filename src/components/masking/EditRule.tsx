@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Save, GitBranchPlus, RefreshCw, AlertTriangle, EyeOff } from "lucide-react";
 import { Pill } from "@/components/ui";
@@ -44,6 +44,17 @@ export function EditRule({
   const [result, setResult] = useState<MaskingActionResult | null>(null);
   const [simulated, setSimulated] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  // Re-sync to server truth whenever the page actually re-renders with a new
+  // version (our own successful save, or "Reload latest"). A *simulated*
+  // concurrent edit deliberately does NOT refresh, so the prop is unchanged and
+  // this does not fire — which is exactly what keeps loadedVersion stale so the
+  // next Save surfaces the conflict.
+  useEffect(() => {
+    setLoadedVersion(initialVersion);
+    setMethod(initialMethod);
+    setSimulated(false);
+  }, [initialVersion, initialMethod]);
 
   const preview: MaskResult = runMaskCore(method, sampleValue);
   const dirty = method !== initialMethod;

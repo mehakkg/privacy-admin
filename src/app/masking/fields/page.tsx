@@ -130,6 +130,8 @@ function WinnerCard({ r, winner }: { r: EffectiveResolution; winner: ResolutionS
           lockType={winner.lockType}
           regulated={winner.regulated}
           editable={winner.editable}
+          tier={winner.tier}
+          templateName={winner.templateName}
           lockedBy={winner.lockedBy}
           lockedAt={winner.lockedAt}
           statutoryCitation={winner.statutoryCitation}

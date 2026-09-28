@@ -2,9 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { ShieldCheck, Lock, LockOpen, Unlock, Pencil } from "lucide-react";
+import { ShieldCheck, Lock, LockOpen, Unlock, Eye } from "lucide-react";
 import { Pill } from "@/components/ui";
+import { tierBadge } from "@/lib/masking";
 import { unlockRuleAction, type MaskingActionResult } from "@/app/actions/masking";
 
 /**
@@ -20,6 +20,8 @@ export function LockTreatment({
   lockType,
   regulated,
   editable,
+  tier,
+  templateName,
   lockedBy,
   lockedAt,
   statutoryCitation,
@@ -28,6 +30,8 @@ export function LockTreatment({
   lockType: string;
   regulated: boolean;
   editable: boolean;
+  tier: string;
+  templateName: string;
   lockedBy: string | null;
   lockedAt: string | null;
   statutoryCitation: string | null;
@@ -84,22 +88,32 @@ export function LockTreatment({
     );
   }
 
-  // lockType === "none": freely editable (including a just-unlocked field).
+  // lockType === "none". Two very different meanings: the tenant's own rule
+  // (editable) vs a baseline/regional rule the tenant only implements (view-only).
+  if (editable) {
+    return (
+      <div className="lock-box open">
+        <div className="row" style={{ gap: 8, alignItems: "center" }}>
+          <LockOpen size={18} className="muted" />
+          <Pill tone="green" dot={false}>Unlocked · editable</Pill>
+          {regulated && <Pill tone="yellow" dot={false}>regulated</Pill>}
+        </div>
+        <p className="cell-sub" style={{ margin: "8px 0 0" }}>
+          Your tenant&rsquo;s own rule. Exact-match enforcement is not locked, so it can be edited freely.
+        </p>
+      </div>
+    );
+  }
   return (
-    <div className="lock-box open">
+    <div className="lock-box degraded">
       <div className="row" style={{ gap: 8, alignItems: "center" }}>
-        <LockOpen size={18} className="muted" />
-        <Pill tone="green" dot={false}>Unlocked · editable</Pill>
-        {regulated && <Pill tone="yellow" dot={false}>regulated</Pill>}
+        <Eye size={17} className="muted" />
+        <Pill tone="gray" dot={false}>View-only</Pill>
       </div>
       <p className="cell-sub" style={{ margin: "8px 0 0" }}>
-        Exact-match enforcement is not locked on this field. It can be edited freely.
+        Governed by the {tierBadge(tier, templateName)} {tier === "baseline" ? "floor" : "template"}. Your tenant
+        implements it but does not edit it here — add a tenant rule to override it.
       </p>
-      {editable && (
-        <Link href={`/masking/rules/${ruleId}/edit`} className="btn sm" style={{ marginTop: 10 }}>
-          <Pencil size={13} /> Edit rule
-        </Link>
-      )}
     </div>
   );
 }
