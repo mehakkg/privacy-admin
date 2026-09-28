@@ -36,14 +36,20 @@ export default async function AuditPage({
     search?: string;
     from?: string;
     to?: string;
+    module?: string;
+    field?: string;
   }>;
 }) {
   const params = await searchParams;
+  // A module filter narrows to that module's dotted action prefix (e.g. masking.*);
+  // a field deep link narrows to one target. An explicit action filter wins.
+  const moduleAction = params.module ? `${params.module}.` : undefined;
 
   const [entries, chain, actions, request] = await Promise.all([
     searchAuditLog({
       requestId: params.requestId,
-      action: params.action,
+      action: params.action || moduleAction,
+      targetId: params.field ? params.field.toUpperCase() : undefined,
       actorRole: params.actorRole,
       search: params.search,
       from: params.from ? new Date(params.from) : undefined,
@@ -83,7 +89,13 @@ export default async function AuditPage({
             : undefined
         }
         title="Unified audit log"
-        subtitle="Every execution, escalation and status change, written automatically and hash-chained. Entries cannot be edited or deleted, and survive the erasure of the data they describe."
+        subtitle={
+          params.field
+            ? `Config changes for ${params.field.toUpperCase()} — who, when, and the before/after. Hash-chained and immutable.`
+            : params.module
+              ? `${params.module} module events, from the single hash-chained log. Entries cannot be edited or deleted.`
+              : "Every execution, escalation and status change, written automatically and hash-chained. Entries cannot be edited or deleted, and survive the erasure of the data they describe."
+        }
       />
 
       <div style={{ marginBottom: 16 }}>
@@ -112,6 +124,7 @@ export default async function AuditPage({
           {params.requestId && (
             <input type="hidden" name="requestId" value={params.requestId} />
           )}
+          {params.field && <input type="hidden" name="field" value={params.field} />}
           <input
             className="input"
             style={{ width: 260 }}
@@ -119,7 +132,13 @@ export default async function AuditPage({
             placeholder="Identifier, actor, action or payload…"
             defaultValue={params.search ?? ""}
           />
-          <select className="input" style={{ width: 220 }} name="action" defaultValue={params.action ?? ""}>
+          <select className="input" style={{ width: 160 }} name="module" defaultValue={params.module ?? ""}>
+            <option value="">All modules</option>
+            {["masking", "consent", "protection", "retention", "breach", "vendor", "access"].map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+          <select className="input" style={{ width: 200 }} name="action" defaultValue={params.action ?? ""}>
             <option value="">All event types</option>
             {actions.map((a) => (
               <option key={a.action} value={a.action}>
@@ -140,7 +159,7 @@ export default async function AuditPage({
           <button className="btn primary" type="submit">
             Search
           </button>
-          <Link className="btn ghost" href={qs({ search: undefined, action: undefined, actorRole: undefined, from: undefined, to: undefined })}>
+          <Link className="btn ghost" href={qs({ search: undefined, action: undefined, module: undefined, field: undefined, actorRole: undefined, from: undefined, to: undefined })}>
             Clear
           </Link>
         </form>

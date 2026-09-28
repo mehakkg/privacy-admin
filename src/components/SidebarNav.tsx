@@ -35,6 +35,7 @@ const GROUP_ICON: Record<string, LucideIcon> = {
   access: UserCog,
   "audit-escalation": Scale,
   governance: ShieldCheck,
+  "data-protection": Shield,
   settings: Settings,
 };
 
@@ -102,8 +103,8 @@ function childIcon(label: string): LucideIcon {
 }
 
 export type NavChild =
-  | { href: string; label: string; ready: boolean; heading?: never }
-  | { heading: string; href?: never; label?: never; ready?: never };
+  | { href: string; label: string; ready: boolean; badge?: number; heading?: never }
+  | { heading: string; href?: never; label?: never; ready?: never; badge?: never };
 
 export interface NavGroup {
   key: string;
@@ -112,6 +113,10 @@ export interface NavGroup {
   ready: boolean;
   badge?: number;
   children?: NavChild[];
+  /** Pinned to the bottom of the sidebar, below a divider (Settings). */
+  footer?: boolean;
+  /** Show a lock marker — a governance page Admin can read but not edit. */
+  locked?: boolean;
 }
 
 export type NavSection = { section: string };
@@ -183,12 +188,18 @@ export function SidebarNav({
       return next;
     });
 
-  const renderItem = (href: string, label: string, Icon: LucideIcon, ready: boolean, badge?: number) =>
+  const renderItem = (href: string, label: string, Icon: LucideIcon, ready: boolean, opts: { badge?: number; locked?: boolean } = {}) =>
     ready ? (
-      <Link href={href} className={`nav-item${href === activeHref ? " active" : ""}`} title={collapsed ? label : undefined}>
+      <Link
+        href={href}
+        className={`nav-item${href === activeHref ? " active" : ""}`}
+        title={collapsed ? label : undefined}
+        aria-current={href === activeHref ? "page" : undefined}
+      >
         <Icon strokeWidth={1.6} />
         <span className="label">{label}</span>
-        {badge !== undefined && <span className="count">{badge}</span>}
+        {opts.locked && <span className="nav-lock" title="Set by DPO/CISO"><Lock strokeWidth={1.7} /></span>}
+        {opts.badge !== undefined && opts.badge > 0 && <span className="count">{opts.badge}</span>}
       </Link>
     ) : (
       <span className="nav-item disabled" title={label}>
@@ -197,36 +208,53 @@ export function SidebarNav({
       </span>
     );
 
+  const renderGroup = (group: NavGroup) => {
+    const hasChildren = (group.children?.length ?? 0) > 0;
+    if (!hasChildren) {
+      const Icon = GROUP_ICON[group.key] ?? childIcon(group.label);
+      return <div key={group.key}>{renderItem(group.href, group.label, Icon, group.ready, { badge: group.badge, locked: group.locked })}</div>;
+    }
+    // When collapsed, every group renders open (headers are hidden by CSS).
+    const isOpen = collapsed ? true : open[group.key] ?? false;
+    // Badge migration: a closed section shows the section total; when open, the
+    // total lives on the page rows instead.
+    const childTotal = (group.children ?? []).reduce((n, c) => n + (c.badge ?? 0), 0);
+    const headerBadge = group.badge ?? (childTotal > 0 ? childTotal : undefined);
+    return (
+      <div key={group.key} className={`nav-group${isOpen ? "" : " closed"}`}>
+        <button type="button" className="nav-group-header" aria-expanded={isOpen} onClick={() => toggle(group.key)}>
+          <span className="label">{group.label}</span>
+          {!isOpen && headerBadge !== undefined && headerBadge > 0 && <span className="count">{headerBadge}</span>}
+          <ChevronUp strokeWidth={1.6} />
+        </button>
+        <div className="nav-group-items">
+          {(group.children ?? []).map((child) =>
+            child.heading !== undefined ? null : (
+              <div key={child.href}>{renderItem(child.href, child.label, childIcon(child.label), child.ready, { badge: child.badge })}</div>
+            ),
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const main = groups.filter((g) => isSection(g) || !g.footer);
+  const footer = groups.filter((g): g is NavGroup => !isSection(g) && !!g.footer);
+
   return (
     <nav className="nav">
-      {groups.map((entry, ei) => {
-        if (isSection(entry)) return null; // sections collapse away in the two-level model
-        const group = entry;
-        const hasChildren = (group.children?.length ?? 0) > 0;
-
-        if (!hasChildren) {
-          const Icon = GROUP_ICON[group.key] ?? childIcon(group.label);
-          return <div key={group.key}>{renderItem(group.href, group.label, Icon, group.ready, group.badge)}</div>;
-        }
-
-        // When collapsed, every group renders open (headers are hidden by CSS).
-        const isOpen = collapsed ? true : open[group.key] ?? false;
-        return (
-          <div key={group.key} className={`nav-group${isOpen ? "" : " closed"}`}>
-            <button type="button" className="nav-group-header" aria-expanded={isOpen} onClick={() => toggle(group.key)}>
-              <span className="label">{group.label}</span>
-              <ChevronUp strokeWidth={1.6} />
-            </button>
-            <div className="nav-group-items">
-              {(group.children ?? []).map((child, ci) =>
-                child.heading !== undefined ? null : (
-                  <div key={child.href}>{renderItem(child.href, child.label, childIcon(child.label), child.ready)}</div>
-                ),
-              )}
-            </div>
-          </div>
-        );
-      })}
+      <div className="nav-scroll">
+        {main.map((entry) =>
+          isSection(entry)
+            ? <div key={`sec-${entry.section}`} className="nav-macro" aria-hidden>{entry.section}</div>
+            : renderGroup(entry),
+        )}
+      </div>
+      {footer.length > 0 && (
+        <div className="nav-footer">
+          {footer.map((g) => renderGroup(g))}
+        </div>
+      )}
     </nav>
   );
 }

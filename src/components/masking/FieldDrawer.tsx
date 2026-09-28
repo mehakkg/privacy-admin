@@ -195,7 +195,7 @@ export function FieldDrawer({
                     ))}
                   </div>
                 )}
-                <Link href={`/masking/audit?field=${res.code}`} className="row-link" style={{ marginTop: 8, display: "inline-flex", gap: 4 }}>
+                <Link href={`/audit?module=masking&field=${res.code}`} className="row-link" style={{ marginTop: 8, display: "inline-flex", gap: 4 }}>
                   See full log <ExternalLink size={12} />
                 </Link>
               </Section>
