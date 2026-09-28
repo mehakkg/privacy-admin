@@ -75,7 +75,8 @@ export default async function MaskingPolicyPage({ searchParams }: { searchParams
   // Drawer data
   const drawerCode = sp.field?.toUpperCase();
   const res = drawerCode ? await resolveField(drawerCode) : null;
-  const pending = res ? await getPendingChange(res.code) : null;
+  const pendingRaw = res ? await getPendingChange(res.code) : null;
+  const pending = pendingRaw ? { ...pendingRaw, proposedAt: formatDateTime(pendingRaw.proposedAt) } : null;
   const historyRows = res ? await fieldHistory(res.code) : [];
   const floor = res && res.chain.length > 1 ? { family: res.chain[1].family, params: res.chain[1].params } : null;
   const floorName = res && res.chain.length > 1 ? `${res.chain[1].layer === "regional" ? `${res.chain[1].source} template` : "Baseline"} floor` : null;
