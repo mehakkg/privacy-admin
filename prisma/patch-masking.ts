@@ -14,9 +14,31 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
+/**
+ * Reconcile the two canonical lock fixtures (Screen 2) on EVERY run, not just the
+ * first seed. They are demo fixtures: a demo-er may unlock LOAN_ACCOUNT_NUMBER to
+ * show the reversible state, and this restores the pristine self-locked /
+ * system-regulated treatments on the next deploy so the console always presents
+ * both lock types correctly. It never touches editable, unlocked rules like PAN.
+ */
+async function reconcileLockFixtures() {
+  await prisma.maskingRule.updateMany({
+    where: { fieldCode: "AADHAAR", template: { key: "BASELINE" } },
+    data: { lockType: "system_regulated", regulated: true, editable: false, statutoryCitation: "Aadhaar Act 2016, s.29 r/w DPDP Act 2023, s.8(5)" },
+  });
+  await prisma.maskingRule.updateMany({
+    where: { fieldCode: "LOAN_ACCOUNT_NUMBER", template: { key: "TENANT" } },
+    data: { lockType: "self_locked", regulated: true, lockedBy: "Risk Ops (your team)", lockedAt: new Date("2026-03-12") },
+  });
+}
+
 async function main() {
   if (!process.env.DATABASE_URL) { console.log("patch-masking: no DATABASE_URL, skipping."); return; }
-  if ((await prisma.maskingTemplate.count()) > 0) { console.log("patch-masking: already seeded, skipping."); return; }
+  if ((await prisma.maskingTemplate.count()) > 0) {
+    await reconcileLockFixtures();
+    console.log("patch-masking: already seeded; reconciled lock fixtures.");
+    return;
+  }
 
   const [baseline, dpdp, rbi, tenant] = await Promise.all([
     prisma.maskingTemplate.create({ data: { key: "BASELINE", name: "BASELINE", tier: "baseline", precedence: 0, associated: true, ownedBy: "SUPER_ADMIN" } }),
