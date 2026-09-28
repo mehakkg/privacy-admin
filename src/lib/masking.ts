@@ -1,195 +1,291 @@
 /**
  * DYNAMIC DATA MASKING — pure, client-safe shared layer.
  *
- * Constants, labels and the masking-function executor (`runMaskCore`) that the
- * engine and the browser both call, so the live preview a user types against is
- * genuinely the same code path the resolver reports — not a look-alike. No
- * `node:crypto`, no `@/lib/db` import here, so a client component can pull it in
- * without dragging the server bundle across the boundary.
+ * Families, channels, layers, the strictness/floor rule, the rule-label
+ * formatter and the masking executor (`runMaskCore`) that the engine and the
+ * browser both call, so a live preview is the same code path the resolver
+ * reports. No `node:crypto` and no `@/lib/db` import, so client components can
+ * import this freely. The hash/tokenize previews use a pure digest — they are
+ * illustrative masked output, not the production cryptographic function.
  */
 
-export const MASKING_TIERS = ["tenant", "regional", "baseline"] as const;
-export type MaskingTier = (typeof MASKING_TIERS)[number];
+// --- Channels ---------------------------------------------------------------
 
-/** Higher precedence wins. Two associated regional templates tie at 10 → ambiguity. */
-export const TIER_PRECEDENCE: Record<MaskingTier, number> = {
-  baseline: 0,
-  regional: 10,
-  tenant: 20,
-};
+export const CHANNELS = [
+  { key: "ui", label: "Admin UI" },
+  { key: "api", label: "API responses" },
+  { key: "exports", label: "Exports" },
+  { key: "logs", label: "Logs" },
+  { key: "nonprod", label: "Non-prod" },
+] as const;
+export type Channel = (typeof CHANNELS)[number]["key"];
+export const CHANNEL_KEYS = CHANNELS.map((c) => c.key) as Channel[];
+export const CHANNEL_LABEL: Record<string, string> = Object.fromEntries(CHANNELS.map((c) => [c.key, c.label]));
 
-export const TIER_LABEL: Record<string, string> = {
-  baseline: "BASELINE",
-  regional: "Regional",
-  tenant: "Tenant Rule",
-};
+// --- Layers -----------------------------------------------------------------
 
-export const TIER_TONE: Record<string, "blue" | "purple" | "gray"> = {
-  baseline: "gray",
-  regional: "blue",
-  tenant: "purple",
-};
+export type Layer = "baseline" | "regional" | "tenant";
+export const LAYER_PRECEDENCE: Record<Layer, number> = { baseline: 0, regional: 1, tenant: 2 };
+export const LAYER_LABEL: Record<string, string> = { baseline: "Baseline", regional: "Regional", tenant: "Tenant" };
 
-/**
- * A tier badge that names the regional source, e.g. "Regional: DPDP", so a
- * regional winner is never confused for a generic one. Baseline and tenant read
- * as themselves.
- */
-export function tierBadge(tier: string, templateName: string): string {
-  if (tier === "regional") return `Regional: ${templateName}`;
-  return TIER_LABEL[tier] ?? tier;
+/** How a layer is named in the "Governed by" badge. Regional names its source. */
+export function layerBadge(layer: string, source?: string | null): string {
+  if (layer === "regional") return `${source ?? "Regional"} template`;
+  if (layer === "baseline") return "Baseline";
+  return "Tenant";
 }
 
-// --- Lock treatments (Screen 2) --------------------------------------------
+export const SENSITIVITIES = ["Sensitive", "Personal", "Internal"] as const;
+export type Sensitivity = (typeof SENSITIVITIES)[number];
+export const SENSITIVITY_TONE: Record<string, "red" | "yellow" | "gray"> = {
+  Sensitive: "red",
+  Personal: "yellow",
+  Internal: "gray",
+};
 
-export const LOCK = {
-  system_regulated: {
-    label: "System-regulated",
-    tone: "red" as const,
-    icon: "shield" as const,
-    citation:
-      "Owned by SUPER_ADMIN. No tenant, including yours, can edit, override, or unlock this.",
-  },
-  self_locked: {
-    label: "Self-locked",
-    tone: "yellow" as const,
-    icon: "lock" as const,
-    // {who}/{date} filled in from the rule.
-    citation: "Locked by {who} on {date}. You can unlock this anytime.",
-  },
-} as const;
+/** Roles that can hold an unmask exception. */
+export const EXCEPTION_ROLES = ["Grievance Officer", "DPO", "Auditor", "Support Lead"];
 
-// --- Masking functions (ddm-masking-core) ----------------------------------
+// --- Families ---------------------------------------------------------------
 
-export const CUSTOM_FN = "custom_fn";
-export const CUSTOM_FUNCTION_NOT_EXECUTABLE = "CUSTOM_FUNCTION_NOT_EXECUTABLE_BY_PDP";
+export type Family = "partial" | "full" | "fpe" | "hash" | "tokenize" | "generalize" | "synthetic";
 
-export interface MaskMethod {
-  key: string;
+export interface FamilySpec {
+  key: Family;
   label: string;
-  /** One-line description of what the function does, for the picker + card. */
-  blurb: string;
+  description: string;
+  reversible: boolean;
+  /** Only offered on this channel, if set. */
+  onlyChannel?: Channel;
 }
 
-export const MASK_METHODS: MaskMethod[] = [
-  { key: "last4", label: "Mask all but last 4", blurb: "Reveal the final four characters, mask the rest." },
-  { key: "last4x", label: "Mask all but last 4 (X)", blurb: "Reveal the final four, mask the rest with X." },
-  { key: "first2last2", label: "Mask the middle", blurb: "Reveal the first two and last two characters." },
-  { key: "fullmask", label: "Full mask", blurb: "Mask every character." },
-  { key: "email", label: "Email — preserve domain", blurb: "Reveal the first letter and the domain only." },
-  { key: "alpha_x", label: "Mask letters, keep digits", blurb: "Replace letters with X, leave digits in place." },
-  { key: CUSTOM_FN, label: "Tenant custom function", blurb: "A tenant-supplied function — not executable in preview." },
+export const FAMILIES: FamilySpec[] = [
+  { key: "partial", label: "Partial reveal", description: "Reveal a few leading/trailing characters, mask the rest.", reversible: false },
+  { key: "full", label: "Full redaction", description: "Replace the whole value — nothing recoverable.", reversible: false },
+  { key: "fpe", label: "Format-preserving", description: "Encrypt while keeping the shape (digits, letters, separators).", reversible: true },
+  { key: "hash", label: "Hash", description: "One-way SHA-256 digest — stable but irreversible.", reversible: false },
+  { key: "tokenize", label: "Tokenize", description: "Swap for a vault token that can be reversed with authority.", reversible: true },
+  { key: "generalize", label: "Generalize", description: "Reduce precision to a bucket (age band, area prefix).", reversible: false },
+  { key: "synthetic", label: "Synthetic value", description: "Replace with realistic fake data — non-production only.", reversible: false, onlyChannel: "nonprod" },
 ];
 
-export const METHOD_LABEL: Record<string, string> = Object.fromEntries(
-  MASK_METHODS.map((m) => [m.key, m.label]),
-);
+export const FAMILY_LABEL: Record<string, string> = Object.fromEntries(FAMILIES.map((f) => [f.key, f.label]));
+export function reversibleOf(family: string): boolean {
+  return !!FAMILIES.find((f) => f.key === family)?.reversible;
+}
 
-export type MaskResult =
-  | { ok: true; output: string }
-  | { ok: false; code: string; message: string };
+// --- Strictness & the floor rule -------------------------------------------
 
-function maskChars(value: string, keep: (i: number, len: number) => boolean, fill = "*"): string {
+/** full (6) > hash (5) > generalize (4) > tokenize (3) > fpe (2) > partial (1). */
+export const STRICTNESS_RANK: Record<Family, number> = {
+  full: 6, hash: 5, generalize: 4, tokenize: 3, fpe: 2, partial: 1,
+};
+
+export interface Rule {
+  family: Family | string;
+  params: Record<string, unknown>;
+}
+
+/** Higher = stricter. Within `partial`, fewer revealed characters is stricter. */
+export function strictness(rule: Rule): number {
+  const rank = STRICTNESS_RANK[rule.family as Family] ?? 0;
+  let base = rank * 100;
+  if (rule.family === "partial") {
+    const revealed = (Number(rule.params.revealFirst) || 0) + (Number(rule.params.revealLast) || 0);
+    base -= revealed; // fewer revealed → stricter
+  }
+  return base;
+}
+
+/** A candidate rule is allowed at a higher layer only if it is equal or stricter than the floor. */
+export function meetsFloor(candidate: Rule, floor: Rule | null): boolean {
+  if (!floor) return true;
+  return strictness(candidate) >= strictness(floor);
+}
+
+// --- Rule label -------------------------------------------------------------
+
+function partialSummary(p: Record<string, unknown>): string {
+  const first = Number(p.revealFirst) || 0;
+  const last = Number(p.revealLast) || 0;
+  const domain = !!p.preserveDomain;
+  const parts: string[] = [];
+  if (first) parts.push(`first ${first}`);
+  if (last) parts.push(`last ${last}`);
+  if (domain) parts.push("domain");
+  return parts.length ? parts.join(" + ") : "none revealed";
+}
+
+export const GENERALIZE_BUCKETS: Record<string, string> = {
+  age5: "5-year age band",
+  age10: "10-year age band",
+  pincode3: "first 3 of pincode",
+};
+
+/** "{Family label} · {params}", e.g. "Partial reveal · last 4", "Hash · irreversible". */
+export function ruleLabel(rule: Rule | null | undefined): string {
+  if (!rule) return "No rule";
+  const label = FAMILY_LABEL[rule.family] ?? rule.family;
+  switch (rule.family) {
+    case "partial": return `${label} · ${partialSummary(rule.params)}`;
+    case "full": return label;
+    case "hash": return `${label} · irreversible`;
+    case "tokenize": return `${label} · reversible`;
+    case "fpe": return `${label} · reversible`;
+    case "generalize": return `${label} · ${GENERALIZE_BUCKETS[String(rule.params.bucket)] ?? "bucketed"}`;
+    case "synthetic": return `${label} · ${String(rule.params.generator ?? "synthetic")}`;
+    default: return label;
+  }
+}
+
+// --- Executor (runMaskCore) -------------------------------------------------
+
+/** Pure, deterministic hex digest — illustrative only, NOT the production hash. */
+function hexDigest(value: string, n: number): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < value.length; i++) {
+    h ^= value.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  let out = "";
+  let x = h >>> 0;
+  while (out.length < n) {
+    out += (x >>> 0).toString(16).padStart(8, "0");
+    x = Math.imul(x ^ (x >>> 13), 0x01000193) >>> 0;
+  }
+  return out.slice(0, n);
+}
+
+function maskMiddle(value: string, first: number, last: number, ch: string): string {
   const len = value.length;
   return value
     .split("")
-    .map((ch, i) => (keep(i, len) ? ch : fill))
+    .map((c, i) => (i < first || i >= len - last ? c : ch))
     .join("");
 }
 
-/**
- * Run a masking function against a value — the real executor.
- *
- * A tenant custom function returns the honest degraded state rather than a
- * fabricated preview: the PDP cannot run tenant code, and pretending otherwise
- * is exactly the dishonesty this console refuses.
- */
-export function runMaskCore(method: string, value: string): MaskResult {
-  if (method === CUSTOM_FN) {
-    return {
-      ok: false,
-      code: CUSTOM_FUNCTION_NOT_EXECUTABLE,
-      message:
-        "This rule uses a tenant custom function. The preview engine cannot execute tenant code, so no output is shown here — the function still runs in enforcement.",
-    };
-  }
-  if (!value) return { ok: true, output: "" };
+function fpe(value: string): string {
+  // Format-preserving: remap each digit/letter to another of the same class,
+  // deterministically; keep separators. Illustrative, not real FPE.
+  const shift = (hexDigest(value, 2).charCodeAt(0) % 7) + 1;
+  return value.replace(/[0-9]/g, (d) => String((Number(d) + shift) % 10))
+    .replace(/[a-z]/g, (c) => String.fromCharCode(((c.charCodeAt(0) - 97 + shift) % 26) + 97))
+    .replace(/[A-Z]/g, (c) => String.fromCharCode(((c.charCodeAt(0) - 65 + shift) % 26) + 65));
+}
 
-  switch (method) {
-    case "last4":
-      return { ok: true, output: maskChars(value, (i, len) => i >= len - 4) };
-    case "last4x":
-      return { ok: true, output: maskChars(value, (i, len) => i >= len - 4, "X") };
-    case "first2last2":
-      return { ok: true, output: maskChars(value, (i, len) => i < 2 || i >= len - 2) };
-    case "fullmask":
-      return { ok: true, output: maskChars(value, () => false) };
-    case "email": {
-      const at = value.indexOf("@");
-      if (at <= 0) return { ok: true, output: maskChars(value, (i) => i === 0) };
-      const local = value.slice(0, at);
-      const domain = value.slice(at); // includes "@"
-      const maskedLocal = maskChars(local, (i) => i === 0);
-      return { ok: true, output: maskedLocal + domain };
+function generalize(value: string, bucket: string): string {
+  if (bucket === "pincode3") return `${value.replace(/\s/g, "").slice(0, 3)}xxx`;
+  // age band from a YYYY-MM-DD style value.
+  const m = value.match(/(\d{4})/);
+  if (m) {
+    const age = 2026 - Number(m[1]);
+    const size = bucket === "age10" ? 10 : 5;
+    const lo = Math.max(0, Math.floor(age / size) * size);
+    return `${lo}–${lo + size - 1}`;
+  }
+  return "bucketed";
+}
+
+/** Apply a masking family to a value. Always returns a string (no failure state). */
+export function runMaskCore(rule: Rule, value: string): string {
+  if (!value) return "";
+  const p = rule.params ?? {};
+  const ch = typeof p.maskChar === "string" && p.maskChar ? String(p.maskChar) : "*";
+  switch (rule.family) {
+    case "partial": {
+      const first = Number(p.revealFirst) || 0;
+      const last = Number(p.revealLast) || 0;
+      if (p.preserveDomain && value.includes("@")) {
+        const at = value.indexOf("@");
+        const local = value.slice(0, at);
+        return maskMiddle(local, first, last, ch) + value.slice(at);
+      }
+      return maskMiddle(value, first, last, ch);
     }
-    case "alpha_x":
-      return {
-        ok: true,
-        output: value.replace(/[A-Za-z]/g, "X"),
-      };
-    default:
-      return { ok: false, code: "UNKNOWN_METHOD", message: `No masking function named "${method}".` };
+    case "full": return ch.repeat(Math.max(6, Math.min(value.length, 12)));
+    case "hash": { const h = hexDigest(value, 8); return `${h.slice(0, 4)}…${h.slice(4)}`; }
+    case "tokenize": return `tok_${hexDigest(value, 4)}…`;
+    case "fpe": return fpe(value);
+    case "generalize": return generalize(value, String(p.bucket ?? "age5"));
+    case "synthetic": return `SYN-${hexDigest(value, 6).toUpperCase()}`;
+    default: return ch.repeat(value.length);
   }
 }
 
-/** "9876543210 → ******3210" — the appendix's example format, or the degraded code. */
-export function maskExample(method: string, value: string): string {
-  const r = runMaskCore(method, value);
-  if (r.ok) return `${value} → ${r.output}`;
-  return r.code;
+/** "{sample} → {masked}". */
+export function maskPreview(rule: Rule, value: string): string {
+  return `${value} → ${runMaskCore(rule, value)}`;
 }
 
-// --- Resolution result shape (shared by the API route and the page) ---------
+/** Compact relative time, e.g. "2h ago", "3d ago". */
+export function formatRelative(date: Date): string {
+  const s = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+  if (s < 60) return "just now";
+  const m = Math.floor(s / 60); if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24); if (d < 30) return `${d}d ago`;
+  const mo = Math.floor(d / 30); if (mo < 12) return `${mo}mo ago`;
+  return `${Math.floor(mo / 12)}y ago`;
+}
 
-export interface ResolutionStep {
-  templateKey: string;
-  templateName: string;
-  tier: string;
-  precedence: number;
-  ruleId: string;
-  method: string;
-  maskExample: string;
+// --- Resolution result shape ------------------------------------------------
+
+/** A single rule change within a proposal/edit: a layer's default (channel null) or one channel. */
+export interface RulePatch {
+  layer: string;
+  channel: string | null;
+  family: string;
+  params: Record<string, unknown>;
+}
+
+export interface LayerView {
+  layer: Layer | string;
+  source: string | null;
+  family: string;
+  params: Record<string, unknown>;
+  label: string;
+  preview: string;
+  locked: boolean;
+  citation: string | null;
   won: boolean;
-  /** Why this step sits where it does in the precedence order. */
-  reason: string;
-  editable: boolean;
-  lockType: string;
-  regulated: boolean;
-  ownedBy: string;
-  lockedBy: string | null;
-  lockedAt: string | null;
-  statutoryCitation: string | null;
-  version: number;
 }
 
-/** A field code already claimed by an associated regional template (Screen 4). */
-export interface Collision {
-  templateName: string;
-  templateKey: string;
-  ruleId: string;
-  method: string;
+export interface ChannelView {
+  channel: Channel | string;
+  channelLabel: string;
+  family: string;
+  params: Record<string, unknown>;
+  label: string;
+  preview: string;
+  sourceLayer: string;
+  isOverride: boolean;
 }
 
-export interface EffectiveResolution {
+export interface ExceptionView {
+  id: string;
+  role: string;
+  purpose: string;
+  durationMinutes: number;
+  approvedBy: string | null;
+  expiresAt: string | null;
+}
+
+export interface FieldResolution {
   code: string;
-  fieldName: string;
+  name: string;
+  sensitivity: string;
   sampleValue: string;
-  status: "resolved" | "ambiguous" | "not_found";
-  winner: ResolutionStep | null;
-  chain: ResolutionStep[];
-  /** Present only when status === "ambiguous". */
-  ambiguity: { sources: { templateName: string; ruleId: string }[] } | null;
-  /** The rule a user could edit, if the winner is editable and reachable. */
-  editableRuleId: string | null;
-  editableRuleVersion: number | null;
+  detectionPattern: string | null;
+  dataElementRef: string | null;
+  hasRule: boolean;
+  /** The winning layer's default rule. */
+  effective: { family: string; params: Record<string, unknown>; label: string; preview: string; reversible: boolean } | null;
+  governedBy: { layer: string; source: string | null; badge: string; locked: boolean; stricter: boolean; stricterOver: string | null } | null;
+  citation: string | null;
+  chain: LayerView[];
+  channels: ChannelView[];
+  overrideCount: number;
+  exceptions: ExceptionView[];
+  pendingChangeId: string | null;
+  createdBy: string | null;
 }

@@ -1,302 +1,372 @@
 import { db } from "@/lib/db";
-import { audited, searchAuditLog, type AuditActor, type AuditQuery } from "@/lib/engines/audit";
+import { audited, searchAuditLog, recordAction, type AuditActor, type AuditQuery } from "@/lib/engines/audit";
+import { isCombinedGovernance } from "@/lib/governance";
+import { encodeObject, decodeObject } from "@/lib/codec/json";
 import {
-  TIER_PRECEDENCE,
-  maskExample as fmtMaskExample,
-  type EffectiveResolution,
-  type ResolutionStep,
-  type Collision,
+  CHANNEL_KEYS, CHANNEL_LABEL, LAYER_PRECEDENCE, layerBadge,
+  ruleLabel, maskPreview, reversibleOf, strictness,
+  type Layer, type Rule, type FieldResolution, type LayerView, type ChannelView, type RulePatch,
 } from "@/lib/masking";
 
-export type { Collision } from "@/lib/masking";
+export type { RulePatch } from "@/lib/masking";
 
 /**
- * DDM RESOLUTION ENGINE (server).
+ * DDM POLICY ENGINE (server).
  *
- * `resolveEffective` is the single source of truth the Screen 1 page and the
- * GET /api/v1/admin/masking-rules/effective route both call, so the answer the
- * UI shows is byte-for-byte the answer the API gives. Mutations go through
- * `audited()` — masking config is tenant-owned, but every change is still
- * hash-chained into the one unified audit log (Screen 5).
+ * Resolution is per channel: the effective rule for a channel comes from the
+ * highest-precedence layer that defines the field, using that layer's channel
+ * override if present, else its default. Governed layers (baseline, regional) are
+ * never edited directly — a change is a MaskingChangeRequest the DPO approves.
+ * Every write is hash-chained via audited(); nothing produces rule_unlocked.
  */
 
 function err(name: string, message: string, extra?: Record<string, unknown>) {
   return Object.assign(new Error(message), { name, ...(extra ?? {}) });
 }
 
-function stepReason(tier: string, won: boolean, tenantWon: boolean, ambiguous: boolean): string {
-  if (ambiguous && !won) {
-    if (TIER_PRECEDENCE[tier as keyof typeof TIER_PRECEDENCE] > 0) {
-      return "Conflicting source — ties with another non-BASELINE template at the same precedence, so nothing resolves until the tie is broken.";
-    }
-    return "Regulatory floor — always present, but the conflict above must be resolved before it can apply.";
-  }
-  if (won) {
-    if (tier === "tenant") return "Your tenant's own rule takes precedence over regional templates and the BASELINE floor.";
-    if (tier === "regional") return "A regional template overrides the BASELINE floor for this field. No tenant rule sits above it.";
-    return "No tenant or regional rule applies — the BASELINE regulatory floor governs this field.";
-  }
-  // lost
-  if (tier === "baseline") return "Regulatory floor — always present. Overridden here by a higher-precedence rule, but never removed.";
-  if (tier === "regional") return tenantWon
-    ? "Regional template — overridden by your tenant's own rule, which sits above it."
-    : "Regional template — a higher-precedence rule applies to this field.";
-  return "Overridden by a higher-precedence rule.";
+type LayerRow = { id: string; layer: string; source: string | null; family: string; paramsJson: string; locked: boolean; citation: string | null };
+type ChannelRow = { layer: string; channel: string; family: string; paramsJson: string };
+
+const ruleOf = (r: { family: string; paramsJson: string }): Rule => ({ family: r.family, params: decodeObject<Record<string, unknown>>(r.paramsJson) ?? {} });
+
+// --- Resolution -------------------------------------------------------------
+
+interface FieldBundle {
+  code: string; name: string; sensitivity: string; sampleValue: string;
+  detectionPattern: string | null; dataElementRef: string | null; createdBy: string | null;
+  layerRules: LayerRow[]; channelRules: ChannelRow[];
+  exceptions: { id: string; role: string; purpose: string; durationMinutes: number; approvedBy: string | null; expiresAt: Date | null }[];
+  pendingChangeId: string | null;
 }
 
-export async function resolveEffective(rawCode: string): Promise<EffectiveResolution> {
-  const code = rawCode.trim().toUpperCase();
-  const [field, rules] = await Promise.all([
-    db.maskingField.findUnique({ where: { code } }),
-    db.maskingRule.findMany({ where: { fieldCode: code }, include: { template: true } }),
-  ]);
+function resolveBundle(f: FieldBundle): FieldResolution {
+  const layers = [...f.layerRules].sort((a, b) => (LAYER_PRECEDENCE[b.layer as Layer] ?? 0) - (LAYER_PRECEDENCE[a.layer as Layer] ?? 0));
+  const winning = layers[0] ?? null;
 
-  // Only templates this tenant is associated with participate in resolution.
-  const active = rules
-    .filter((r) => r.template.associated)
-    .sort((a, b) => b.template.precedence - a.template.precedence);
-
-  const fieldName = field?.name ?? active[0]?.fieldName ?? code;
-  const sampleValue = field?.sampleValue ?? "";
-
-  if (active.length === 0) {
+  const chain: LayerView[] = layers.map((l) => {
+    const rule = ruleOf(l);
     return {
-      code, fieldName, sampleValue,
-      status: "not_found", winner: null, chain: [], ambiguity: null,
-      editableRuleId: null, editableRuleVersion: null,
-    };
-  }
-
-  const top = active[0].template.precedence;
-  const topRules = active.filter((r) => r.template.precedence === top);
-  const distinctTop = new Set(topRules.map((r) => r.templateId));
-  const ambiguous = top > 0 && distinctTop.size > 1;
-  const winnerRule = ambiguous ? null : topRules[0];
-  const tenantWon = !!winnerRule && winnerRule.template.tier === "tenant";
-
-  const chain: ResolutionStep[] = active.map((r) => {
-    const won = !!winnerRule && r.id === winnerRule.id;
-    return {
-      templateKey: r.template.key,
-      templateName: r.template.name,
-      tier: r.template.tier,
-      precedence: r.template.precedence,
-      ruleId: r.id,
-      method: r.method,
-      maskExample: sampleValue ? fmtMaskExample(r.method, sampleValue) : r.method,
-      won,
-      reason: stepReason(r.template.tier, won, tenantWon, ambiguous),
-      editable: r.editable,
-      lockType: r.lockType,
-      regulated: r.regulated,
-      ownedBy: r.template.ownedBy,
-      lockedBy: r.lockedBy,
-      lockedAt: r.lockedAt ? r.lockedAt.toISOString().slice(0, 10) : null,
-      statutoryCitation: r.statutoryCitation,
-      version: r.version,
+      layer: l.layer, source: l.source, family: l.family, params: rule.params,
+      label: ruleLabel(rule), preview: f.sampleValue ? maskPreview(rule, f.sampleValue) : ruleLabel(rule),
+      locked: l.locked, citation: l.citation, won: !!winning && l.id === winning.id,
     };
   });
 
-  const winnerStep = chain.find((s) => s.won) ?? null;
-  // A rule is offered for editing only when it wins, is marked editable, and is
-  // not currently locked (a self-locked field must be unlocked first).
-  const reachable = winnerStep && winnerStep.editable && winnerStep.lockType === "none";
+  let effective: FieldResolution["effective"] = null;
+  let governedBy: FieldResolution["governedBy"] = null;
+  let citation: string | null = null;
+  const channels: ChannelView[] = [];
+  let overrideCount = 0;
+
+  if (winning) {
+    const winRule = ruleOf(winning);
+    effective = { family: winRule.family, params: winRule.params, label: ruleLabel(winRule), preview: f.sampleValue ? maskPreview(winRule, f.sampleValue) : ruleLabel(winRule), reversible: reversibleOf(winRule.family) };
+    citation = winning.citation;
+
+    // "stricter" if a tenant winner is strictly stricter than the layer beneath it.
+    const below = layers[1] ?? null;
+    const stricter = winning.layer === "tenant" && !!below && strictness(winRule) > strictness(ruleOf(below));
+    governedBy = { layer: winning.layer, source: winning.source, badge: layerBadge(winning.layer, winning.source), locked: winning.locked, stricter, stricterOver: stricter && below ? layerBadge(below.layer, below.source) : null };
+
+    for (const c of CHANNEL_KEYS) {
+      const override = f.channelRules.find((cr) => cr.layer === winning.layer && cr.channel === c);
+      const rule = override ? ruleOf(override) : winRule;
+      if (override) overrideCount++;
+      channels.push({
+        channel: c, channelLabel: CHANNEL_LABEL[c], family: rule.family, params: rule.params,
+        label: ruleLabel(rule), preview: f.sampleValue ? maskPreview(rule, f.sampleValue) : ruleLabel(rule),
+        sourceLayer: layerBadge(winning.layer, winning.source), isOverride: !!override,
+      });
+    }
+  }
+
+  const now = Date.now();
+  const exceptions = f.exceptions
+    .filter((e) => !e.expiresAt || e.expiresAt.getTime() > now)
+    .map((e) => ({ id: e.id, role: e.role, purpose: e.purpose, durationMinutes: e.durationMinutes, approvedBy: e.approvedBy, expiresAt: e.expiresAt ? e.expiresAt.toISOString().slice(0, 16).replace("T", " ") : null }));
 
   return {
-    code, fieldName, sampleValue,
-    status: ambiguous ? "ambiguous" : "resolved",
-    winner: winnerStep,
-    chain,
-    ambiguity: ambiguous
-      ? { sources: topRules.map((r) => ({ templateName: r.template.name, ruleId: r.id })) }
-      : null,
-    editableRuleId: reachable ? winnerStep!.ruleId : null,
-    editableRuleVersion: reachable ? winnerStep!.version : null,
+    code: f.code, name: f.name, sensitivity: f.sensitivity, sampleValue: f.sampleValue,
+    detectionPattern: f.detectionPattern, dataElementRef: f.dataElementRef,
+    hasRule: !!winning, effective, governedBy, citation, chain, channels, overrideCount,
+    exceptions, pendingChangeId: f.pendingChangeId, createdBy: f.createdBy,
   };
 }
 
-/** Fields for the Screen 1 picker. */
-export async function listMaskingFields() {
-  return db.maskingField.findMany({ orderBy: [{ custom: "asc" }, { name: "asc" }] });
-}
-
-/** One rule (+ template) for the edit screen. */
-export async function getRuleForEdit(id: string) {
-  return db.maskingRule.findUnique({ where: { id }, include: { template: true } });
-}
-
-/** The regional templates this tenant is currently associated with. */
-export async function associatedRegionalTemplates() {
-  return db.maskingTemplate.findMany({ where: { tier: "regional", associated: true }, orderBy: { name: "asc" } });
-}
-
-/**
- * Check a field code against every associated regional template — the Screen 4
- * pre-check. A hit means creating the field would silently fail to resolve, so
- * creation is blocked.
- */
-export async function checkCodeCollision(rawCode: string): Promise<Collision[]> {
-  const code = rawCode.trim().toUpperCase();
-  if (!code) return [];
-  const rules = await db.maskingRule.findMany({
-    where: { fieldCode: code, template: { tier: "regional", associated: true } },
-    include: { template: true },
+async function loadBundle(code: string): Promise<FieldBundle | null> {
+  const f = await db.maskingField.findUnique({
+    where: { code },
+    include: { layerRules: true, channelRules: true, exceptions: true, changeRequests: { where: { status: "pending" } } },
   });
-  return rules.map((r) => ({ templateName: r.template.name, templateKey: r.template.key, ruleId: r.id, method: r.method }));
+  if (!f) return null;
+  return {
+    code: f.code, name: f.name, sensitivity: f.sensitivity, sampleValue: f.sampleValue,
+    detectionPattern: f.detectionPattern, dataElementRef: f.dataElementRef, createdBy: f.createdBy,
+    layerRules: f.layerRules, channelRules: f.channelRules,
+    exceptions: f.exceptions, pendingChangeId: f.changeRequests[0]?.id ?? null,
+  };
 }
 
-// --- Mutations (audited) ----------------------------------------------------
-
-export async function saveRule(id: string, expectedVersion: number, method: string, actor: AuditActor) {
-  const rule = await db.maskingRule.findUnique({ where: { id }, include: { template: true } });
-  if (!rule) throw err("NotFoundError", "That rule no longer exists.");
-  if (!rule.editable) throw err("ForbiddenError", "This rule is view-only and cannot be edited here.");
-  if (rule.lockType === "system_regulated") throw err("ForbiddenError", "This rule is system-regulated by SUPER_ADMIN and cannot be edited.");
-  if (rule.lockType === "self_locked") throw err("LockedError", "This field is self-locked. Unlock it before editing.");
-
-  return audited(
-    {
-      actor,
-      action: "masking.rule_edited",
-      targetType: "MaskingRule",
-      targetId: id,
-      eventDescription: `Edited masking rule for ${rule.fieldCode} (${rule.template.name})`,
-      payload: {
-        code: rule.fieldCode,
-        template: rule.template.name,
-        method_before: rule.method,
-        method_after: method,
-        version_before: expectedVersion,
-        version_after: expectedVersion + 1,
-      },
-    },
-    async (tx) => {
-      // Optimistic lock enforced in the write itself: the update only lands if the
-      // version is still the one we loaded. count === 0 means someone saved first.
-      const res = await tx.maskingRule.updateMany({
-        where: { id, version: expectedVersion },
-        data: { method, version: { increment: 1 }, updatedBy: actor.label },
-      });
-      if (res.count === 0) {
-        const current = await tx.maskingRule.findUnique({ where: { id } });
-        throw err(
-          "ConflictError",
-          `This rule was changed by ${current?.updatedBy ?? "another admin"} since you opened it (it is now version ${current?.version ?? "?"}). Your save was rejected so nothing was overwritten — reload to see the current definition, then re-apply your change.`,
-          {
-            currentVersion: current?.version ?? null,
-            changedBy: current?.updatedBy ?? null,
-            changedAt: current?.updatedAt ? current.updatedAt.toISOString().slice(0, 16).replace("T", " ") : null,
-            currentMethod: current?.method ?? null,
-          },
-        );
-      }
-      return tx.maskingRule.findUnique({ where: { id } });
-    },
-  );
+export async function resolveField(code: string): Promise<FieldResolution | null> {
+  const b = await loadBundle(code.trim().toUpperCase());
+  return b ? resolveBundle(b) : null;
 }
 
-export async function unlockRule(id: string, actor: AuditActor) {
-  const rule = await db.maskingRule.findUnique({ where: { id }, include: { template: true } });
-  if (!rule) throw err("NotFoundError", "That rule no longer exists.");
-  if (rule.lockType === "system_regulated") throw err("ForbiddenError", "A system-regulated field cannot be unlocked by any tenant.");
-  if (rule.lockType !== "self_locked") throw err("ValidationError", "This field is not self-locked.");
-
-  return audited(
-    {
-      actor,
-      action: "masking.rule_unlocked",
-      targetType: "MaskingRule",
-      targetId: id,
-      eventDescription: `Unlocked self-locked field ${rule.fieldCode} — exact-match enforcement lifted`,
-      payload: { code: rule.fieldCode, lock_before: "self_locked", lock_after: "none", regulated_before: true, regulated_after: false },
-    },
-    (tx) =>
-      tx.maskingRule.update({
-        where: { id },
-        data: { lockType: "none", regulated: false, lockedBy: null, lockedAt: null, version: { increment: 1 }, updatedBy: actor.label },
-      }),
-  );
+export interface InventoryRow extends FieldResolution {
+  lastChange: { actor: string; at: Date } | null;
 }
 
-export interface CreateFieldInput { code: string; name: string; sampleValue: string; method: string }
+export async function getInventory(): Promise<InventoryRow[]> {
+  await expireDueExceptions();
+  const fields = await db.maskingField.findMany({
+    include: { layerRules: true, channelRules: true, exceptions: true, changeRequests: { where: { status: "pending" } } },
+    orderBy: { code: "asc" },
+  });
+  // One pass over masking audit entries for "last change" per field.
+  const entries = await db.auditLogEntry.findMany({
+    where: { action: { contains: "masking." }, targetType: "MaskingField" },
+    orderBy: { seq: "desc" },
+    select: { targetId: true, actorLabel: true, timestamp: true },
+  });
+  const last = new Map<string, { actor: string; at: Date }>();
+  for (const e of entries) if (!last.has(e.targetId)) last.set(e.targetId, { actor: e.actorLabel, at: e.timestamp });
+
+  return fields.map((f) => {
+    const res = resolveBundle({
+      code: f.code, name: f.name, sensitivity: f.sensitivity, sampleValue: f.sampleValue,
+      detectionPattern: f.detectionPattern, dataElementRef: f.dataElementRef, createdBy: f.createdBy,
+      layerRules: f.layerRules, channelRules: f.channelRules, exceptions: f.exceptions,
+      pendingChangeId: f.changeRequests[0]?.id ?? null,
+    });
+    return { ...res, lastChange: last.get(f.code) ?? null };
+  });
+}
+
+export interface Coverage { total: number; baseline: number; regional: number; tenant: number; noRule: number; pending: number }
+
+export async function getCoverage(rows: InventoryRow[]): Promise<Coverage> {
+  const counts = await db.maskingLayerRule.groupBy({ by: ["layer"], _count: true });
+  const byLayer = (l: string) => counts.find((c) => c.layer === l)?._count ?? 0;
+  return {
+    total: rows.length,
+    baseline: byLayer("baseline"), regional: byLayer("regional"), tenant: byLayer("tenant"),
+    noRule: rows.filter((r) => !r.hasRule).length,
+    pending: rows.filter((r) => r.pendingChangeId).length,
+  };
+}
+
+// --- Collision + change requests for the drawer -----------------------------
+
+export interface Collision { templateName: string; source: string; ruleLabel: string }
+
+/** A code collides if a field already exists governed by an associated regional template. */
+export async function checkCodeCollision(rawCode: string): Promise<Collision | null> {
+  const code = rawCode.trim().toUpperCase();
+  if (!code) return null;
+  const f = await db.maskingField.findUnique({ where: { code }, include: { layerRules: true } });
+  if (!f) return null;
+  const regional = f.layerRules.find((l) => l.layer === "regional");
+  if (regional) return { templateName: `${regional.source} template`, source: regional.source ?? "regional", ruleLabel: ruleLabel(ruleOf(regional)) };
+  return { templateName: "an existing field", source: "existing", ruleLabel: "" };
+}
+
+export async function getPendingChange(code: string) {
+  const cr = await db.maskingChangeRequest.findFirst({ where: { fieldCode: code.toUpperCase(), status: "pending" }, orderBy: { proposedAt: "desc" } });
+  if (!cr) return null;
+  return {
+    id: cr.id, kind: cr.kind, proposedBy: cr.proposedBy, proposedAt: cr.proposedAt,
+    reason: cr.reason,
+    before: decodeObject<RulePatch[]>(cr.beforeJson) ?? [],
+    after: decodeObject<RulePatch[]>(cr.afterJson) ?? [],
+  };
+}
+
+export async function fieldHistory(code: string, take = 5) {
+  return db.auditLogEntry.findMany({
+    where: { targetType: "MaskingField", targetId: code.toUpperCase(), action: { contains: "masking." } },
+    orderBy: { seq: "desc" }, take,
+  });
+}
+
+// --- Mutations --------------------------------------------------------------
+
+export interface CreateFieldInput {
+  code: string; name: string; sensitivity: string; detectionPattern?: string; dataElementRef?: string;
+  sampleValue: string; defaultRule: { family: string; params: Record<string, unknown> };
+  channelOverrides: { channel: string; family: string; params: Record<string, unknown> }[];
+}
+
+function validateCode(code: string) {
+  if (!code) throw err("ValidationError", "Give the field a code.");
+  if (!/^[A-Z0-9_]+$/.test(code)) throw err("ValidationError", "A code may use only A–Z, 0–9 and underscores.");
+}
 
 export async function createField(input: CreateFieldInput, actor: AuditActor) {
   const code = input.code.trim().toUpperCase();
-  if (!code) throw err("ValidationError", "Give the field a code.");
-  if (!/^[A-Z0-9_]+$/.test(code)) throw err("ValidationError", "A field code may use only A–Z, 0–9 and underscores.");
+  validateCode(code);
   if (!input.name.trim()) throw err("ValidationError", "Give the field a name.");
-
-  const [existing, collisions, tenant] = await Promise.all([
-    db.maskingField.findUnique({ where: { code } }),
-    checkCodeCollision(code),
-    db.maskingTemplate.findUnique({ where: { key: "TENANT" } }),
-  ]);
+  const existing = await db.maskingField.findUnique({ where: { code } });
   if (existing) throw err("DuplicateError", `A field with code ${code} already exists.`);
-  // The hard block, re-checked server-side: the client disables Create, and the
-  // server refuses too, so a stale client can never slip a colliding field through.
-  if (collisions.length > 0) {
-    throw err(
-      "CollisionError",
-      `The code ${code} is already defined by your ${collisions.map((c) => c.templateName).join(", ")} association. Creating a duplicate would make this field fail to resolve. Edit the existing item instead.`,
-      { collisions },
-    );
-  }
-  if (!tenant) throw err("ConfigError", "No tenant template is configured.");
+  if (input.defaultRule.family === "synthetic") throw err("ValidationError", "Synthetic value is only allowed on the Non-prod channel.");
 
   return audited(
-    {
-      actor,
-      action: "masking.field_created",
-      targetType: "MaskingField",
-      targetId: code,
-      eventDescription: `Created custom field ${code} with a tenant masking rule (${input.method})`,
-      payload: { code, name: input.name.trim(), method: input.method },
-    },
+    { actor, action: "masking.field_created", targetType: "MaskingField", targetId: code, eventDescription: `Created field ${code} with a tenant ${input.defaultRule.family} rule`, payload: { code, name: input.name.trim(), rule: ruleLabel(input.defaultRule as Rule), overrides: input.channelOverrides.length } },
     async (tx) => {
       const field = await tx.maskingField.create({
-        data: { code, name: input.name.trim(), sampleValue: input.sampleValue.trim(), custom: true, createdBy: actor.label },
+        data: { code, name: input.name.trim(), sensitivity: input.sensitivity, detectionPattern: input.detectionPattern?.trim() || null, dataElementRef: input.dataElementRef?.trim() || null, sampleValue: input.sampleValue.trim(), createdBy: actor.label },
       });
-      await tx.maskingRule.create({
-        data: {
-          templateId: tenant.id, fieldCode: code, fieldName: input.name.trim(),
-          method: input.method, editable: true, lockType: "none", regulated: false, updatedBy: actor.label,
-        },
-      });
+      await tx.maskingLayerRule.create({ data: { fieldCode: code, layer: "tenant", family: input.defaultRule.family, paramsJson: encodeObject(input.defaultRule.params), locked: false } });
+      for (const o of input.channelOverrides) {
+        if (o.family === "synthetic" && o.channel !== "nonprod") throw err("ValidationError", "Synthetic value is only allowed on the Non-prod channel.");
+        await tx.maskingChannelRule.create({ data: { fieldCode: code, layer: "tenant", channel: o.channel, family: o.family, paramsJson: encodeObject(o.params) } });
+      }
       return field;
     },
   );
 }
 
-/**
- * DEMO DEVICE — simulate a concurrent admin saving this rule, so the
- * optimistic-lock conflict (Screen 3) can be shown on demand rather than only
- * under a genuine race. It bumps the version and stamps a different actor; the
- * next save from a form loaded at the old version is then cleanly rejected.
- */
-export async function simulateConcurrentEdit(id: string, actor: AuditActor) {
-  const rule = await db.maskingRule.findUnique({ where: { id } });
-  if (!rule) throw err("NotFoundError", "That rule no longer exists.");
-  return audited(
-    {
-      actor,
-      action: "masking.rule_edited",
-      targetType: "MaskingRule",
-      targetId: id,
-      eventDescription: `Concurrent edit (simulated) to ${rule.fieldCode} by another admin`,
-      payload: { code: rule.fieldCode, simulated_concurrent_edit: true, version_before: rule.version, version_after: rule.version + 1 },
-    },
-    (tx) =>
-      tx.maskingRule.update({
-        where: { id },
-        data: { version: { increment: 1 }, updatedBy: "A. Nair (concurrent admin)" },
-      }),
-  );
+/** The floor a tenant rule must meet for a channel = the resolved rule from the layer below tenant. */
+async function tenantFloor(code: string, channel: string | null): Promise<Rule | null> {
+  const rules = await db.maskingLayerRule.findMany({ where: { fieldCode: code, layer: { in: ["regional", "baseline"] } } });
+  if (rules.length === 0) return null;
+  const below = rules.sort((a, b) => (LAYER_PRECEDENCE[b.layer as Layer] ?? 0) - (LAYER_PRECEDENCE[a.layer as Layer] ?? 0))[0];
+  if (channel) {
+    const cr = await db.maskingChannelRule.findFirst({ where: { fieldCode: code, layer: below.layer, channel } });
+    if (cr) return ruleOf(cr);
+  }
+  return ruleOf(below);
 }
 
 /**
- * Screen 5 reuses the unified audit search, scoped to masking config actions.
- * masking_config_audit_log is a VIEW of the one immutable chain, not a second log.
+ * Direct edit of a tenant-governed rule. Allowed only when every proposed rule is
+ * equal-or-stricter than the current one (tightening) AND meets the floor.
+ * A loosening change must go through a proposal, so this refuses it.
  */
+export async function editTenantRule(code: string, patches: RulePatch[], actor: AuditActor) {
+  const field = await db.maskingField.findUnique({ where: { code }, include: { layerRules: true, channelRules: true } });
+  if (!field) throw err("NotFoundError", "That field no longer exists.");
+  const tenant = field.layerRules.find((l) => l.layer === "tenant");
+  if (!tenant) throw err("ForbiddenError", "This field is not tenant-governed; changes must be proposed.");
+  if (tenant.locked) throw err("ForbiddenError", "This rule is governed and cannot be edited directly.");
+
+  for (const p of patches) {
+    if (p.family === "synthetic" && p.channel !== "nonprod") throw err("ValidationError", "Synthetic value is only allowed on the Non-prod channel.");
+    const floor = await tenantFloor(code, p.channel);
+    if (floor && strictness(p as Rule) < strictness(floor)) throw err("FloorError", `Weaker than the floor (${ruleLabel(floor)}).`);
+    const current = p.channel
+      ? (field.channelRules.find((c) => c.layer === "tenant" && c.channel === p.channel) ?? tenant)
+      : tenant;
+    if (strictness(p as Rule) < strictness(ruleOf(current))) {
+      throw err("NeedsApproval", "This change loosens the current rule, so it needs DPO approval. Submit it as a proposal instead.");
+    }
+  }
+
+  return audited(
+    { actor, action: "masking.rule_edited", targetType: "MaskingField", targetId: code, eventDescription: `Tightened the tenant rule for ${code}`, payload: { code, changes: patches.map((p) => ({ channel: p.channel ?? "default", rule: ruleLabel(p as Rule) })) } },
+    async (tx) => {
+      for (const p of patches) {
+        if (p.channel) {
+          await tx.maskingChannelRule.upsert({
+            where: { fieldCode_layer_channel: { fieldCode: code, layer: "tenant", channel: p.channel } },
+            update: { family: p.family, paramsJson: encodeObject(p.params) },
+            create: { fieldCode: code, layer: "tenant", channel: p.channel, family: p.family, paramsJson: encodeObject(p.params) },
+          });
+        } else {
+          await tx.maskingLayerRule.update({ where: { id: tenant.id }, data: { family: p.family, paramsJson: encodeObject(p.params) } });
+        }
+      }
+    },
+  );
+}
+
+export async function proposeChange(code: string, before: RulePatch[], after: RulePatch[], reason: string, actor: AuditActor) {
+  if (!reason.trim()) throw err("ValidationError", "A reason is required for a proposal.");
+  const field = await db.maskingField.findUnique({ where: { code } });
+  if (!field) throw err("NotFoundError", "That field no longer exists.");
+  const open = await db.maskingChangeRequest.findFirst({ where: { fieldCode: code, status: "pending" } });
+  if (open) throw err("ConflictError", "A change is already pending for this field. Decide or withdraw it first.");
+
+  return audited(
+    { actor, action: "masking.change_proposed", targetType: "MaskingField", targetId: code, eventDescription: `Proposed a masking change to ${code} — awaiting DPO approval`, payload: { code, reason: reason.trim(), after: after.map((p) => ({ channel: p.channel ?? "default", rule: ruleLabel(p as Rule) })) } },
+    (tx) => tx.maskingChangeRequest.create({ data: { fieldCode: code, kind: "rule_change", proposedBy: actor.label, beforeJson: encodeObject(before), afterJson: encodeObject(after), reason: reason.trim(), status: "pending" } }),
+  );
+}
+
+export async function proposeException(code: string, role: string, purpose: string, durationMinutes: number, reason: string, actor: AuditActor) {
+  if (!purpose.trim()) throw err("ValidationError", "State the purpose of the exception.");
+  const field = await db.maskingField.findUnique({ where: { code } });
+  if (!field) throw err("NotFoundError", "That field no longer exists.");
+  const after: RulePatch[] = [{ layer: "exception", channel: null, family: "unmask", params: { role, purpose: purpose.trim(), durationMinutes } }];
+  return audited(
+    { actor, action: "masking.change_proposed", targetType: "MaskingField", targetId: code, eventDescription: `Proposed an unmask exception on ${code} for ${role} — awaiting DPO approval`, payload: { code, role, purpose: purpose.trim(), durationMinutes } },
+    (tx) => tx.maskingChangeRequest.create({ data: { fieldCode: code, kind: "exception_add", proposedBy: actor.label, beforeJson: encodeObject([]), afterJson: encodeObject(after), reason: reason.trim() || `Unmask for ${role}: ${purpose.trim()}`, status: "pending" } }),
+  );
+}
+
+async function assertDpo(actor: AuditActor) {
+  const combined = await isCombinedGovernance();
+  if (!(actor.role === "dpo" || (combined && actor.role === "admin"))) {
+    throw err("UnauthorisedRulingError", "Only the DPO can decide a proposed change. Switch role to DPO to decide.");
+  }
+}
+
+export async function decideChange(id: string, approve: boolean, note: string, actor: AuditActor) {
+  await assertDpo(actor);
+  const cr = await db.maskingChangeRequest.findUnique({ where: { id } });
+  if (!cr) throw err("NotFoundError", "That proposal no longer exists.");
+  if (cr.status !== "pending") throw err("ValidationError", "This proposal has already been decided.");
+  if (!approve && !note.trim()) throw err("ValidationError", "A reason is required to reject a proposal.");
+
+  const after = decodeObject<RulePatch[]>(cr.afterJson) ?? [];
+  return audited(
+    { actor, action: approve ? "masking.change_approved" : "masking.change_rejected", targetType: "MaskingField", targetId: cr.fieldCode, eventDescription: `${approve ? "Approved" : "Rejected"} a proposed change to ${cr.fieldCode}`, payload: { code: cr.fieldCode, kind: cr.kind, note: note.trim() || null } },
+    async (tx) => {
+      await tx.maskingChangeRequest.update({ where: { id }, data: { status: approve ? "approved" : "rejected", decidedBy: actor.label, decidedAt: new Date(), decisionNote: note.trim() || null } });
+      if (!approve) return;
+      if (cr.kind === "exception_add") {
+        const p = after[0]?.params ?? {};
+        const mins = Number(p.durationMinutes) || 15;
+        await tx.maskingUnmaskException.create({ data: { fieldCode: cr.fieldCode, role: String(p.role), purpose: String(p.purpose), durationMinutes: mins, expiresAt: new Date(Date.now() + mins * 60000), createdBy: cr.proposedBy, approvedBy: actor.label } });
+        await recordAction(tx as never, { actor, action: "masking.exception_added", targetType: "MaskingField", targetId: cr.fieldCode, eventDescription: `Unmask exception granted on ${cr.fieldCode} for ${p.role}`, payload: { code: cr.fieldCode, role: p.role, durationMinutes: mins } });
+      } else {
+        for (const patch of after) {
+          if (patch.channel) {
+            await tx.maskingChannelRule.upsert({
+              where: { fieldCode_layer_channel: { fieldCode: cr.fieldCode, layer: patch.layer, channel: patch.channel } },
+              update: { family: patch.family, paramsJson: encodeObject(patch.params) },
+              create: { fieldCode: cr.fieldCode, layer: patch.layer, channel: patch.channel, family: patch.family, paramsJson: encodeObject(patch.params) },
+            });
+          } else {
+            const lr = await tx.maskingLayerRule.findFirst({ where: { fieldCode: cr.fieldCode, layer: patch.layer } });
+            if (lr) await tx.maskingLayerRule.update({ where: { id: lr.id }, data: { family: patch.family, paramsJson: encodeObject(patch.params) } });
+          }
+        }
+      }
+    },
+  );
+}
+
+export async function withdrawProposal(id: string, actor: AuditActor) {
+  const cr = await db.maskingChangeRequest.findUnique({ where: { id } });
+  if (!cr) throw err("NotFoundError", "That proposal no longer exists.");
+  if (cr.status !== "pending") throw err("ValidationError", "This proposal has already been decided.");
+  return audited(
+    { actor, action: "masking.change_rejected", targetType: "MaskingField", targetId: cr.fieldCode, eventDescription: `Withdrew the proposed change to ${cr.fieldCode}`, payload: { code: cr.fieldCode, withdrawn: true } },
+    (tx) => tx.maskingChangeRequest.update({ where: { id }, data: { status: "rejected", decidedBy: actor.label, decidedAt: new Date(), decisionNote: "Withdrawn by proposer." } }),
+  );
+}
+
+/** Expire past-due exceptions and log each — automatic system behaviour, no actor. */
+async function expireDueExceptions() {
+  const due = await db.maskingUnmaskException.findMany({ where: { expiresAt: { lt: new Date() } } });
+  for (const e of due) {
+    await audited(
+      { actor: { id: null, label: "System", role: "system" }, action: "masking.exception_expired", targetType: "MaskingField", targetId: e.fieldCode, eventDescription: `Unmask exception on ${e.fieldCode} for ${e.role} expired`, payload: { code: e.fieldCode, role: e.role } },
+      (tx) => tx.maskingUnmaskException.delete({ where: { id: e.id } }),
+    );
+  }
+}
+
 export async function searchMaskingConfigLog(query: AuditQuery = {}) {
   return searchAuditLog({ ...query, action: query.action || "masking." });
 }

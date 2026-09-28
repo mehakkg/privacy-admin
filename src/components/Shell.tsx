@@ -170,12 +170,12 @@ function navGroups(openRequests: number, role: string): NavEntry[] {
     {
       key: "masking",
       label: "Data Masking",
-      href: "/masking/fields",
+      href: "/masking",
       ready: true,
       children: [
-        { href: "/masking/fields", label: "Field lookup", ready: true },
-        { href: "/masking/fields/new", label: "New custom field", ready: true },
-        { href: "/masking/audit", label: "Config change log", ready: true },
+        { href: "/masking", label: "Masking policy", ready: true },
+        { href: "/masking/rules", label: "Rule library", ready: true },
+        { href: "/masking/audit", label: "Change log", ready: true },
       ],
     },
 

@@ -1,96 +1,96 @@
 /**
- * Dynamic Data Masking demo — idempotent. Seeds four templates (BASELINE, two
- * associated regional templates DPDP + RBI, and the tenant layer) and a set of
- * fields whose rules produce every state the console must demonstrate:
- *
- *   EMAIL              → resolves via BASELINE only
- *   MOBILE_NUMBER      → resolves via a regional template (DPDP beats BASELINE)
- *   PAN                → resolves via the tenant's own rule (beats DPDP + BASELINE)
- *   SEGMENT_CODE       → genuine ambiguity (DPDP + RBI tie, no tenant tie-breaker)
- *   AADHAAR            → system-regulated lock (SUPER_ADMIN, permanent)
- *   LOAN_ACCOUNT_NUMBER→ tenant self-locked (reversible)
+ * Dynamic Data Masking demo — Meridian Financial Services (NBFC), templates DPDP
+ * + RBI. Idempotent: seeds only when the layered model is empty (MaskingLayerRule
+ * count 0), first WIPING any rows left from the pre-redesign model so the natural
+ * key (code) can be re-created cleanly. On later runs it only reconciles the
+ * governed locks, so demo interactions survive.
  */
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
+const J = (o: unknown) => JSON.stringify(o ?? {});
 
-/**
- * Reconcile the two canonical lock fixtures (Screen 2) on EVERY run, not just the
- * first seed. They are demo fixtures: a demo-er may unlock LOAN_ACCOUNT_NUMBER to
- * show the reversible state, and this restores the pristine self-locked /
- * system-regulated treatments on the next deploy so the console always presents
- * both lock types correctly. It never touches editable, unlocked rules like PAN.
- */
-async function reconcileLockFixtures() {
-  await prisma.maskingRule.updateMany({
-    where: { fieldCode: "AADHAAR", template: { key: "BASELINE" } },
-    data: { lockType: "system_regulated", regulated: true, editable: false, statutoryCitation: "Aadhaar Act 2016, s.29 r/w DPDP Act 2023, s.8(5)" },
-  });
-  await prisma.maskingRule.updateMany({
-    where: { fieldCode: "LOAN_ACCOUNT_NUMBER", template: { key: "TENANT" } },
-    data: { lockType: "self_locked", regulated: true, lockedBy: "Risk Ops (your team)", lockedAt: new Date("2026-03-12") },
-  });
+async function reconcileLocks() {
+  // Baseline and regional rules are governed — always locked. Nothing in the UI
+  // can unlock them; this restores the invariant if data drifted.
+  await prisma.maskingLayerRule.updateMany({ where: { layer: { in: ["baseline", "regional"] } }, data: { locked: true } });
+  await prisma.maskingLayerRule.updateMany({ where: { layer: "tenant" }, data: { locked: false } });
 }
 
 async function main() {
   if (!process.env.DATABASE_URL) { console.log("patch-masking: no DATABASE_URL, skipping."); return; }
-  if ((await prisma.maskingTemplate.count()) > 0) {
-    await reconcileLockFixtures();
-    console.log("patch-masking: already seeded; reconciled lock fixtures.");
-    return;
-  }
+  if ((await prisma.maskingLayerRule.count()) > 0) { await reconcileLocks(); console.log("patch-masking: already seeded; reconciled locks."); return; }
 
-  const [baseline, dpdp, rbi, tenant] = await Promise.all([
-    prisma.maskingTemplate.create({ data: { key: "BASELINE", name: "BASELINE", tier: "baseline", precedence: 0, associated: true, ownedBy: "SUPER_ADMIN" } }),
-    prisma.maskingTemplate.create({ data: { key: "DPDP", name: "DPDP", tier: "regional", precedence: 10, associated: true, ownedBy: "SUPER_ADMIN" } }),
-    prisma.maskingTemplate.create({ data: { key: "RBI", name: "RBI", tier: "regional", precedence: 10, associated: true, ownedBy: "SUPER_ADMIN" } }),
-    prisma.maskingTemplate.create({ data: { key: "TENANT", name: "Tenant Rule", tier: "tenant", precedence: 20, associated: true, ownedBy: "TENANT" } }),
-  ]);
+  // Clear anything from the old model so `code` (now the PK) is free.
+  await prisma.maskingChannelRule.deleteMany({});
+  await prisma.maskingUnmaskException.deleteMany({});
+  await prisma.maskingChangeRequest.deleteMany({});
+  await prisma.maskingLayerRule.deleteMany({});
+  await prisma.maskingField.deleteMany({});
 
   const FIELDS = [
-    { code: "EMAIL", name: "Email address", sampleValue: "john.roy@acme.com" },
-    { code: "MOBILE_NUMBER", name: "Mobile number", sampleValue: "9876543210" },
-    { code: "PAN", name: "PAN", sampleValue: "ABCDE1234F" },
-    { code: "SEGMENT_CODE", name: "Customer segment code", sampleValue: "SGMT-0007" },
-    { code: "AADHAAR", name: "Aadhaar number", sampleValue: "234512347890" },
-    { code: "LOAN_ACCOUNT_NUMBER", name: "Loan account number", sampleValue: "000123456789" },
+    { code: "AADHAAR", name: "Aadhaar number", sensitivity: "Sensitive", sampleValue: "234512347890" },
+    { code: "PAN", name: "PAN", sensitivity: "Sensitive", sampleValue: "ABCDE1234F" },
+    { code: "LOAN_ACCOUNT_NUMBER", name: "Loan account number", sensitivity: "Sensitive", sampleValue: "4002119988" },
+    { code: "MOBILE_NUMBER", name: "Mobile number", sensitivity: "Personal", sampleValue: "9876543210" },
+    { code: "EMAIL", name: "Email address", sensitivity: "Personal", sampleValue: "ritu@meridian.in" },
+    { code: "WALLET_ID", name: "Wallet identifier", sensitivity: "Personal", sampleValue: "W-771203", createdBy: "R. Iyer" },
+    { code: "DATE_OF_BIRTH", name: "Date of birth", sensitivity: "Personal", sampleValue: "1991-04-12" },
+    { code: "SEGMENT_CODE", name: "Customer segment code", sensitivity: "Internal", sampleValue: "SEG-A12" },
   ];
   for (const f of FIELDS) await prisma.maskingField.create({ data: f });
 
-  const rule = (templateId: string, fieldCode: string, fieldName: string, method: string, extra: Record<string, unknown> = {}) =>
-    prisma.maskingRule.create({ data: { templateId, fieldCode, fieldName, method, ...extra } });
+  const layer = (fieldCode: string, layer: string, family: string, params: unknown, opts: { source?: string; citation?: string; locked?: boolean } = {}) =>
+    prisma.maskingLayerRule.create({ data: { fieldCode, layer, family, paramsJson: J(params), source: opts.source ?? null, citation: opts.citation ?? null, locked: opts.locked ?? false } });
+  const chan = (fieldCode: string, layer: string, channel: string, family: string, params: unknown = {}) =>
+    prisma.maskingChannelRule.create({ data: { fieldCode, layer, channel, family, paramsJson: J(params) } });
 
-  await Promise.all([
-    // EMAIL — BASELINE only.
-    rule(baseline.id, "EMAIL", "Email address", "email"),
+  // AADHAAR — baseline, system-regulated.
+  await layer("AADHAAR", "baseline", "partial", { revealLast: 4, maskChar: "*" }, { locked: true, citation: "Aadhaar Act 2016, s.29 r/w DPDP Act 2023, s.8(5)" });
 
-    // MOBILE_NUMBER — BASELINE (loses) vs DPDP (wins).
-    rule(baseline.id, "MOBILE_NUMBER", "Mobile number", "first2last2"),
-    rule(dpdp.id, "MOBILE_NUMBER", "Mobile number", "last4", { statutoryCitation: "DPDP Act 2023, s.8 (data minimisation)" }),
+  // PAN — RBI floor (reveals 6) beaten by a stricter tenant rule (reveals 4), with tenant channel overrides.
+  await layer("PAN", "regional", "partial", { revealLast: 6, maskChar: "*" }, { source: "RBI", locked: true, citation: "RBI Master Direction — KYC" });
+  await layer("PAN", "tenant", "partial", { revealLast: 4, maskChar: "*" });
+  await chan("PAN", "tenant", "api", "tokenize", { vault: "default" });
+  await chan("PAN", "tenant", "exports", "full", {});
+  await chan("PAN", "tenant", "logs", "full", {});
+  await chan("PAN", "tenant", "nonprod", "synthetic", { generator: "pan" });
 
-    // PAN — BASELINE + DPDP (lose) vs TENANT own rule (wins, editable).
-    rule(baseline.id, "PAN", "PAN", "last4x"),
-    rule(dpdp.id, "PAN", "PAN", "alpha_x", { statutoryCitation: "DPDP Act 2023, s.8 (data minimisation)" }),
-    rule(tenant.id, "PAN", "PAN", "alpha_x", { editable: true }),
+  // LOAN_ACCOUNT_NUMBER — RBI-governed, with a pending change on the exports channel.
+  await layer("LOAN_ACCOUNT_NUMBER", "regional", "tokenize", { vault: "default" }, { source: "RBI", locked: true, citation: "RBI Master Direction — KYC" });
+  await chan("LOAN_ACCOUNT_NUMBER", "regional", "logs", "full", {});
+  await chan("LOAN_ACCOUNT_NUMBER", "regional", "nonprod", "synthetic", { generator: "account" });
 
-    // SEGMENT_CODE — DPDP + RBI both claim it, no tenant rule → ambiguity.
-    rule(dpdp.id, "SEGMENT_CODE", "Customer segment code", "last4"),
-    rule(rbi.id, "SEGMENT_CODE", "Customer segment code", "fullmask"),
+  // MOBILE_NUMBER — DPDP.
+  await layer("MOBILE_NUMBER", "regional", "partial", { revealLast: 3, maskChar: "*" }, { source: "DPDP", locked: true, citation: "DPDP Act 2023, s.8 (data minimisation)" });
 
-    // AADHAAR — system-regulated floor, permanent lock, no unlock.
-    rule(baseline.id, "AADHAAR", "Aadhaar number", "last4", {
-      regulated: true, lockType: "system_regulated", editable: false,
-      statutoryCitation: "Aadhaar Act 2016, s.29 r/w DPDP Act 2023, s.8(5)",
-    }),
+  // EMAIL — DPDP, with a logs override.
+  await layer("EMAIL", "regional", "partial", { revealFirst: 1, preserveDomain: true, maskChar: "*" }, { source: "DPDP", locked: true, citation: "DPDP Act 2023, s.8 (data minimisation)" });
+  await chan("EMAIL", "regional", "logs", "full", {});
 
-    // LOAN_ACCOUNT_NUMBER — tenant's own, self-locked (reversible).
-    rule(tenant.id, "LOAN_ACCOUNT_NUMBER", "Loan account number", "last4", {
-      editable: true, regulated: true, lockType: "self_locked",
-      lockedBy: "Risk Ops (your team)", lockedAt: new Date("2026-03-12"),
-    }),
-  ]);
+  // Tenant-owned fields.
+  await layer("WALLET_ID", "tenant", "hash", { algorithm: "SHA-256" });
+  await layer("DATE_OF_BIRTH", "tenant", "generalize", { bucket: "age5" });
+  // SEGMENT_CODE — no rule at any layer.
 
-  console.log("patch-masking: seeded 4 templates, 6 fields, 10 rules.");
+  // Pending change request on LOAN: exports tokenize → full redaction.
+  await prisma.maskingChangeRequest.create({
+    data: {
+      fieldCode: "LOAN_ACCOUNT_NUMBER", kind: "rule_change", proposedBy: "R. Iyer",
+      proposedAt: new Date("2026-09-28T05:39:00Z"),
+      beforeJson: J([{ layer: "regional", channel: "exports", family: "tokenize", params: { vault: "default" } }]),
+      afterJson: J([{ layer: "regional", channel: "exports", family: "full", params: {} }]),
+      reason: "Collections agency exports should never carry a recoverable token.",
+      status: "pending",
+    },
+  });
+
+  // Standing approved unmask exception on PAN.
+  await prisma.maskingUnmaskException.create({
+    data: { fieldCode: "PAN", role: "Grievance Officer", purpose: "identity check on active grievance", durationMinutes: 15, expiresAt: new Date("2030-01-01T00:00:00Z"), createdBy: "R. Iyer", approvedBy: "Kavita Menon" },
+  });
+
+  console.log(`patch-masking: seeded ${FIELDS.length} fields, layered rules, 1 pending change, 1 exception.`);
 }
 
 main().catch((e) => console.error("patch-masking failed (continuing):", e)).finally(async () => { await prisma.$disconnect(); });

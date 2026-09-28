@@ -1534,99 +1534,120 @@ model ProtectionRuleTemplate {
 }
 
 // ---------------------------------------------------------------------------
-// Dynamic Data Masking (DDM) — masking-rule resolution
+// Dynamic Data Masking (DDM) — layered masking policy
 //
-// A field's effective masking is RESOLVED, not stored once: for a given field
-// code the winner is chosen across the templates this tenant is associated with,
-// by precedence — the tenant's own rule beats a regional template (e.g. DPDP),
-// which beats the BASELINE regulatory floor. The floor is never removed, only
-// overridden, so a losing step stays visible in the chain.
+// A field's effective masking is RESOLVED per channel, not stored once. Each
+// field can carry a rule at three layers — BASELINE (floor, precedence 0, owned
+// by SUPER_ADMIN), REGIONAL (precedence 1, source DPDP or RBI), and TENANT
+// (precedence 2) — and, within a layer, per-channel overrides (ui, api, exports,
+// logs, nonprod). The effective rule for a channel is the rule from the
+// highest-precedence layer that defines that channel, falling back to that
+// layer's default rule.
 //
-// These are TENANT configuration Admin owns (unlike ProtectionRule, which is
-// governance-locked): writes go through `db` wrapped in `audited()`, so every
-// change lands in the same hash-chained audit log as everything else.
+// Governance: BASELINE and REGIONAL rules are owned by SUPER_ADMIN / the DPO.
+// Admin never edits them directly — a change is a MaskingChangeRequest the DPO
+// approves. Tightening a tenant rule is a direct edit; anything that loosens a
+// tenant rule, or touches a governed layer, is a proposal. Every write is
+// hash-chained into the one audit log; there is no path that unlocks a governed
+// rule (the historical rule_unlocked entry stays, but nothing produces it).
 // ---------------------------------------------------------------------------
 
-/// A source of masking rules with a fixed precedence. BASELINE (floor, 0),
-/// regional templates like DPDP (10), and the tenant's own layer (20). A regional
-/// template governs this tenant only while `associated` is true.
-model MaskingTemplate {
-  id         String @id @default(cuid())
-  /// Stable key: BASELINE | DPDP | RBI | TENANT …
-  key        String @unique
-  /// Display name, e.g. "BASELINE", "DPDP", "Tenant Rule".
-  name       String
-  /// baseline | regional | tenant
-  tier       String
-  /// Higher wins. baseline=0, regional=10, tenant=20. Two associated regional
-  /// templates share precedence 10, which is exactly how an ambiguity arises.
-  precedence Int    @default(0)
-  /// Whether THIS tenant is associated with the template. Baseline/tenant are
-  /// always true; a regional template only governs while associated.
-  associated Boolean @default(true)
-  /// SUPER_ADMIN | TENANT — who owns and may edit the template's rules.
-  ownedBy    String  @default("SUPER_ADMIN")
-
-  rules MaskingRule[]
-}
-
-/// A field identity — the thing being masked. `code` is what rules key off and
-/// what a custom-field collision check runs against.
+/// A field — the thing being masked. `code` is the natural key rules point at,
+/// and what the Add-field collision check runs against.
 model MaskingField {
-  id          String  @id @default(cuid())
-  code        String  @unique
-  name        String
-  /// A representative value used for the live masked-output preview.
-  sampleValue String  @default("")
-  /// True for a tenant-created custom field (Screen 4), false for system fields.
-  custom      Boolean @default(false)
-  createdBy   String?
-  createdAt   DateTime @default(now())
+  code             String  @id
+  name             String
+  /// Sensitive | Personal | Internal
+  sensitivity      String  @default("Personal")
+  /// Regex used by discovery to find this field in connected sources (optional).
+  detectionPattern String?
+  /// Linked RoPA data element (optional).
+  dataElementRef   String?
+  /// A representative value for the masked-output preview.
+  sampleValue      String  @default("")
+  createdBy        String?
+  createdAt        DateTime @default(now())
+
+  layerRules     MaskingLayerRule[]
+  channelRules   MaskingChannelRule[]
+  exceptions     MaskingUnmaskException[]
+  changeRequests MaskingChangeRequest[]
 }
 
-/// One template's rule for one field code. The effective rule for a field is the
-/// highest-precedence MaskingRule among the associated templates that define it.
-model MaskingRule {
+/// A field's default rule at one layer. `locked` marks a governed rule the tenant
+/// cannot edit directly (baseline always; regional rules the DPO owns).
+model MaskingLayerRule {
   id         String  @id @default(cuid())
-  templateId String
-  template   MaskingTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
-
-  /// The field this masks. A plain string (matches MaskingField.code) so a
-  /// template can carry a rule for a code before the tenant materialises the field.
   fieldCode  String
-  fieldName  String
+  field      MaskingField @relation(fields: [fieldCode], references: [code], onDelete: Cascade)
+  /// baseline | regional | tenant
+  layer      String
+  /// DPDP | RBI — set for regional only.
+  source     String?
+  /// A masking function family (see lib/masking.ts): partial | full | fpe | hash |
+  /// tokenize | generalize | synthetic.
+  family     String
+  /// Family params as JSON, e.g. {"revealLast":4} or {"bucket":"age5"}.
+  paramsJson String  @default("{}")
+  citation   String?
+  locked     Boolean @default(false)
 
-  /// The masking function ddm-masking-core runs. See runMaskCore in lib/masking.ts.
-  /// A tenant custom function (custom_fn) cannot execute in preview and shows the
-  /// honest CUSTOM_FUNCTION_NOT_EXECUTABLE_BY_PDP state instead of a fake output.
-  method     String
+  @@unique([fieldCode, layer, source])
+  @@index([fieldCode])
+}
 
-  /// Optimistic-lock token. A save submits the version it loaded; if it has moved,
-  /// the save is cleanly rejected rather than silently overwriting.
-  version    Int     @default(1)
+/// A per-channel override of a layer's default rule. Absence means the layer's
+/// default rule applies to that channel.
+model MaskingChannelRule {
+  id         String @id @default(cuid())
+  fieldCode  String
+  field      MaskingField @relation(fields: [fieldCode], references: [code], onDelete: Cascade)
+  layer      String
+  /// ui | api | exports | logs | nonprod
+  channel    String
+  family     String
+  paramsJson String @default("{}")
 
-  /// Whether this tenant may edit the rule here (tenant rules; template items the
-  /// owner edits). Baseline/regional rules are view-only to the tenant.
-  editable   Boolean @default(false)
+  @@unique([fieldCode, layer, channel])
+  @@index([fieldCode])
+}
 
-  /// none | system_regulated | self_locked. Two structurally different locks that
-  /// must never share a visual: system_regulated is permanent (SUPER_ADMIN-owned,
-  /// no unlock); self_locked is the tenant's own reversible choice.
-  lockType   String  @default("none")
-  /// True while an exact-match regulated treatment is enforced on this field.
-  regulated  Boolean @default(false)
+/// A time-boxed permission for a role to see a field unmasked for a stated
+/// purpose. Added via proposal, never applied directly; expires automatically.
+model MaskingUnmaskException {
+  id              String   @id @default(cuid())
+  fieldCode       String
+  field           MaskingField @relation(fields: [fieldCode], references: [code], onDelete: Cascade)
+  role            String
+  purpose         String
+  durationMinutes Int
+  expiresAt       DateTime?
+  createdBy       String
+  approvedBy      String?
+  createdAt       DateTime @default(now())
 
-  /// For a self_locked rule: who locked it and when (shown in the unlock citation).
-  lockedBy   String?
-  lockedAt   DateTime?
+  @@index([fieldCode])
+}
 
-  /// For a system_regulated / regulatory-floor rule: the statute behind the lock.
-  statutoryCitation String?
+/// A proposed change to a governed rule (or an exception), awaiting DPO decision.
+/// `before`/`after` are JSON snapshots; there is no manual status override.
+model MaskingChangeRequest {
+  id           String   @id @default(cuid())
+  fieldCode    String
+  field        MaskingField @relation(fields: [fieldCode], references: [code], onDelete: Cascade)
+  /// rule_change | exception_add — what kind of change this proposes.
+  kind         String   @default("rule_change")
+  proposedBy   String
+  proposedAt   DateTime @default(now())
+  beforeJson   String   @default("{}")
+  afterJson    String   @default("{}")
+  reason       String
+  /// pending | approved | rejected
+  status       String   @default("pending")
+  decidedBy    String?
+  decidedAt    DateTime?
+  decisionNote String?
 
-  updatedBy  String?
-  updatedAt  DateTime @updatedAt
-
-  @@unique([templateId, fieldCode])
   @@index([fieldCode])
 }
 
