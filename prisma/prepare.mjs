@@ -119,4 +119,6 @@ if (!POOLED) {
   run("Seeding manual sources demo", "npx tsx prisma/patch-manual-sources.ts", POOLED);
   // Idempotent: seeds Protection Rule Library templates (baseline_pii + dpdp_specific).
   run("Seeding rule templates", "npx tsx prisma/patch-rule-templates.ts", POOLED);
+  // Idempotent: seeds the Dynamic Data Masking demo (templates, fields, resolution + lock states).
+  run("Seeding masking demo", "npx tsx prisma/patch-masking.ts", POOLED);
 }

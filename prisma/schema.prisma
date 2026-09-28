@@ -1534,6 +1534,103 @@ model ProtectionRuleTemplate {
 }
 
 // ---------------------------------------------------------------------------
+// Dynamic Data Masking (DDM) — masking-rule resolution
+//
+// A field's effective masking is RESOLVED, not stored once: for a given field
+// code the winner is chosen across the templates this tenant is associated with,
+// by precedence — the tenant's own rule beats a regional template (e.g. DPDP),
+// which beats the BASELINE regulatory floor. The floor is never removed, only
+// overridden, so a losing step stays visible in the chain.
+//
+// These are TENANT configuration Admin owns (unlike ProtectionRule, which is
+// governance-locked): writes go through `db` wrapped in `audited()`, so every
+// change lands in the same hash-chained audit log as everything else.
+// ---------------------------------------------------------------------------
+
+/// A source of masking rules with a fixed precedence. BASELINE (floor, 0),
+/// regional templates like DPDP (10), and the tenant's own layer (20). A regional
+/// template governs this tenant only while `associated` is true.
+model MaskingTemplate {
+  id         String @id @default(cuid())
+  /// Stable key: BASELINE | DPDP | RBI | TENANT …
+  key        String @unique
+  /// Display name, e.g. "BASELINE", "DPDP", "Tenant Rule".
+  name       String
+  /// baseline | regional | tenant
+  tier       String
+  /// Higher wins. baseline=0, regional=10, tenant=20. Two associated regional
+  /// templates share precedence 10, which is exactly how an ambiguity arises.
+  precedence Int    @default(0)
+  /// Whether THIS tenant is associated with the template. Baseline/tenant are
+  /// always true; a regional template only governs while associated.
+  associated Boolean @default(true)
+  /// SUPER_ADMIN | TENANT — who owns and may edit the template's rules.
+  ownedBy    String  @default("SUPER_ADMIN")
+
+  rules MaskingRule[]
+}
+
+/// A field identity — the thing being masked. `code` is what rules key off and
+/// what a custom-field collision check runs against.
+model MaskingField {
+  id          String  @id @default(cuid())
+  code        String  @unique
+  name        String
+  /// A representative value used for the live masked-output preview.
+  sampleValue String  @default("")
+  /// True for a tenant-created custom field (Screen 4), false for system fields.
+  custom      Boolean @default(false)
+  createdBy   String?
+  createdAt   DateTime @default(now())
+}
+
+/// One template's rule for one field code. The effective rule for a field is the
+/// highest-precedence MaskingRule among the associated templates that define it.
+model MaskingRule {
+  id         String  @id @default(cuid())
+  templateId String
+  template   MaskingTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  /// The field this masks. A plain string (matches MaskingField.code) so a
+  /// template can carry a rule for a code before the tenant materialises the field.
+  fieldCode  String
+  fieldName  String
+
+  /// The masking function ddm-masking-core runs. See runMaskCore in lib/masking.ts.
+  /// A tenant custom function (custom_fn) cannot execute in preview and shows the
+  /// honest CUSTOM_FUNCTION_NOT_EXECUTABLE_BY_PDP state instead of a fake output.
+  method     String
+
+  /// Optimistic-lock token. A save submits the version it loaded; if it has moved,
+  /// the save is cleanly rejected rather than silently overwriting.
+  version    Int     @default(1)
+
+  /// Whether this tenant may edit the rule here (tenant rules; template items the
+  /// owner edits). Baseline/regional rules are view-only to the tenant.
+  editable   Boolean @default(false)
+
+  /// none | system_regulated | self_locked. Two structurally different locks that
+  /// must never share a visual: system_regulated is permanent (SUPER_ADMIN-owned,
+  /// no unlock); self_locked is the tenant's own reversible choice.
+  lockType   String  @default("none")
+  /// True while an exact-match regulated treatment is enforced on this field.
+  regulated  Boolean @default(false)
+
+  /// For a self_locked rule: who locked it and when (shown in the unlock citation).
+  lockedBy   String?
+  lockedAt   DateTime?
+
+  /// For a system_regulated / regulatory-floor rule: the statute behind the lock.
+  statutoryCitation String?
+
+  updatedBy  String?
+  updatedAt  DateTime @updatedAt
+
+  @@unique([templateId, fieldCode])
+  @@index([fieldCode])
+}
+
+// ---------------------------------------------------------------------------
 // Scenario 2 — Access Lifecycle & Identity Hygiene
 //
 // Internal staff access to the systems that hold personal data. Distinct from

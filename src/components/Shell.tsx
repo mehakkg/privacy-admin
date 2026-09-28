@@ -163,6 +163,22 @@ function navGroups(openRequests: number, role: string): NavEntry[] {
       ],
     },
 
+    // Dynamic Data Masking — the field-level masking-rule console. Distinct from
+    // Protection rules (which are governance-owned policy): these are tenant
+    // configuration whose EFFECTIVE value is resolved across templates, so the
+    // console's job is to make that resolution and its locks legible.
+    {
+      key: "masking",
+      label: "Data Masking",
+      href: "/masking/fields",
+      ready: true,
+      children: [
+        { href: "/masking/fields", label: "Field lookup", ready: true },
+        { href: "/masking/fields/new", label: "New custom field", ready: true },
+        { href: "/masking/audit", label: "Config change log", ready: true },
+      ],
+    },
+
     {
       key: "audit-escalation",
       label: "Audit & Escalation",
