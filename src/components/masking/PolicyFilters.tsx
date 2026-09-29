@@ -12,16 +12,17 @@ type Params = Record<string, string | undefined>;
  * the URL, so filters are shareable and survive refresh. Active filters render as
  * dismissible chips (server-side) beneath this bar.
  */
-export function PolicyFilters({ current }: { current: Params }) {
+export function PolicyFilters({ current, basePath = "/masking" }: { current: Params; basePath?: string }) {
   const router = useRouter();
   const [q, setQ] = useState(current.q ?? "");
 
   const push = (patch: Params) => {
     const next = new URLSearchParams();
     const merged = { ...current, ...patch };
+    // Keep tab; drop the drawer/paging params when filters change.
     for (const [k, v] of Object.entries(merged)) if (v && k !== "field" && k !== "add" && k !== "page") next.set(k, v);
     const s = next.toString();
-    router.push(s ? `/masking?${s}` : "/masking");
+    router.push(s ? `${basePath}?${s}` : basePath);
   };
 
   return (

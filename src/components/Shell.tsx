@@ -67,15 +67,14 @@ function navGroups(counts: NavCounts, role: ActorRole): NavEntry[] {
     {
       key: "data-protection",
       label: "Data Protection",
-      href: "/masking",
+      href: "/data-flow/protection-rules",
       ready: true,
+      // One page, four tabs (By field · By rule · Library · Pending changes).
+      // Masking is a METHOD on a rule, not a separate page; the former Masking
+      // policy, Scope adjustments and Rule library are now tabs. The pending-
+      // approval badge (DPO only) sits on this page.
       children: [
-        { href: "/masking", label: "Masking policy", ready: true, badge: role === "dpo" ? counts.maskingPending : undefined },
-        { href: "/data-flow/protection-rules", label: "Protection rules", ready: true },
-        { href: "/risk/scope-adjustments", label: "Scope adjustments", ready: true },
-        // Rule library merges the masking + protection libraries; a Control type
-        // filter (Masking, Tokenization, Encryption, Flow rules) replaces the second.
-        { href: "/data-flow/protection-rules/library", label: "Rule library", ready: true },
+        { href: "/data-flow/protection-rules", label: "Protection rules", ready: true, badge: role === "dpo" ? counts.maskingPending : undefined },
       ],
     },
     {

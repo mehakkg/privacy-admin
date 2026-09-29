@@ -1590,7 +1590,13 @@ model MaskingLayerRule {
   /// Family params as JSON, e.g. {"revealLast":4} or {"bucket":"age5"}.
   paramsJson String  @default("{}")
   citation   String?
+  /// Governed rule the tenant cannot edit directly. On a regional/baseline layer
+  /// it means "changes are DPO proposals"; on a tenant layer it means self-locked
+  /// (the tenant may unlock it).
   locked     Boolean @default(false)
+  /// SUPER_ADMIN permanent floor (Aadhaar/PAN/ABHA): exact-match only, no edit,
+  /// override, unlock or propose path exists — visually distinct from a self-lock.
+  systemRegulated Boolean @default(false)
 
   @@unique([fieldCode, layer, source])
   @@index([fieldCode])
@@ -1627,6 +1633,22 @@ model MaskingUnmaskException {
   createdAt       DateTime @default(now())
 
   @@index([fieldCode])
+}
+
+/// Console-side metadata to apply ONE rule to MANY fields. It is NOT a resolution
+/// tier and is never sent to the resolver: applying it materializes one tenant
+/// element rule per member field through the atomic bulk call. `state` is derived
+/// (in_sync | diverged) whenever a member's effective tenant rule no longer
+/// matches this definition.
+model MaskingRuleGroup {
+  id              String  @id @default(cuid())
+  name            String
+  family          String
+  paramsJson      String  @default("{}")
+  memberCodesJson String  @default("[]")
+  tenantId        String?
+  createdBy       String?
+  createdAt       DateTime @default(now())
 }
 
 /// A proposed change to a governed rule (or an exception), awaiting DPO decision.

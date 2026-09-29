@@ -3,16 +3,16 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { X, Lock, Pencil, GitPullRequest, Check, Ban, Clock, ExternalLink } from "lucide-react";
+import { X, Lock, LockOpen, ShieldCheck, Pencil, GitPullRequest, Check, Ban, Clock, ExternalLink, AlertTriangle } from "lucide-react";
 import { Pill, type PillTone } from "@/components/ui";
 import { RuleEditor } from "@/components/masking/RuleEditor";
 import {
-  EXCEPTION_ROLES, ruleLabel, SENSITIVITY_TONE,
+  ruleLabel, SENSITIVITY_TONE,
   type Rule, type FieldResolution, type RulePatch,
 } from "@/lib/masking";
 import {
-  editTenantRuleAction, proposeChangeAction, proposeExceptionAction,
-  decideChangeAction, withdrawProposalAction, type MaskingActionResult,
+  editTenantRuleAction, proposeChangeAction,
+  decideChangeAction, withdrawProposalAction, unlockSelfLockedAction, type MaskingActionResult,
 } from "@/app/actions/masking";
 
 export interface PendingView {
@@ -49,13 +49,12 @@ export function FieldDrawer({
   floorName: string | null;
 }) {
   const router = useRouter();
-  const [mode, setMode] = useState<"view" | "edit" | "propose" | "exception">("view");
+  const [mode, setMode] = useState<"view" | "edit" | "propose">("view");
   const gov = res.governedBy;
-  const isTenant = gov?.layer === "tenant";
-  const isBaseline = gov?.layer === "baseline";
-  const isRegional = gov?.layer === "regional";
+  const treatment = gov?.treatment ?? null;
   const isDpo = role === "dpo";
   const close = () => router.push(closeHref);
+  const unlock = useRun();
 
   return (
     <>
@@ -66,28 +65,36 @@ export function FieldDrawer({
             <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <span className="cell-primary mono">{res.code}</span>
               <Pill tone={SENSITIVITY_TONE[res.sensitivity]} dot={false}>{res.sensitivity}</Pill>
+              {res.status === "ambiguous" && <Pill tone="red" dot={false}>Ambiguous</Pill>}
               {gov && <Pill tone={pending ? "yellow" : GOVERNED_TONE[gov.layer]} dot={false}>{pending ? `${gov.badge} · change pending` : gov.badge}{gov.stricter ? " · stricter" : ""}</Pill>}
-              {!gov && <Pill tone="red" dot={false}>No rule</Pill>}
+              {!gov && res.status !== "ambiguous" && <Pill tone="red" dot={false}>No rule</Pill>}
             </div>
             <span className="cell-sub">{res.name}</span>
           </div>
           <button className="icon-btn" onClick={close} aria-label="Close"><X size={16} /></button>
         </div>
 
-        {/* Header action, governance-dependent */}
+        {/* Header action — governance-dependent, two distinct lock treatments. */}
         <div className="mask-drawer-actionbar">
-          {isBaseline && (
+          {treatment === "system" && (
             <span className="row cell-sub" style={{ gap: 6, color: "var(--red)" }}>
-              <Lock size={13} /> System-regulated. Owned by SUPER_ADMIN. No tenant can edit, override, or unlock this.
+              <ShieldCheck size={13} /> SYSTEM-regulated. Owned by SUPER_ADMIN. No tenant can edit, override, or unlock this.
             </span>
           )}
-          {isTenant && !pending && mode === "view" && (
-            <button className="btn sm primary" onClick={() => setMode("edit")}><Pencil size={13} /> Edit rule</button>
+          {treatment === "self" && mode === "view" && (
+            <div className="stack" style={{ gap: 6 }}>
+              <span className="row cell-sub" style={{ gap: 6, color: "var(--yellow)" }}><Lock size={13} /> Locked by your team. You can unlock this anytime.</span>
+              {unlock.result && !unlock.result.ok && <span className="cell-sub" style={{ color: "var(--red)" }}>{unlock.result.error}</span>}
+              <button className="btn sm" disabled={unlock.pending} onClick={() => unlock.run(() => unlockSelfLockedAction(res.code))}><LockOpen size={13} /> {unlock.pending ? "Unlocking…" : "Unlock"}</button>
+            </div>
           )}
-          {isRegional && !pending && mode === "view" && (
+          {treatment === "governed" && !pending && mode === "view" && (
             <button className="btn sm primary" onClick={() => setMode("propose")}><GitPullRequest size={13} /> Propose change</button>
           )}
-          {!res.hasRule && (
+          {treatment === "none" && !pending && mode === "view" && (
+            <button className="btn sm primary" onClick={() => setMode("edit")}><Pencil size={13} /> Edit rule</button>
+          )}
+          {!res.hasRule && res.status !== "ambiguous" && (
             <button className="btn sm primary" onClick={() => setMode("edit")}><Pencil size={13} /> Add rule</button>
           )}
         </div>
@@ -95,12 +102,25 @@ export function FieldDrawer({
         <div className="mask-drawer-body">
           {mode === "edit" && <EditForm res={res} floor={floor} floorName={floorName} onDone={() => setMode("view")} onNeedsApproval={() => setMode("propose")} />}
           {mode === "propose" && <ProposeForm res={res} floor={floor} floorName={floorName} onDone={() => setMode("view")} />}
-          {mode === "exception" && <ExceptionForm res={res} onDone={() => setMode("view")} />}
 
           {mode === "view" && (
             <>
+              {/* Ambiguity — a hard error naming both sources, never a chosen winner. */}
+              {res.status === "ambiguous" && (
+                <Section title="Resolver error">
+                  <div className="lock-box" style={{ background: "var(--red-bg)", borderColor: "var(--red-border)" }}>
+                    <div className="row" style={{ gap: 8, alignItems: "center" }}><AlertTriangle size={16} style={{ color: "var(--red)" }} /><strong>Ambiguous — this field does not resolve</strong></div>
+                    <p className="cell-sub" style={{ margin: "8px 0 0" }}>
+                      <code>{res.code}</code> is claimed by two non-BASELINE templates at the same precedence, so there is no single winner. One must be removed, or a tenant rule added, before it resolves.
+                    </p>
+                    <div className="row" style={{ gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                      {res.ambiguity?.sources.map((s) => <Pill key={s} tone="red" dot={false}>{s}</Pill>)}
+                    </div>
+                  </div>
+                </Section>
+              )}
               {/* Effective rule */}
-              <Section title="Effective rule">
+              {res.status !== "ambiguous" && <Section title="Effective rule">
                 {res.effective ? (
                   <>
                     <div className="mask-preview sm"><code className="mask-before">{res.sampleValue}</code><span className="muted">→</span><code className="mask-after">{res.effective.preview.split(" → ")[1] ?? res.effective.preview}</code></div>
@@ -116,7 +136,7 @@ export function FieldDrawer({
                     <button className="btn sm primary" onClick={() => setMode("edit")} style={{ alignSelf: "flex-start" }}><Pencil size={13} /> Add rule</button>
                   </div>
                 )}
-              </Section>
+              </Section>}
 
               {/* Resolution chain */}
               {res.chain.length > 0 && (
@@ -158,23 +178,6 @@ export function FieldDrawer({
                   </div>
                 </Section>
               )}
-
-              {/* Unmask exceptions */}
-              <Section title="Unmask exceptions">
-                {res.exceptions.length === 0 ? (
-                  <p className="cell-sub">No one can see this field unmasked.</p>
-                ) : (
-                  <div className="stack" style={{ gap: 6 }}>
-                    {res.exceptions.map((e) => (
-                      <div key={e.id} className="row cell-sub" style={{ gap: 6, flexWrap: "wrap" }}>
-                        <Pill tone="yellow" dot={false}>{e.role}</Pill>
-                        purpose: {e.purpose} · {e.durationMinutes} min · logged{e.approvedBy ? ` · approved by ${e.approvedBy}` : ""}
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {!isBaseline && <button className="link-btn" style={{ marginTop: 8 }} onClick={() => setMode("exception")}>+ Add exception (creates a proposal)</button>}
-              </Section>
 
               {/* Pending change */}
               {pending && (
@@ -279,32 +282,6 @@ function ProposeForm({ res, floor, floorName, onDone }: { res: FieldResolution; 
       <div className="row" style={{ gap: 8 }}>
         <button className="btn ghost sm" onClick={onDone}>Cancel</button>
         <button className="btn primary sm" disabled={pending || !reason.trim()} onClick={submit}>{pending ? "Submitting…" : "Submit for DPO approval"}</button>
-      </div>
-    </div>
-  );
-}
-
-function ExceptionForm({ res, onDone }: { res: FieldResolution; onDone: () => void }) {
-  const { pending, result, run } = useRun();
-  const [rolePick, setRolePick] = useState(EXCEPTION_ROLES[0]);
-  const [purpose, setPurpose] = useState("");
-  const [duration, setDuration] = useState(15);
-
-  const submit = () => run(() => proposeExceptionAction(res.code, rolePick, purpose, duration, ""), onDone);
-
-  return (
-    <div className="stack" style={{ gap: 12 }}>
-      <h3 className="mask-section-title">Add unmask exception</h3>
-      <ActionError result={result} />
-      <p className="cell-sub">This creates a proposal for DPO approval. It never applies directly, and it expires automatically.</p>
-      <label className="fld"><span>Role</span>
-        <select className="input" value={rolePick} onChange={(e) => setRolePick(e.target.value)}>{EXCEPTION_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}</select>
-      </label>
-      <label className="fld"><span>Purpose</span><input className="input" value={purpose} onChange={(e) => setPurpose(e.target.value)} placeholder="e.g. identity check on active grievance" /></label>
-      <label className="fld"><span>Duration (minutes)</span><input className="input" type="number" min={5} max={240} value={duration} onChange={(e) => setDuration(Number(e.target.value))} /></label>
-      <div className="row" style={{ gap: 8 }}>
-        <button className="btn ghost sm" onClick={onDone}>Cancel</button>
-        <button className="btn primary sm" disabled={pending || !purpose.trim()} onClick={submit}>{pending ? "Submitting…" : "Submit for DPO approval"}</button>
       </div>
     </div>
   );

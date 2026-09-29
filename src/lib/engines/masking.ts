@@ -3,9 +3,10 @@ import { audited, searchAuditLog, recordAction, type AuditActor, type AuditQuery
 import { isCombinedGovernance } from "@/lib/governance";
 import { encodeObject, decodeObject } from "@/lib/codec/json";
 import {
-  CHANNEL_KEYS, CHANNEL_LABEL, LAYER_PRECEDENCE, layerBadge,
+  CHANNEL_KEYS, CHANNEL_LABEL, LAYER_PRECEDENCE, layerBadge, lockTreatmentOf,
   ruleLabel, maskPreview, reversibleOf, strictness,
   type Layer, type Rule, type FieldResolution, type LayerView, type ChannelView, type RulePatch,
+  type RuleGroupView, type GroupState,
 } from "@/lib/masking";
 
 export type { RulePatch } from "@/lib/masking";
@@ -24,7 +25,7 @@ function err(name: string, message: string, extra?: Record<string, unknown>) {
   return Object.assign(new Error(message), { name, ...(extra ?? {}) });
 }
 
-type LayerRow = { id: string; layer: string; source: string | null; family: string; paramsJson: string; locked: boolean; citation: string | null };
+type LayerRow = { id: string; layer: string; source: string | null; family: string; paramsJson: string; locked: boolean; systemRegulated: boolean; citation: string | null };
 type ChannelRow = { layer: string; channel: string; family: string; paramsJson: string };
 
 const ruleOf = (r: { family: string; paramsJson: string }): Rule => ({ family: r.family, params: decodeObject<Record<string, unknown>>(r.paramsJson) ?? {} });
@@ -40,15 +41,21 @@ interface FieldBundle {
 }
 
 function resolveBundle(f: FieldBundle): FieldResolution {
-  const layers = [...f.layerRules].sort((a, b) => (LAYER_PRECEDENCE[b.layer as Layer] ?? 0) - (LAYER_PRECEDENCE[a.layer as Layer] ?? 0));
-  const winning = layers[0] ?? null;
+  const prec = (l: LayerRow) => LAYER_PRECEDENCE[l.layer as Layer] ?? 0;
+  const layers = [...f.layerRules].sort((a, b) => prec(b) - prec(a));
+  const topPrec = layers.length ? prec(layers[0]) : -1;
+  const topRows = layers.filter((l) => prec(l) === topPrec);
+  // Two non-BASELINE templates claiming one code is a resolver error, never a pick.
+  const ambiguous = topRows.length > 1 && topPrec > 0;
+  const winning = ambiguous ? null : layers[0] ?? null;
 
   const chain: LayerView[] = layers.map((l) => {
     const rule = ruleOf(l);
     return {
       layer: l.layer, source: l.source, family: l.family, params: rule.params,
       label: ruleLabel(rule), preview: f.sampleValue ? maskPreview(rule, f.sampleValue) : ruleLabel(rule),
-      locked: l.locked, citation: l.citation, won: !!winning && l.id === winning.id,
+      locked: l.locked, systemRegulated: l.systemRegulated, citation: l.citation,
+      won: !!winning && l.id === winning.id,
     };
   });
 
@@ -63,10 +70,14 @@ function resolveBundle(f: FieldBundle): FieldResolution {
     effective = { family: winRule.family, params: winRule.params, label: ruleLabel(winRule), preview: f.sampleValue ? maskPreview(winRule, f.sampleValue) : ruleLabel(winRule), reversible: reversibleOf(winRule.family) };
     citation = winning.citation;
 
-    // "stricter" if a tenant winner is strictly stricter than the layer beneath it.
-    const below = layers[1] ?? null;
+    const below = layers.find((l) => prec(l) < prec(winning)) ?? null;
     const stricter = winning.layer === "tenant" && !!below && strictness(winRule) > strictness(ruleOf(below));
-    governedBy = { layer: winning.layer, source: winning.source, badge: layerBadge(winning.layer, winning.source), locked: winning.locked, stricter, stricterOver: stricter && below ? layerBadge(below.layer, below.source) : null };
+    governedBy = {
+      layer: winning.layer, source: winning.source, badge: layerBadge(winning.layer, winning.source),
+      locked: winning.locked, systemRegulated: winning.systemRegulated,
+      treatment: lockTreatmentOf(winning.layer, winning.locked, winning.systemRegulated),
+      stricter, stricterOver: stricter && below ? layerBadge(below.layer, below.source) : null,
+    };
 
     for (const c of CHANNEL_KEYS) {
       const override = f.channelRules.find((cr) => cr.layer === winning.layer && cr.channel === c);
@@ -85,10 +96,17 @@ function resolveBundle(f: FieldBundle): FieldResolution {
     .filter((e) => !e.expiresAt || e.expiresAt.getTime() > now)
     .map((e) => ({ id: e.id, role: e.role, purpose: e.purpose, durationMinutes: e.durationMinutes, approvedBy: e.approvedBy, expiresAt: e.expiresAt ? e.expiresAt.toISOString().slice(0, 16).replace("T", " ") : null }));
 
+  const status: FieldResolution["status"] = ambiguous ? "ambiguous" : winning ? "resolved" : "no_rule";
+  // Each field counts once, under its winning source; anything unresolved is "attention".
+  const winningSource: FieldResolution["winningSource"] =
+    status !== "resolved" ? "attention" : (winning!.layer as "baseline" | "regional" | "tenant");
+
   return {
     code: f.code, name: f.name, sensitivity: f.sensitivity, sampleValue: f.sampleValue,
     detectionPattern: f.detectionPattern, dataElementRef: f.dataElementRef,
-    hasRule: !!winning, effective, governedBy, citation, chain, channels, overrideCount,
+    hasRule: !!winning, status,
+    ambiguity: ambiguous ? { sources: topRows.map((l) => layerBadge(l.layer, l.source)) } : null,
+    effective, governedBy, citation, winningSource, chain, channels, overrideCount,
     exceptions, pendingChangeId: f.pendingChangeId, createdBy: f.createdBy,
   };
 }
@@ -142,20 +160,31 @@ export async function getInventory(): Promise<InventoryRow[]> {
   });
 }
 
-export interface Coverage { total: number; baseline: number; regional: number; tenant: number; noRule: number; pending: number }
+export interface Coverage { total: number; baseline: number; regional: number; tenant: number; attention: number; pending: number }
 
-export async function getCoverage(rows: InventoryRow[]): Promise<Coverage> {
-  const counts = await db.maskingLayerRule.groupBy({ by: ["layer"], _count: true });
-  const byLayer = (l: string) => counts.find((c) => c.layer === l)?._count ?? 0;
+/**
+ * Coverage tiles reconcile: each field is counted ONCE under its winning source,
+ * and anything that cannot be assigned to exactly one source (no rule, or an
+ * ambiguity) lands in "attention" — never double-counted. baseline + regional +
+ * tenant + attention === total.
+ */
+export function getCoverage(rows: InventoryRow[]): Coverage {
+  const by = (s: string) => rows.filter((r) => r.winningSource === s).length;
   return {
     total: rows.length,
-    baseline: byLayer("baseline"), regional: byLayer("regional"), tenant: byLayer("tenant"),
-    noRule: rows.filter((r) => !r.hasRule).length,
+    baseline: by("baseline"), regional: by("regional"), tenant: by("tenant"),
+    attention: by("attention"),
     pending: rows.filter((r) => r.pendingChangeId).length,
   };
 }
 
 // --- Collision + change requests for the drawer -----------------------------
+
+/** The regional templates this tenant is associated with (distinct sources). */
+export async function associatedRegionalTemplates(): Promise<{ name: string }[]> {
+  const rows = await db.maskingLayerRule.findMany({ where: { layer: "regional", source: { not: null } }, distinct: ["source"], select: { source: true } });
+  return rows.filter((r) => r.source).map((r) => ({ name: `${r.source} template` }));
+}
 
 export interface Collision { templateName: string; source: string; ruleLabel: string }
 
@@ -365,6 +394,125 @@ export async function withdrawProposal(id: string, actor: AuditActor) {
     { actor, action: "masking.change_rejected", targetType: "MaskingField", targetId: cr.fieldCode, eventDescription: `Withdrew the proposed change to ${cr.fieldCode}`, payload: { code: cr.fieldCode, withdrawn: true } },
     (tx) => tx.maskingChangeRequest.update({ where: { id }, data: { status: "rejected", decidedBy: actor.label, decidedAt: new Date(), decisionNote: "Withdrawn by proposer." } }),
   );
+}
+
+/** Unlock a tenant self-locked rule (never a SYSTEM-regulated or governed one). */
+export async function unlockSelfLocked(code: string, actor: AuditActor) {
+  const rule = await db.maskingLayerRule.findFirst({ where: { fieldCode: code, layer: "tenant" } });
+  if (!rule) throw err("NotFoundError", "No tenant rule to unlock.");
+  if (rule.systemRegulated) throw err("ForbiddenError", "A SYSTEM-regulated rule can never be unlocked.");
+  if (!rule.locked) throw err("ValidationError", "This rule is not locked.");
+  return audited(
+    { actor, action: "masking.self_unlocked", targetType: "MaskingField", targetId: code, eventDescription: `Unlocked the self-locked rule on ${code}`, payload: { code } },
+    (tx) => tx.maskingLayerRule.update({ where: { id: rule.id }, data: { locked: false } }),
+  );
+}
+
+// --- Rule groups (apply one rule to many fields) ----------------------------
+
+function rulesEqual(a: Rule, b: Rule): boolean {
+  return a.family === b.family && encodeObject(a.params) === encodeObject(b.params);
+}
+
+export interface GroupMemberValidation { code: string; eligible: boolean; reason: string | null; source: string }
+
+/**
+ * Pre-validate members BEFORE the atomic bulk. A SYSTEM-regulated field may join
+ * only with an exact match to its regulating rule; an ambiguous field cannot join.
+ */
+export async function validateGroupMembers(family: string, params: Record<string, unknown>, codes: string[]): Promise<GroupMemberValidation[]> {
+  const def: Rule = { family, params };
+  const out: GroupMemberValidation[] = [];
+  for (const code of codes) {
+    const bundle = await loadBundle(code.toUpperCase());
+    if (!bundle) { out.push({ code, eligible: false, reason: "No such field.", source: "—" }); continue; }
+    const res = resolveBundle(bundle);
+    const sys = bundle.layerRules.find((l) => l.systemRegulated);
+    if (res.status === "ambiguous") { out.push({ code, eligible: false, reason: `Ambiguous — two regional templates claim this code (${res.ambiguity?.sources.join(", ")}).`, source: "Needs attention" }); continue; }
+    if (sys) {
+      if (!rulesEqual(ruleOf(sys), def)) { out.push({ code, eligible: false, reason: `SYSTEM-regulated — only an exact match to ${ruleLabel(ruleOf(sys))} may join.`, source: layerBadge(sys.layer, sys.source) }); continue; }
+    }
+    out.push({ code, eligible: true, reason: null, source: res.governedBy?.badge ?? "—" });
+  }
+  return out;
+}
+
+export interface CreateGroupInput { name: string; family: string; params: Record<string, unknown>; memberCodes: string[] }
+
+/** Create a group and materialize one tenant rule per member in ONE atomic call. */
+export async function createAndApplyGroup(input: CreateGroupInput, actor: AuditActor) {
+  if (!input.name.trim()) throw err("ValidationError", "Name the group.");
+  if (input.memberCodes.length === 0) throw err("ValidationError", "Add at least one field.");
+  const validation = await validateGroupMembers(input.family, input.params, input.memberCodes);
+  const bad = validation.filter((v) => !v.eligible);
+  if (bad.length > 0) {
+    throw err("BulkValidationError", `Bulk apply is all-or-nothing and ${bad.length} field(s) can't take this rule: ${bad.map((b) => `${b.code} (${b.reason})`).join("; ")}`, { offenders: bad });
+  }
+  return audited(
+    { actor, action: "masking.group_applied", targetType: "MaskingRuleGroup", targetId: input.name.trim(), eventDescription: `Applied group "${input.name.trim()}" (${ruleLabel({ family: input.family, params: input.params })}) to ${input.memberCodes.length} fields`, payload: { name: input.name.trim(), rule: ruleLabel({ family: input.family, params: input.params }), members: input.memberCodes } },
+    async (tx) => {
+      const group = await tx.maskingRuleGroup.create({ data: { name: input.name.trim(), family: input.family, paramsJson: encodeObject(input.params), memberCodesJson: encodeObject(input.memberCodes), createdBy: actor.label } });
+      for (const code of input.memberCodes) {
+        const existing = await tx.maskingLayerRule.findFirst({ where: { fieldCode: code, layer: "tenant" } });
+        if (existing) await tx.maskingLayerRule.update({ where: { id: existing.id }, data: { family: input.family, paramsJson: encodeObject(input.params) } });
+        else await tx.maskingLayerRule.create({ data: { fieldCode: code, layer: "tenant", family: input.family, paramsJson: encodeObject(input.params) } });
+      }
+      return group;
+    },
+  );
+}
+
+/** Re-apply a group's definition to every member, atomically (fixes divergence). */
+export async function reapplyGroup(id: string, actor: AuditActor) {
+  const group = await db.maskingRuleGroup.findUnique({ where: { id } });
+  if (!group) throw err("NotFoundError", "That group no longer exists.");
+  const codes = decodeObject<string[]>(group.memberCodesJson) ?? [];
+  const params = decodeObject<Record<string, unknown>>(group.paramsJson) ?? {};
+  const validation = await validateGroupMembers(group.family, params, codes);
+  const bad = validation.filter((v) => !v.eligible);
+  if (bad.length > 0) throw err("BulkValidationError", `${bad.length} field(s) can't take this rule: ${bad.map((b) => `${b.code} (${b.reason})`).join("; ")}`, { offenders: bad });
+  return audited(
+    { actor, action: "masking.group_applied", targetType: "MaskingRuleGroup", targetId: group.name, eventDescription: `Re-applied group "${group.name}" to ${codes.length} fields`, payload: { name: group.name, members: codes } },
+    async (tx) => {
+      for (const code of codes) {
+        const existing = await tx.maskingLayerRule.findFirst({ where: { fieldCode: code, layer: "tenant" } });
+        if (existing) await tx.maskingLayerRule.update({ where: { id: existing.id }, data: { family: group.family, paramsJson: group.paramsJson } });
+        else await tx.maskingLayerRule.create({ data: { fieldCode: code, layer: "tenant", family: group.family, paramsJson: group.paramsJson } });
+      }
+    },
+  );
+}
+
+export async function detachField(id: string, code: string, actor: AuditActor) {
+  const group = await db.maskingRuleGroup.findUnique({ where: { id } });
+  if (!group) throw err("NotFoundError", "That group no longer exists.");
+  const codes = (decodeObject<string[]>(group.memberCodesJson) ?? []).filter((c) => c !== code);
+  return audited(
+    { actor, action: "masking.group_detached", targetType: "MaskingRuleGroup", targetId: group.name, eventDescription: `Detached ${code} from group "${group.name}"`, payload: { name: group.name, code } },
+    (tx) => tx.maskingRuleGroup.update({ where: { id }, data: { memberCodesJson: encodeObject(codes) } }),
+  );
+}
+
+/** Groups with derived state (in_sync | diverged) and each member's effective source. */
+export async function getRuleGroups(): Promise<RuleGroupView[]> {
+  const groups = await db.maskingRuleGroup.findMany({ orderBy: { createdAt: "desc" } });
+  const allCodes = [...new Set(groups.flatMap((g) => decodeObject<string[]>(g.memberCodesJson) ?? []))];
+  const tenantRules = allCodes.length ? await db.maskingLayerRule.findMany({ where: { fieldCode: { in: allCodes }, layer: "tenant" } }) : [];
+  const tenantByCode = new Map(tenantRules.map((r) => [r.fieldCode, r]));
+  return groups.map((g) => {
+    const codes = decodeObject<string[]>(g.memberCodesJson) ?? [];
+    const params = decodeObject<Record<string, unknown>>(g.paramsJson) ?? {};
+    const def: Rule = { family: g.family, params };
+    const diverged = codes.filter((c) => { const r = tenantByCode.get(c); return !r || !rulesEqual(ruleOf(r), def); });
+    const state: GroupState = diverged.length ? "diverged" : "in_sync";
+    return { id: g.id, name: g.name, family: g.family, params, label: ruleLabel(def), memberCodes: codes, memberCount: codes.length, state, divergedCodes: diverged, createdBy: g.createdBy };
+  });
+}
+
+/** Fields eligible to be a group member (all fields, for the create picker). */
+export async function listFieldCodes(): Promise<{ code: string; name: string }[]> {
+  const fields = await db.maskingField.findMany({ orderBy: { code: "asc" }, select: { code: true, name: true } });
+  return fields;
 }
 
 /** Expire past-due exceptions and log each — automatic system behaviour, no actor. */

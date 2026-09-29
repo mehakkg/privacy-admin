@@ -3816,3 +3816,6 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 
 /* Rule library control-type chip, active state */
 .filter-chip.on { background: var(--blue); color: #fff; border-color: var(--blue); }
+
+/* Slim, non-dismissible enforcement strip (Protection rules) */
+.mask-enforce-strip { background: var(--yellow-bg); border: 1px solid var(--yellow-border); border-radius: var(--radius-md); padding: 7px 12px; font-size: 13px; }

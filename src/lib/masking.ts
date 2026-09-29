@@ -160,7 +160,9 @@ function maskMiddle(value: string, first: number, last: number, ch: string): str
   const len = value.length;
   return value
     .split("")
-    .map((c, i) => (i < first || i >= len - last ? c : ch))
+    // Reveal the first/last window; keep separators (dashes, spaces) so a grouped
+    // identifier stays legible, e.g. "2345-1234-9012" → "xxxx-xxxx-9012".
+    .map((c, i) => (i < first || i >= len - last || /[^A-Za-z0-9]/.test(c) ? c : ch))
     .join("");
 }
 
@@ -230,6 +232,40 @@ export function formatRelative(date: Date): string {
 
 // --- Resolution result shape ------------------------------------------------
 
+// --- Lock treatments --------------------------------------------------------
+
+export type LockTreatment = "system" | "self" | "governed" | "none";
+
+/**
+ * How a winning rule is locked, which decides the drawer treatment:
+ *  - system   → SUPER_ADMIN permanent floor (Aadhaar/PAN/ABHA): no action at all.
+ *  - self     → the tenant's own locked item: an Unlock action is offered.
+ *  - governed → a regional/baseline rule: read-only, changes are DPO proposals.
+ *  - none     → the tenant's own editable rule.
+ */
+export function lockTreatmentOf(layer: string, locked: boolean, systemRegulated: boolean): LockTreatment {
+  if (systemRegulated) return "system";
+  if (layer === "tenant") return locked ? "self" : "none";
+  return locked ? "governed" : "governed"; // regional/baseline are always governed
+}
+
+// --- Rule groups ------------------------------------------------------------
+
+export type GroupState = "in_sync" | "diverged";
+
+export interface RuleGroupView {
+  id: string;
+  name: string;
+  family: string;
+  params: Record<string, unknown>;
+  label: string;
+  memberCodes: string[];
+  memberCount: number;
+  state: GroupState;
+  divergedCodes: string[];
+  createdBy: string | null;
+}
+
 /** A single rule change within a proposal/edit: a layer's default (channel null) or one channel. */
 export interface RulePatch {
   layer: string;
@@ -246,6 +282,7 @@ export interface LayerView {
   label: string;
   preview: string;
   locked: boolean;
+  systemRegulated: boolean;
   citation: string | null;
   won: boolean;
 }
@@ -278,10 +315,16 @@ export interface FieldResolution {
   detectionPattern: string | null;
   dataElementRef: string | null;
   hasRule: boolean;
+  /** resolved | ambiguous (two non-BASELINE templates) | no_rule. */
+  status: "resolved" | "ambiguous" | "no_rule";
+  /** Present only when status === "ambiguous": the colliding sources. */
+  ambiguity: { sources: string[] } | null;
   /** The winning layer's default rule. */
   effective: { family: string; params: Record<string, unknown>; label: string; preview: string; reversible: boolean } | null;
-  governedBy: { layer: string; source: string | null; badge: string; locked: boolean; stricter: boolean; stricterOver: string | null } | null;
+  governedBy: { layer: string; source: string | null; badge: string; locked: boolean; systemRegulated: boolean; treatment: LockTreatment; stricter: boolean; stricterOver: string | null } | null;
   citation: string | null;
+  /** The winning-source bucket for the coverage tiles: each field counted once. */
+  winningSource: "baseline" | "regional" | "tenant" | "attention";
   chain: LayerView[];
   channels: ChannelView[];
   overrideCount: number;

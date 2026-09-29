@@ -50,7 +50,7 @@ export function AddFieldDrawer({ closeHref }: { closeHref: string }) {
     const r = await createFieldAction({ code: normalized, name, sensitivity, detectionPattern: pattern, dataElementRef: elementRef, sampleValue, defaultRule: { family: rule.family, params: rule.params }, channelOverrides });
     setResult(r);
     setBusy(false);
-    if (r.ok) router.push(`/masking?field=${encodeURIComponent(normalized)}&created=1`);
+    if (r.ok) router.push(`/data-flow/protection-rules?tab=by-field&field=${encodeURIComponent(normalized)}&created=1`);
   };
 
   return (
@@ -77,7 +77,7 @@ export function AddFieldDrawer({ closeHref }: { closeHref: string }) {
                   <div className="row" style={{ gap: 6, alignItems: "flex-start" }}>
                     <AlertTriangle size={14} style={{ color: "var(--red)", marginTop: 2 }} />
                     <span>{normalized} is already governed by the {collision.templateName}{collision.ruleLabel ? `. Its rule is ${collision.ruleLabel}.` : "."} Your tenant rule can only be equal or stricter.
-                      {" "}<Link href={`/masking?field=${normalized}`} className="row-link"><Pencil size={11} style={{ verticalAlign: -1 }} /> Edit that item instead</Link>
+                      {" "}<Link href={`/data-flow/protection-rules?tab=by-field&field=${normalized}`} className="row-link"><Pencil size={11} style={{ verticalAlign: -1 }} /> Edit that item instead</Link>
                     </span>
                   </div>
                 </div>

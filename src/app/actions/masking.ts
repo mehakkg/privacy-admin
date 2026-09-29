@@ -5,7 +5,8 @@ import { getSession } from "@/lib/session";
 import {
   createField, editTenantRule, proposeChange, proposeException,
   decideChange, withdrawProposal, checkCodeCollision,
-  type CreateFieldInput, type RulePatch, type Collision,
+  unlockSelfLocked, createAndApplyGroup, reapplyGroup, detachField, validateGroupMembers,
+  type CreateFieldInput, type RulePatch, type Collision, type CreateGroupInput, type GroupMemberValidation,
 } from "@/lib/engines/masking";
 
 /**
@@ -28,9 +29,9 @@ function fail(e: unknown): MaskingActionResult {
 }
 
 function touch() {
+  revalidatePath("/data-flow/protection-rules", "layout");
   revalidatePath("/masking", "layout");
-  revalidatePath("/masking/audit", "layout");
-  revalidatePath("/masking/rules", "layout");
+  revalidatePath("/audit", "layout");
 }
 
 export async function createFieldAction(input: CreateFieldInput): Promise<MaskingActionResult> {
@@ -65,4 +66,29 @@ export async function withdrawProposalAction(id: string): Promise<MaskingActionR
 
 export async function checkCollisionAction(code: string): Promise<{ collision: Collision | null }> {
   return { collision: await checkCodeCollision(code) };
+}
+
+export async function unlockSelfLockedAction(code: string): Promise<MaskingActionResult> {
+  const { actor } = await getSession();
+  try { await unlockSelfLocked(code, actor); touch(); return { ok: true }; } catch (e) { return fail(e); }
+}
+
+export async function createGroupAction(input: CreateGroupInput): Promise<MaskingActionResult> {
+  const { actor } = await getSession();
+  try { await createAndApplyGroup(input, actor); touch(); return { ok: true }; } catch (e) { return fail(e); }
+}
+
+export async function reapplyGroupAction(id: string): Promise<MaskingActionResult> {
+  const { actor } = await getSession();
+  try { await reapplyGroup(id, actor); touch(); return { ok: true }; } catch (e) { return fail(e); }
+}
+
+export async function detachFieldAction(id: string, code: string): Promise<MaskingActionResult> {
+  const { actor } = await getSession();
+  try { await detachField(id, code, actor); touch(); return { ok: true }; } catch (e) { return fail(e); }
+}
+
+/** Live pre-validation for the group create form. */
+export async function validateGroupAction(family: string, params: Record<string, unknown>, codes: string[]): Promise<{ members: GroupMemberValidation[] }> {
+  return { members: await validateGroupMembers(family, params, codes) };
 }

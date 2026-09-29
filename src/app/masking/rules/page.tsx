@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-/** The masking rule library merged into the single Rule library, filtered to masking. */
+/** Masking rule library merged into Protection rules › Library, filtered to masking. */
 export default function MaskingRulesRedirect() {
-  redirect("/data-flow/protection-rules/library?type=masking");
+  redirect("/data-flow/protection-rules?tab=library&type=masking");
 }
