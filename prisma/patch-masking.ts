@@ -20,8 +20,10 @@ async function reconcileLocks() {
   await prisma.maskingLayerRule.updateMany({ where: { fieldCode: "WALLET_ID", layer: "tenant" }, data: { locked: true } });
 }
 
-/** Two fields with NO rule at any layer — the gap-first "needs attention" demo. */
+/** Two canonical NO-rule fields — the gap-first "needs attention" demo. Kept
+ *  rule-less on every deploy so the demo state survives interactions. */
 async function ensureNoRuleFields() {
+  const codes = ["MARKETING_TAG", "SUPPORT_NOTE"];
   await prisma.maskingField.createMany({
     data: [
       { code: "MARKETING_TAG", name: "Marketing tag", sensitivity: "Internal", sampleValue: "mtag_5590" },
@@ -29,6 +31,8 @@ async function ensureNoRuleFields() {
     ],
     skipDuplicates: true,
   });
+  await prisma.maskingChannelRule.deleteMany({ where: { fieldCode: { in: codes } } });
+  await prisma.maskingLayerRule.deleteMany({ where: { fieldCode: { in: codes } } });
 }
 
 async function main() {
