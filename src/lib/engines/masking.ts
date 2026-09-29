@@ -6,8 +6,9 @@ import {
   CHANNEL_KEYS, CHANNEL_LABEL, LAYER_PRECEDENCE, layerBadge, lockTreatmentOf,
   ruleLabel, maskPreview, reversibleOf, strictness,
   type Layer, type Rule, type FieldResolution, type LayerView, type ChannelView, type RulePatch,
-  type RuleGroupView, type GroupState, type PlanRow,
+  type RuleGroupView, type GroupState, type PlanRow, type TemplateView,
 } from "@/lib/masking";
+export type { TemplateView } from "@/lib/masking";
 
 export type { RulePatch } from "@/lib/masking";
 
@@ -30,6 +31,36 @@ type ChannelRow = { layer: string; channel: string; family: string; paramsJson: 
 
 const ruleOf = (r: { family: string; paramsJson: string }): Rule => ({ family: r.family, params: decodeObject<Record<string, unknown>>(r.paramsJson) ?? {} });
 
+/** The set of regional template sources currently associated (participating in resolution). */
+export async function activeRegionalSet(): Promise<Set<string>> {
+  const rows = await db.maskingTemplate.findMany({ where: { kind: "regional", associated: true }, select: { key: true } });
+  return new Set(rows.map((r) => r.key));
+}
+
+/** Templates with their field counts, for the By-field template switcher. */
+export async function getTemplates(): Promise<TemplateView[]> {
+  const [templates, counts] = await Promise.all([
+    db.maskingTemplate.findMany({ orderBy: { sortOrder: "asc" } }),
+    db.maskingLayerRule.groupBy({ by: ["layer", "source"], _count: true }),
+  ]);
+  const countFor = (t: { key: string; kind: string }) =>
+    t.kind === "baseline"
+      ? counts.filter((c) => c.layer === "baseline").reduce((n, c) => n + (c._count ?? 0), 0)
+      : counts.filter((c) => c.layer === "regional" && c.source === t.key).reduce((n, c) => n + (c._count ?? 0), 0);
+  return templates.map((t) => ({ key: t.key, name: t.name, kind: t.kind as "baseline" | "regional", associated: t.associated, fields: countFor(t) }));
+}
+
+/** Associate or dissociate a regional template (BASELINE is always on). Audited. */
+export async function setTemplateAssociation(key: string, associated: boolean, actor: AuditActor) {
+  const t = await db.maskingTemplate.findUnique({ where: { key } });
+  if (!t) throw err("NotFoundError", "No such template.");
+  if (t.kind === "baseline") throw err("ForbiddenError", "BASELINE is always active and cannot be switched off.");
+  return audited(
+    { actor, action: associated ? "masking.template_associated" : "masking.template_dissociated", targetType: "MaskingTemplate", targetId: key, eventDescription: `${associated ? "Associated" : "Dissociated"} the ${t.name} template`, payload: { key, associated } },
+    (tx) => tx.maskingTemplate.update({ where: { key }, data: { associated } }),
+  );
+}
+
 // --- Resolution -------------------------------------------------------------
 
 interface FieldBundle {
@@ -40,9 +71,14 @@ interface FieldBundle {
   pendingChangeId: string | null;
 }
 
-function resolveBundle(f: FieldBundle): FieldResolution {
+function resolveBundle(f: FieldBundle, activeRegional?: Set<string>): FieldResolution {
   const prec = (l: LayerRow) => LAYER_PRECEDENCE[l.layer as Layer] ?? 0;
-  const layers = [...f.layerRules].sort((a, b) => prec(b) - prec(a));
+  // A regional rule participates only while its template is associated. Baseline
+  // and tenant layers always participate.
+  const participating = activeRegional
+    ? f.layerRules.filter((l) => l.layer !== "regional" || (l.source != null && activeRegional.has(l.source)))
+    : f.layerRules;
+  const layers = [...participating].sort((a, b) => prec(b) - prec(a));
   const topPrec = layers.length ? prec(layers[0]) : -1;
   const topRows = layers.filter((l) => prec(l) === topPrec);
   // Two non-BASELINE templates claiming one code is a resolver error, never a pick.
@@ -126,8 +162,8 @@ async function loadBundle(code: string): Promise<FieldBundle | null> {
 }
 
 export async function resolveField(code: string): Promise<FieldResolution | null> {
-  const b = await loadBundle(code.trim().toUpperCase());
-  return b ? resolveBundle(b) : null;
+  const [b, active] = await Promise.all([loadBundle(code.trim().toUpperCase()), activeRegionalSet()]);
+  return b ? resolveBundle(b, active) : null;
 }
 
 export interface InventoryRow extends FieldResolution {
@@ -140,12 +176,13 @@ export interface InventoryRow extends FieldResolution {
 
 export async function getInventory(): Promise<InventoryRow[]> {
   await expireDueExceptions();
-  const [fields, groups] = await Promise.all([
+  const [fields, groups, active] = await Promise.all([
     db.maskingField.findMany({
       include: { layerRules: true, channelRules: true, exceptions: true, changeRequests: { where: { status: "pending" } } },
       orderBy: { code: "asc" },
     }),
     getRuleGroups(),
+    activeRegionalSet(),
   ]);
   const divergedCodes = new Set(groups.flatMap((g) => g.divergedCodes));
   // One pass over masking audit entries for "last change" per field.
@@ -163,7 +200,7 @@ export async function getInventory(): Promise<InventoryRow[]> {
       detectionPattern: f.detectionPattern, dataElementRef: f.dataElementRef, createdBy: f.createdBy,
       layerRules: f.layerRules, channelRules: f.channelRules, exceptions: f.exceptions,
       pendingChangeId: f.changeRequests[0]?.id ?? null,
-    });
+    }, active);
     const diverged = divergedCodes.has(f.code);
     const needsAttention = res.winningSource === "attention" || !!res.pendingChangeId || diverged;
     return { ...res, lastChange: last.get(f.code) ?? null, diverged, needsAttention };
@@ -432,11 +469,12 @@ export interface GroupMemberValidation { code: string; eligible: boolean; reason
  */
 export async function validateGroupMembers(family: string, params: Record<string, unknown>, codes: string[]): Promise<GroupMemberValidation[]> {
   const def: Rule = { family, params };
+  const active = await activeRegionalSet();
   const out: GroupMemberValidation[] = [];
   for (const code of codes) {
     const bundle = await loadBundle(code.toUpperCase());
     if (!bundle) { out.push({ code, eligible: false, reason: "No such field.", source: "—" }); continue; }
-    const res = resolveBundle(bundle);
+    const res = resolveBundle(bundle, active);
     const sys = bundle.layerRules.find((l) => l.systemRegulated);
     if (res.status === "ambiguous") { out.push({ code, eligible: false, reason: `Ambiguous — two regional templates claim this code (${res.ambiguity?.sources.join(", ")}).`, source: "Needs attention" }); continue; }
     if (sys) {
@@ -526,11 +564,12 @@ export type { PlanRow } from "@/lib/masking";
 /** Per-field outcome of applying one rule: apply now / needs approval / blocked. */
 export async function planRuleForFields(family: string, params: Record<string, unknown>, codes: string[]): Promise<PlanRow[]> {
   const def: Rule = { family, params };
+  const active = await activeRegionalSet();
   const out: PlanRow[] = [];
   for (const code of codes) {
     const bundle = await loadBundle(code.toUpperCase());
     if (!bundle) { out.push({ code, name: code, currentSource: "—", outcome: "blocked", reason: "No such field." }); continue; }
-    const res = resolveBundle(bundle);
+    const res = resolveBundle(bundle, active);
     const currentSource = res.status === "ambiguous" ? "Ambiguous" : res.governedBy?.badge ?? "No rule";
     const push = (outcome: PlanRow["outcome"], reason: string | null) => out.push({ code, name: bundle.name, currentSource, outcome, reason });
 

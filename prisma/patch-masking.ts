@@ -20,6 +20,20 @@ async function reconcileLocks() {
   await prisma.maskingLayerRule.updateMany({ where: { fieldCode: "WALLET_ID", layer: "tenant" }, data: { locked: true } });
 }
 
+/** The templates the tenant can switch. BASELINE always on; DPDP + RBI associated
+ *  by default (as if chosen at onboarding). skipDuplicates so a later admin toggle
+ *  is not overwritten on redeploy. */
+async function ensureTemplates() {
+  await prisma.maskingTemplate.createMany({
+    data: [
+      { key: "BASELINE", name: "BASELINE", kind: "baseline", associated: true, sortOrder: 0 },
+      { key: "DPDP", name: "DPDP", kind: "regional", associated: true, sortOrder: 1 },
+      { key: "RBI", name: "RBI", kind: "regional", associated: true, sortOrder: 2 },
+    ],
+    skipDuplicates: true,
+  });
+}
+
 /** Two canonical NO-rule fields — kept rule-less on every deploy. */
 async function ensureNoRuleFields() {
   const codes = ["MARKETING_TAG", "SUPPORT_NOTE"];
@@ -36,9 +50,10 @@ async function ensureNoRuleFields() {
 
 async function main() {
   if (!process.env.DATABASE_URL) { console.log("patch-masking: no DATABASE_URL, skipping."); return; }
+  await ensureTemplates();
   if (await prisma.maskingField.findUnique({ where: { code: "PHONE_NUMBER" } })) {
     await reconcileLocks(); await ensureNoRuleFields();
-    console.log("patch-masking: canonical fixtures present; reconciled locks + no-rule fields.");
+    console.log("patch-masking: canonical fixtures present; ensured templates, reconciled locks + no-rule fields.");
     return;
   }
 

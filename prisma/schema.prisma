@@ -1552,6 +1552,18 @@ model ProtectionRuleTemplate {
 // rule (the historical rule_unlocked entry stays, but nothing produces it).
 // ---------------------------------------------------------------------------
 
+/// A masking template the tenant can associate. BASELINE is always active; a
+/// regional template (DPDP, RBI) governs only while `associated`. Switching a
+/// template on/off changes which regional rules participate in resolution.
+model MaskingTemplate {
+  key        String  @id
+  name       String
+  /// baseline | regional
+  kind       String
+  associated Boolean @default(false)
+  sortOrder  Int     @default(0)
+}
+
 /// A field — the thing being masked. `code` is the natural key rules point at,
 /// and what the Add-field collision check runs against.
 model MaskingField {

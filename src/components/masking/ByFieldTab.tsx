@@ -4,7 +4,8 @@ import { type PillTone } from "@/components/ui";
 import { PolicyFilters } from "@/components/masking/PolicyFilters";
 import { FieldInventory, type InventoryRowView } from "@/components/masking/FieldInventory";
 import type { CatalogField } from "@/components/masking/CreateRuleModal";
-import { getInventory, getCoverage, type InventoryRow } from "@/lib/engines/masking";
+import { TemplateSwitcher } from "@/components/masking/TemplateSwitcher";
+import { getInventory, getCoverage, getTemplates, type InventoryRow } from "@/lib/engines/masking";
 import { CHANNEL_LABEL, FAMILY_LABEL, formatRelative } from "@/lib/masking";
 
 const GOVERNED_TONE: Record<string, PillTone> = { baseline: "red", regional: "gray", tenant: "purple" };
@@ -25,7 +26,7 @@ function matchGoverned(row: InventoryRow, gb: string): boolean {
  * "Fields" tile shows everything. Selection + the sticky bar start rule creation.
  */
 export async function ByFieldTab({ sp }: { sp: ByFieldSP }) {
-  const rows = await getInventory();
+  const [rows, templates] = await Promise.all([getInventory(), getTemplates()]);
   const coverage = getCoverage(rows);
   const attn = {
     total: rows.filter((r) => r.needsAttention).length,
@@ -35,10 +36,10 @@ export async function ByFieldTab({ sp }: { sp: ByFieldSP }) {
     pending: rows.filter((r) => r.pendingChangeId).length,
   };
 
-  const hasExplicit = !!(sp.q || sp.family || sp.governedBy || sp.sensitivity || sp.channel || sp.status);
   let filtered = rows;
-  // Gap-first: with no explicit filter, show only fields that need attention.
-  if (!hasExplicit || sp.status === "attention") filtered = filtered.filter((r) => r.needsAttention);
+  // Default shows the full applied-rules list (BASELINE + any associated templates);
+  // "needs attention" is an explicit filter, not the default.
+  if (sp.status === "attention") filtered = filtered.filter((r) => r.needsAttention);
   if (sp.status === "norule") filtered = filtered.filter((r) => r.status === "no_rule");
   if (sp.status === "ambiguous") filtered = filtered.filter((r) => r.status === "ambiguous");
   if (sp.status === "diverged") filtered = filtered.filter((r) => r.diverged);
@@ -92,7 +93,9 @@ export async function ByFieldTab({ sp }: { sp: ByFieldSP }) {
 
   return (
     <>
-      {/* Gap-first attention strip. */}
+      <TemplateSwitcher templates={templates} />
+
+      {/* Attention summary — a prompt, not the default filter. */}
       {attn.total > 0 ? (
         <div className="mask-attn">
           <strong>{attn.total} field{attn.total === 1 ? "" : "s"} need attention</strong>

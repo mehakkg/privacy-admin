@@ -216,6 +216,16 @@ export function lockTreatmentOf(layer: string, locked: boolean, systemRegulated:
   return locked ? "governed" : "governed"; // regional/baseline are always governed
 }
 
+// --- Templates --------------------------------------------------------------
+
+export interface TemplateView {
+  key: string;
+  name: string;
+  kind: "baseline" | "regional";
+  associated: boolean;
+  fields: number;
+}
+
 // --- Rule groups ------------------------------------------------------------
 
 export type GroupState = "in_sync" | "diverged";

@@ -3826,3 +3826,12 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 .mask-attn-chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .mask-selbar { position: sticky; bottom: 12px; display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 10px 14px; border-radius: var(--radius-md); background: var(--surface); border: 1px solid var(--border-strong); box-shadow: 0 6px 20px rgba(0,0,0,0.12); }
 .role-card.sel { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue) inset; }
+
+/* Template switcher (By field) */
+.mask-templates { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--border-soft); border-radius: var(--radius-md); margin-bottom: 14px; }
+.tpl-chip { display: inline-flex; align-items: center; gap: 8px; padding: 4px 8px 4px 10px; border: 1px solid var(--border-soft); border-radius: 999px; }
+.tpl-chip.on { background: var(--bg-selected); border-color: var(--border-strong); }
+.tpl-chip-label { display: inline-flex; align-items: center; gap: 5px; text-decoration: none; color: inherit; font-size: 13px; font-weight: 600; }
+.tpl-chip-label:hover { text-decoration: underline; }
+.tpl-toggle { border: 1px solid var(--border-strong); background: var(--surface); border-radius: 999px; font: inherit; font-size: 12px; padding: 2px 9px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; color: var(--text); }
+.tpl-toggle.on { background: var(--green-bg); border-color: var(--green-border); color: var(--green); }
