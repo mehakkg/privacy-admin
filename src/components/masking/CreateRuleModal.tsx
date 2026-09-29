@@ -93,7 +93,7 @@ export function CreateRuleModal({ catalog, initialSelected, onClose }: { catalog
                       </label>
                     ))}
                   </div>
-                  <Link href="/data-flow/protection-rules?tab=by-field&add=1" className="row-link"><Plus size={12} style={{ verticalAlign: -1 }} /> Field not listed? Add custom field</Link>
+                  <Link href="/data-flow/protection-rules?add=1" className="row-link"><Plus size={12} style={{ verticalAlign: -1 }} /> Field not listed? Add custom field</Link>
                 </div>
               )}
 
@@ -183,7 +183,7 @@ function ResultView({ result, onClose }: { result: SubmitPlanResult; onClose: ()
         <div>
           <div className="row" style={{ gap: 6, marginBottom: 6 }}><Check size={15} style={{ color: "var(--green)" }} /><strong>Applied now ({result.applied.length})</strong></div>
           <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-            {result.applied.map((c) => <Link key={c} href={`/data-flow/protection-rules?tab=by-field&field=${c}`} className="filter-chip" onClick={onClose}>{c}</Link>)}
+            {result.applied.map((c) => <Link key={c} href={`/data-flow/protection-rules?field=${c}`} className="filter-chip" onClick={onClose}>{c}</Link>)}
           </div>
         </div>
       )}
@@ -193,7 +193,7 @@ function ResultView({ result, onClose }: { result: SubmitPlanResult; onClose: ()
           <div className="row" style={{ gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
             {result.proposed.map((c) => <span key={c} className="filter-chip">{c}</span>)}
           </div>
-          <Link href="/data-flow/protection-rules?tab=pending" className="row-link" onClick={onClose}>See Pending changes →</Link>
+          <Link href="/data-flow/protection-rules?status=pending" className="row-link" onClick={onClose}>See Pending changes →</Link>
         </div>
       )}
       {result.applied.length === 0 && result.proposed.length === 0 && <p className="cell-sub">No changes were made.</p>}

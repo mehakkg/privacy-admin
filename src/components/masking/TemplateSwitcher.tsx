@@ -31,7 +31,7 @@ export function TemplateSwitcher({ templates }: { templates: TemplateView[] }) {
     <div className="mask-templates">
       <span className="row" style={{ gap: 6, alignItems: "center", marginRight: 4 }}><Layers size={15} className="muted" /> <strong>Templates</strong></span>
       {templates.map((t) => {
-        const filterHref = `/data-flow/protection-rules?tab=by-field&status=all&governedBy=${t.kind === "baseline" ? "baseline" : t.key}`;
+        const filterHref = `/data-flow/protection-rules?governedBy=${t.kind === "baseline" ? "baseline" : t.key}`;
         return (
           <div key={t.key} className={`tpl-chip${t.associated ? " on" : ""}`}>
             <a href={filterHref} className="tpl-chip-label">

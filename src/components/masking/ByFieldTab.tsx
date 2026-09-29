@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { CheckCircle2, X } from "lucide-react";
-import { type PillTone } from "@/components/ui";
+import { X } from "lucide-react";
 import { PolicyFilters } from "@/components/masking/PolicyFilters";
 import { FieldInventory, type InventoryRowView } from "@/components/masking/FieldInventory";
 import type { CatalogField } from "@/components/masking/CreateRuleModal";
@@ -8,11 +7,10 @@ import { TemplateSwitcher } from "@/components/masking/TemplateSwitcher";
 import { getInventory, getCoverage, getTemplates, type InventoryRow } from "@/lib/engines/masking";
 import { CHANNEL_LABEL, FAMILY_LABEL, formatRelative } from "@/lib/masking";
 
-const GOVERNED_TONE: Record<string, PillTone> = { baseline: "red", regional: "gray", tenant: "purple" };
 const PER_PAGE = 25;
 const BASE = "/data-flow/protection-rules";
 
-export type ByFieldSP = { tab?: string; q?: string; family?: string; governedBy?: string; sensitivity?: string; channel?: string; status?: string; field?: string; add?: string; created?: string; page?: string };
+export type ByFieldSP = { q?: string; family?: string; governedBy?: string; sensitivity?: string; channel?: string; status?: string; group?: string; field?: string; add?: string; created?: string; page?: string };
 
 function matchGoverned(row: InventoryRow, gb: string): boolean {
   if (gb === "baseline" || gb === "regional" || gb === "tenant") return row.winningSource === gb;
@@ -50,6 +48,7 @@ export async function ByFieldTab({ sp }: { sp: ByFieldSP }) {
   if (sp.family) filtered = filtered.filter((r) => r.effective?.family === sp.family || r.channels.some((c) => c.family === sp.family));
   if (sp.governedBy) filtered = filtered.filter((r) => matchGoverned(r, sp.governedBy!));
   if (sp.sensitivity) filtered = filtered.filter((r) => r.sensitivity === sp.sensitivity);
+  if (sp.group) filtered = filtered.filter((r) => r.group === sp.group);
 
   filtered = [...filtered].sort((a, b) => {
     const rank = (r: InventoryRow) => (r.needsAttention ? 0 : 1);
@@ -62,8 +61,9 @@ export async function ByFieldTab({ sp }: { sp: ByFieldSP }) {
 
   const qs = (patch: ByFieldSP) => {
     const next = new URLSearchParams();
-    for (const [k, v] of Object.entries({ ...sp, tab: "by-field", ...patch })) if (v) next.set(k, String(v));
-    return `${BASE}?${next.toString()}`;
+    for (const [k, v] of Object.entries({ ...sp, ...patch })) if (v) next.set(k, String(v));
+    const s = next.toString();
+    return s ? `${BASE}?${s}` : BASE;
   };
   const chipHref = (key: keyof ByFieldSP) => qs({ [key]: undefined, page: undefined } as ByFieldSP);
   const activeFilters: { key: keyof ByFieldSP; label: string }[] = [];
@@ -73,6 +73,7 @@ export async function ByFieldTab({ sp }: { sp: ByFieldSP }) {
   if (sp.sensitivity) activeFilters.push({ key: "sensitivity", label: sp.sensitivity });
   if (sp.channel) activeFilters.push({ key: "channel", label: `Channel: ${CHANNEL_LABEL[sp.channel] ?? sp.channel}` });
   if (sp.status) activeFilters.push({ key: "status", label: `Status: ${sp.status}` });
+  if (sp.group) activeFilters.push({ key: "group", label: `Group: ${sp.group}` });
 
   const chan = sp.channel;
   const rowsView: InventoryRowView[] = pageRows.map((r) => {
@@ -82,8 +83,13 @@ export async function ByFieldTab({ sp }: { sp: ByFieldSP }) {
     return {
       code: r.code, name: r.name, sensitivity: r.sensitivity,
       effLabel, masked: prev ? prev.split(" → ")[1] ?? prev : null,
-      governedBadge: r.governedBy?.badge ?? null, governedTone: r.governedBy ? GOVERNED_TONE[r.governedBy.layer] : "gray",
+      governedBadge: r.governedBy?.badge ?? null,
+      governedLayer: r.governedBy?.layer ?? null,
+      systemRegulated: !!r.governedBy?.systemRegulated,
+      selfLocked: r.governedBy?.treatment === "self",
       pending: !!r.pendingChangeId, stricter: !!r.governedBy?.stricter, overrides: r.overrideCount,
+      group: r.group ?? null,
+      groupHref: r.group ? qs({ group: r.group, field: undefined, status: undefined, page: undefined }) : null,
       lastChange: r.lastChange ? `${r.lastChange.actor} · ${formatRelative(r.lastChange.at)}` : "—",
       attention: r.needsAttention, ambiguous: r.status === "ambiguous",
       href: qs({ field: r.code }),
@@ -95,38 +101,21 @@ export async function ByFieldTab({ sp }: { sp: ByFieldSP }) {
     <>
       <TemplateSwitcher templates={templates} />
 
-      {/* Attention summary — a prompt, not the default filter. */}
-      {attn.total > 0 ? (
-        <div className="mask-attn">
-          <strong>{attn.total} field{attn.total === 1 ? "" : "s"} need attention</strong>
-          <span className="mask-attn-chips">
-            {attn.noRule > 0 && <Link href={qs({ status: "norule", page: undefined })} className="filter-chip">{attn.noRule} no rule</Link>}
-            {attn.ambiguous > 0 && <Link href={qs({ status: "ambiguous", page: undefined })} className="filter-chip">{attn.ambiguous} ambiguous</Link>}
-            {attn.diverged > 0 && <Link href={qs({ status: "diverged", page: undefined })} className="filter-chip">{attn.diverged} diverged</Link>}
-            {attn.pending > 0 && <Link href={qs({ status: "pending", page: undefined })} className="filter-chip">{attn.pending} pending</Link>}
-          </span>
-          <Link href={qs({ status: "all", page: undefined })} className="link-btn" style={{ marginLeft: "auto" }}>Show all fields</Link>
-        </div>
-      ) : (
-        <div className="mask-attn ok"><CheckCircle2 size={16} style={{ color: "var(--green)" }} /> <strong>All fields covered</strong> — every field resolves to a rule, nothing pending or diverged.</div>
-      )}
-
-      {/* Reconciling tiles: each field counted once by winning source. */}
-      <div className="mask-coverage">
-        <Link href={qs({ status: "all", page: undefined, governedBy: undefined, sensitivity: undefined, family: undefined, q: undefined })} className="mask-tile"><div className="mask-tile-label">Fields</div><div className="mask-tile-value">{coverage.total}</div></Link>
-        <div className="mask-tile mask-tile-split">
-          <div className="mask-tile-label">Baseline · regional · tenant</div>
-          <div className="mask-tile-value"><Link href={qs({ status: "all", governedBy: "baseline", page: undefined })}>{coverage.baseline}</Link> · <Link href={qs({ status: "all", governedBy: "regional", page: undefined })}>{coverage.regional}</Link> · <Link href={qs({ status: "all", governedBy: "tenant", page: undefined })}>{coverage.tenant}</Link></div>
-        </div>
-        <Link href={qs({ status: "attention", page: undefined })} className={`mask-tile${coverage.attention > 0 ? " warn" : ""}`}><div className="mask-tile-label">Unresolved (no rule · ambiguous)</div><div className="mask-tile-value">{coverage.attention}</div></Link>
-        <Link href={`${BASE}?tab=pending`} className="mask-tile"><div className="mask-tile-label">Pending DPO approval</div><div className="mask-tile-value">{coverage.pending}</div></Link>
+      {/* Compact hairline stat strip — reconciled (b·r·t·attention sums to Fields). */}
+      <div className="mask-statstrip">
+        <Link href={qs({ status: undefined, governedBy: undefined, sensitivity: undefined, family: undefined, q: undefined, page: undefined })} className="stat-seg"><b>{coverage.total}</b> Fields</Link>
+        <Link href={qs({ governedBy: "baseline", page: undefined })} className="stat-seg"><b>{coverage.baseline}</b> baseline</Link>
+        <Link href={qs({ governedBy: "regional", page: undefined })} className="stat-seg"><b>{coverage.regional}</b> regional</Link>
+        <Link href={qs({ governedBy: "tenant", page: undefined })} className="stat-seg"><b>{coverage.tenant}</b> tenant</Link>
+        <Link href={qs({ status: "attention", page: undefined })} className={`stat-seg${attn.total > 0 ? " warn" : ""}`}><b>{attn.total}</b> need attention</Link>
+        <Link href={qs({ status: "pending", page: undefined })} className="stat-seg"><b>{coverage.pending}</b> pending</Link>
       </div>
 
       <PolicyFilters current={sp as Record<string, string | undefined>} basePath={BASE} />
       {activeFilters.length > 0 && (
         <div className="row" style={{ gap: 6, margin: "10px 0", flexWrap: "wrap", alignItems: "center" }}>
           {activeFilters.map((f) => <Link key={f.key} href={chipHref(f.key)} className="filter-chip">{f.label} <X size={11} /></Link>)}
-          <Link href={qs({ status: "all", q: undefined, family: undefined, governedBy: undefined, sensitivity: undefined, channel: undefined })} className="link-btn">Clear all</Link>
+          <Link href={BASE} className="link-btn">Clear all</Link>
         </div>
       )}
 

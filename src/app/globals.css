@@ -3835,3 +3835,19 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 .tpl-chip-label:hover { text-decoration: underline; }
 .tpl-toggle { border: 1px solid var(--border-strong); background: var(--surface); border-radius: 999px; font: inherit; font-size: 12px; padding: 2px 9px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; color: var(--text); }
 .tpl-toggle.on { background: var(--green-bg); border-color: var(--green-border); color: var(--green); }
+
+/* Compact hairline stat strip (Protection rules) */
+.mask-statstrip { display: flex; flex-wrap: wrap; align-items: center; border: 1px solid var(--border-soft); border-radius: var(--radius-md); margin-bottom: 14px; overflow: hidden; }
+.stat-seg { padding: 8px 16px; font-size: 13px; color: var(--text); text-decoration: none; border-right: 1px solid var(--border-soft); }
+.stat-seg:last-child { border-right: 0; }
+.stat-seg b { font-size: 15px; font-weight: 700; margin-right: 5px; }
+.stat-seg:hover { background: var(--bg-muted); }
+.stat-seg.warn b { color: var(--yellow); }
+
+/* Sensitivity: dot + label (not a pill) */
+.sens { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.sens-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+/* Group tag under a field code */
+.group-tag { display: inline-flex; align-items: center; gap: 3px; margin-top: 3px; font-size: 11px; color: var(--text-link); text-decoration: none; }
+.group-tag:hover { text-decoration: underline; }

@@ -38,7 +38,7 @@ export function PendingChangesList({ items, role }: { items: PendingItem[]; role
           <div className="card-body">
             <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <Clock size={14} style={{ color: "var(--yellow)" }} />
-              <Link href={`/data-flow/protection-rules?tab=by-field&field=${it.fieldCode}`} className="cell-primary mono">{it.fieldCode}</Link>
+              <Link href={`/data-flow/protection-rules?field=${it.fieldCode}`} className="cell-primary mono">{it.fieldCode}</Link>
               <Pill tone="gray" dot={false}>{it.kind === "exception_add" ? "unmask exception" : "rule change"}</Pill>
               <span className="cell-sub" style={{ marginLeft: "auto" }}>{it.proposedBy} · {it.ageDays}d old</span>
             </div>

@@ -6,9 +6,9 @@ import {
   createField, editTenantRule, proposeChange, proposeException,
   decideChange, withdrawProposal, checkCodeCollision,
   unlockSelfLocked, createAndApplyGroup, reapplyGroup, detachField, validateGroupMembers,
-  planRuleForFields, submitRulePlan, setTemplateAssociation,
+  planRuleForFields, submitRulePlan, setTemplateAssociation, templateFields,
   type CreateFieldInput, type RulePatch, type Collision, type CreateGroupInput, type GroupMemberValidation,
-  type PlanRow, type SubmitPlanResult,
+  type PlanRow, type SubmitPlanResult, type TemplateFieldRow,
 } from "@/lib/engines/masking";
 
 /**
@@ -78,6 +78,10 @@ export async function unlockSelfLockedAction(code: string): Promise<MaskingActio
 export async function setTemplateAssociationAction(key: string, associated: boolean): Promise<MaskingActionResult> {
   const { actor } = await getSession();
   try { await setTemplateAssociation(key, associated, actor); touch(); return { ok: true }; } catch (e) { return fail(e); }
+}
+
+export async function templateFieldsAction(key: string): Promise<{ fields: TemplateFieldRow[] }> {
+  return { fields: await templateFields(key) };
 }
 
 export async function createGroupAction(input: CreateGroupInput): Promise<MaskingActionResult> {

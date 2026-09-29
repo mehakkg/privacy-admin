@@ -50,6 +50,22 @@ export async function getTemplates(): Promise<TemplateView[]> {
   return templates.map((t) => ({ key: t.key, name: t.name, kind: t.kind as "baseline" | "regional", associated: t.associated, fields: countFor(t) }));
 }
 
+export interface TemplateFieldRow { code: string; name: string; label: string; preview: string }
+
+/** The full field list a template governs (read-only Library surface, nested in the drawer). */
+export async function templateFields(key: string): Promise<TemplateFieldRow[]> {
+  const where = key === "BASELINE" ? { layer: "baseline" } : { layer: "regional", source: key };
+  const rules = await db.maskingLayerRule.findMany({ where, orderBy: { fieldCode: "asc" } });
+  const codes = rules.map((r) => r.fieldCode);
+  const fields = await db.maskingField.findMany({ where: { code: { in: codes } }, select: { code: true, name: true, sampleValue: true } });
+  const byCode = new Map(fields.map((f) => [f.code, f]));
+  return rules.map((r) => {
+    const rule = ruleOf(r);
+    const f = byCode.get(r.fieldCode);
+    return { code: r.fieldCode, name: f?.name ?? r.fieldCode, label: ruleLabel(rule), preview: f?.sampleValue ? maskPreview(rule, f.sampleValue) : ruleLabel(rule) };
+  });
+}
+
 /** Associate or dissociate a regional template (BASELINE is always on). Audited. */
 export async function setTemplateAssociation(key: string, associated: boolean, actor: AuditActor) {
   const t = await db.maskingTemplate.findUnique({ where: { key } });
@@ -172,6 +188,8 @@ export interface InventoryRow extends FieldResolution {
   diverged: boolean;
   /** Gap-first: no rule, ambiguous, diverged, or a pending change. */
   needsAttention: boolean;
+  /** Rule group this field belongs to, if any (for the group tag + filter). */
+  group: string | null;
 }
 
 export async function getInventory(): Promise<InventoryRow[]> {
@@ -185,6 +203,8 @@ export async function getInventory(): Promise<InventoryRow[]> {
     activeRegionalSet(),
   ]);
   const divergedCodes = new Set(groups.flatMap((g) => g.divergedCodes));
+  const groupByCode = new Map<string, string>();
+  for (const g of groups) for (const c of g.memberCodes) if (!groupByCode.has(c)) groupByCode.set(c, g.name);
   // One pass over masking audit entries for "last change" per field.
   const entries = await db.auditLogEntry.findMany({
     where: { action: { contains: "masking." }, targetType: "MaskingField" },
@@ -203,7 +223,7 @@ export async function getInventory(): Promise<InventoryRow[]> {
     }, active);
     const diverged = divergedCodes.has(f.code);
     const needsAttention = res.winningSource === "attention" || !!res.pendingChangeId || diverged;
-    return { ...res, lastChange: last.get(f.code) ?? null, diverged, needsAttention };
+    return { ...res, lastChange: last.get(f.code) ?? null, diverged, needsAttention, group: groupByCode.get(f.code) ?? null };
   });
 }
 

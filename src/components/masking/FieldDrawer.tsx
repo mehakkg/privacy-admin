@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { X, Lock, LockOpen, ShieldCheck, Pencil, GitPullRequest, Check, Ban, Clock, ExternalLink, AlertTriangle } from "lucide-react";
+import { X, Lock, LockOpen, ShieldCheck, Pencil, GitPullRequest, Check, Ban, Clock, ExternalLink, AlertTriangle, LayoutTemplate } from "lucide-react";
 import { Pill, type PillTone } from "@/components/ui";
 import { RuleEditor } from "@/components/masking/RuleEditor";
 import {
@@ -12,8 +12,9 @@ import {
 } from "@/lib/masking";
 import {
   editTenantRuleAction, proposeChangeAction,
-  decideChangeAction, withdrawProposalAction, unlockSelfLockedAction, type MaskingActionResult,
+  decideChangeAction, withdrawProposalAction, unlockSelfLockedAction, templateFieldsAction, type MaskingActionResult,
 } from "@/app/actions/masking";
+import type { TemplateFieldRow } from "@/lib/engines/masking";
 
 export interface PendingView {
   id: string; kind: string; proposedBy: string; proposedAt: string; reason: string;
@@ -55,6 +56,15 @@ export function FieldDrawer({
   const isDpo = role === "dpo";
   const close = () => router.push(closeHref);
   const unlock = useRun();
+  const templateKey = gov ? (gov.layer === "baseline" ? "BASELINE" : gov.layer === "regional" ? gov.source : null) : null;
+  const [tpl, setTpl] = useState<{ key: string; rows: TemplateFieldRow[] } | null>(null);
+  const [tplLoading, setTplLoading] = useState(false);
+  const openTemplate = () => {
+    if (!templateKey) return;
+    if (tpl?.key === templateKey) { setTpl(null); return; }
+    setTplLoading(true);
+    templateFieldsAction(templateKey).then(({ fields }) => { setTpl({ key: templateKey, rows: fields }); setTplLoading(false); });
+  };
 
   return (
     <>
@@ -176,6 +186,29 @@ export function FieldDrawer({
                       </tbody>
                     </table>
                   </div>
+                </Section>
+              )}
+
+              {/* View template — Library's only remaining surface, nested here. */}
+              {templateKey && res.status !== "ambiguous" && (
+                <Section title="Template">
+                  <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <span className="row cell-sub" style={{ gap: 6 }}><LayoutTemplate size={13} /> Governed by the {gov?.badge}.</span>
+                    <button className="link-btn" onClick={openTemplate}>{tpl?.key === templateKey ? "Hide template" : "View template"}</button>
+                  </div>
+                  {tplLoading && <p className="cell-sub" style={{ marginTop: 8 }}>Loading…</p>}
+                  {tpl?.key === templateKey && (
+                    <div className="table-wrap" style={{ marginTop: 8 }}>
+                      <table className="dtable compact"><thead><tr><th>Field</th><th>Rule</th><th>Preview</th></tr></thead>
+                        <tbody>
+                          {tpl.rows.map((t) => (
+                            <tr key={t.code}><td className="mono">{t.code}</td><td className="cell-sub">{t.label}</td><td className="mono cell-sub">{t.preview.split(" → ")[1] ?? t.preview}</td></tr>
+                          ))}
+                          {tpl.rows.length === 0 && <tr><td colSpan={3}><span className="cell-sub">No fields in this template.</span></td></tr>}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </Section>
               )}
 
