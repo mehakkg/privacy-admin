@@ -1,7 +1,9 @@
 import Link from "next/link";
-import { AlertTriangle, PanelRightOpen, X } from "lucide-react";
-import { Pill, type PillTone } from "@/components/ui";
+import { CheckCircle2, X } from "lucide-react";
+import { type PillTone } from "@/components/ui";
 import { PolicyFilters } from "@/components/masking/PolicyFilters";
+import { FieldInventory, type InventoryRowView } from "@/components/masking/FieldInventory";
+import type { CatalogField } from "@/components/masking/CreateRuleModal";
 import { getInventory, getCoverage, type InventoryRow } from "@/lib/engines/masking";
 import { CHANNEL_LABEL, FAMILY_LABEL, formatRelative } from "@/lib/masking";
 
@@ -17,24 +19,39 @@ function matchGoverned(row: InventoryRow, gb: string): boolean {
   return true;
 }
 
-/** SCREEN — Protection rules › By field. The complete inventory of every field and
- *  its effective rule; row click / Open details opens the resolver drawer. */
+/**
+ * SCREEN 1 — Protection rules › By field, gap-first. The default view surfaces
+ * fields that need attention (no rule · ambiguous · diverged · pending); the
+ * "Fields" tile shows everything. Selection + the sticky bar start rule creation.
+ */
 export async function ByFieldTab({ sp }: { sp: ByFieldSP }) {
   const rows = await getInventory();
   const coverage = getCoverage(rows);
+  const attn = {
+    total: rows.filter((r) => r.needsAttention).length,
+    noRule: rows.filter((r) => r.status === "no_rule").length,
+    ambiguous: rows.filter((r) => r.status === "ambiguous").length,
+    diverged: rows.filter((r) => r.diverged).length,
+    pending: rows.filter((r) => r.pendingChangeId).length,
+  };
 
+  const hasExplicit = !!(sp.q || sp.family || sp.governedBy || sp.sensitivity || sp.channel || sp.status);
   let filtered = rows;
+  // Gap-first: with no explicit filter, show only fields that need attention.
+  if (!hasExplicit || sp.status === "attention") filtered = filtered.filter((r) => r.needsAttention);
+  if (sp.status === "norule") filtered = filtered.filter((r) => r.status === "no_rule");
+  if (sp.status === "ambiguous") filtered = filtered.filter((r) => r.status === "ambiguous");
+  if (sp.status === "diverged") filtered = filtered.filter((r) => r.diverged);
+  if (sp.status === "pending") filtered = filtered.filter((r) => r.pendingChangeId);
+  if (sp.status === "active") filtered = filtered.filter((r) => r.status === "resolved" && !r.needsAttention);
+  if (sp.status === "exceptions") filtered = filtered.filter((r) => r.exceptions.length > 0);
   if (sp.q) { const n = sp.q.toLowerCase(); filtered = filtered.filter((r) => r.code.toLowerCase().includes(n) || r.name.toLowerCase().includes(n)); }
   if (sp.family) filtered = filtered.filter((r) => r.effective?.family === sp.family || r.channels.some((c) => c.family === sp.family));
   if (sp.governedBy) filtered = filtered.filter((r) => matchGoverned(r, sp.governedBy!));
   if (sp.sensitivity) filtered = filtered.filter((r) => r.sensitivity === sp.sensitivity);
-  if (sp.status === "active") filtered = filtered.filter((r) => r.status === "resolved" && !r.pendingChangeId);
-  if (sp.status === "norule" || sp.status === "attention") filtered = filtered.filter((r) => r.winningSource === "attention");
-  if (sp.status === "pending") filtered = filtered.filter((r) => r.pendingChangeId);
-  if (sp.status === "exceptions") filtered = filtered.filter((r) => r.exceptions.length > 0);
 
   filtered = [...filtered].sort((a, b) => {
-    const rank = (r: InventoryRow) => (r.winningSource === "attention" ? 0 : r.pendingChangeId ? 1 : 2);
+    const rank = (r: InventoryRow) => (r.needsAttention ? 0 : 1);
     return rank(a) - rank(b) || a.code.localeCompare(b.code);
   });
 
@@ -45,8 +62,7 @@ export async function ByFieldTab({ sp }: { sp: ByFieldSP }) {
   const qs = (patch: ByFieldSP) => {
     const next = new URLSearchParams();
     for (const [k, v] of Object.entries({ ...sp, tab: "by-field", ...patch })) if (v) next.set(k, String(v));
-    const s = next.toString();
-    return s ? `${BASE}?${s}` : BASE;
+    return `${BASE}?${next.toString()}`;
   };
   const chipHref = (key: keyof ByFieldSP) => qs({ [key]: undefined, page: undefined } as ByFieldSP);
   const activeFilters: { key: keyof ByFieldSP; label: string }[] = [];
@@ -57,27 +73,49 @@ export async function ByFieldTab({ sp }: { sp: ByFieldSP }) {
   if (sp.channel) activeFilters.push({ key: "channel", label: `Channel: ${CHANNEL_LABEL[sp.channel] ?? sp.channel}` });
   if (sp.status) activeFilters.push({ key: "status", label: `Status: ${sp.status}` });
 
-  if (rows.length === 0) {
-    return (
-      <div className="empty-hero">
-        <h2>Add your first field rule</h2>
-        <p className="cell-sub">Fields you add here are checked against your DPDP and RBI templates as you type.</p>
-        <Link href={qs({ add: "1" })} className="btn primary">Add field</Link>
-      </div>
-    );
-  }
+  const chan = sp.channel;
+  const rowsView: InventoryRowView[] = pageRows.map((r) => {
+    const c = chan ? r.channels.find((x) => x.channel === chan) : null;
+    const effLabel = c ? c.label : r.effective?.label ?? null;
+    const prev = c ? c.preview : r.effective?.preview ?? null;
+    return {
+      code: r.code, name: r.name, sensitivity: r.sensitivity,
+      effLabel, masked: prev ? prev.split(" → ")[1] ?? prev : null,
+      governedBadge: r.governedBy?.badge ?? null, governedTone: r.governedBy ? GOVERNED_TONE[r.governedBy.layer] : "gray",
+      pending: !!r.pendingChangeId, stricter: !!r.governedBy?.stricter, overrides: r.overrideCount,
+      lastChange: r.lastChange ? `${r.lastChange.actor} · ${formatRelative(r.lastChange.at)}` : "—",
+      attention: r.needsAttention, ambiguous: r.status === "ambiguous",
+      href: qs({ field: r.code }),
+    };
+  });
+  const catalog: CatalogField[] = rows.map((r) => ({ code: r.code, name: r.name, sensitivity: r.sensitivity, source: r.governedBy?.badge ?? (r.status === "ambiguous" ? "Ambiguous" : "No rule"), systemRegulated: !!r.governedBy?.systemRegulated, sampleValue: r.sampleValue }));
 
   return (
     <>
+      {/* Gap-first attention strip. */}
+      {attn.total > 0 ? (
+        <div className="mask-attn">
+          <strong>{attn.total} field{attn.total === 1 ? "" : "s"} need attention</strong>
+          <span className="mask-attn-chips">
+            {attn.noRule > 0 && <Link href={qs({ status: "norule", page: undefined })} className="filter-chip">{attn.noRule} no rule</Link>}
+            {attn.ambiguous > 0 && <Link href={qs({ status: "ambiguous", page: undefined })} className="filter-chip">{attn.ambiguous} ambiguous</Link>}
+            {attn.diverged > 0 && <Link href={qs({ status: "diverged", page: undefined })} className="filter-chip">{attn.diverged} diverged</Link>}
+            {attn.pending > 0 && <Link href={qs({ status: "pending", page: undefined })} className="filter-chip">{attn.pending} pending</Link>}
+          </span>
+          <Link href={qs({ status: "all", page: undefined })} className="link-btn" style={{ marginLeft: "auto" }}>Show all fields</Link>
+        </div>
+      ) : (
+        <div className="mask-attn ok"><CheckCircle2 size={16} style={{ color: "var(--green)" }} /> <strong>All fields covered</strong> — every field resolves to a rule, nothing pending or diverged.</div>
+      )}
+
+      {/* Reconciling tiles: each field counted once by winning source. */}
       <div className="mask-coverage">
-        <Link href={qs({ governedBy: undefined, status: undefined, sensitivity: undefined, family: undefined, q: undefined, page: undefined })} className="mask-tile"><div className="mask-tile-label">Fields</div><div className="mask-tile-value">{coverage.total}</div></Link>
+        <Link href={qs({ status: "all", page: undefined, governedBy: undefined, sensitivity: undefined, family: undefined, q: undefined })} className="mask-tile"><div className="mask-tile-label">Fields</div><div className="mask-tile-value">{coverage.total}</div></Link>
         <div className="mask-tile mask-tile-split">
           <div className="mask-tile-label">Baseline · regional · tenant</div>
-          <div className="mask-tile-value">
-            <Link href={qs({ governedBy: "baseline", page: undefined })}>{coverage.baseline}</Link> · <Link href={qs({ governedBy: "regional", page: undefined })}>{coverage.regional}</Link> · <Link href={qs({ governedBy: "tenant", page: undefined })}>{coverage.tenant}</Link>
-          </div>
+          <div className="mask-tile-value"><Link href={qs({ status: "all", governedBy: "baseline", page: undefined })}>{coverage.baseline}</Link> · <Link href={qs({ status: "all", governedBy: "regional", page: undefined })}>{coverage.regional}</Link> · <Link href={qs({ status: "all", governedBy: "tenant", page: undefined })}>{coverage.tenant}</Link></div>
         </div>
-        <Link href={qs({ status: "attention", page: undefined })} className={`mask-tile${coverage.attention > 0 ? " warn" : ""}`}><div className="mask-tile-label">Needs attention</div><div className="mask-tile-value">{coverage.attention}</div></Link>
+        <Link href={qs({ status: "attention", page: undefined })} className={`mask-tile${coverage.attention > 0 ? " warn" : ""}`}><div className="mask-tile-label">Unresolved (no rule · ambiguous)</div><div className="mask-tile-value">{coverage.attention}</div></Link>
         <Link href={`${BASE}?tab=pending`} className="mask-tile"><div className="mask-tile-label">Pending DPO approval</div><div className="mask-tile-value">{coverage.pending}</div></Link>
       </div>
 
@@ -85,47 +123,11 @@ export async function ByFieldTab({ sp }: { sp: ByFieldSP }) {
       {activeFilters.length > 0 && (
         <div className="row" style={{ gap: 6, margin: "10px 0", flexWrap: "wrap", alignItems: "center" }}>
           {activeFilters.map((f) => <Link key={f.key} href={chipHref(f.key)} className="filter-chip">{f.label} <X size={11} /></Link>)}
-          <Link href={qs({ q: undefined, family: undefined, governedBy: undefined, sensitivity: undefined, channel: undefined, status: undefined })} className="link-btn">Clear all</Link>
+          <Link href={qs({ status: "all", q: undefined, family: undefined, governedBy: undefined, sensitivity: undefined, channel: undefined })} className="link-btn">Clear all</Link>
         </div>
       )}
 
-      <div className="table-wrap" style={{ marginTop: 12 }}>
-        <table className="dtable">
-          <thead><tr>
-            <th>Field</th><th>Sensitivity</th><th>Effective rule{sp.channel ? ` · ${CHANNEL_LABEL[sp.channel]}` : ""}</th><th>Preview</th><th>Governed by</th><th>Channels</th><th>Last change</th><th style={{ width: 120 }} />
-          </tr></thead>
-          <tbody>
-            {pageRows.map((r) => {
-              const chan = sp.channel ? r.channels.find((c) => c.channel === sp.channel) : null;
-              const effLabel = chan ? chan.label : r.effective?.label;
-              const effPreview = chan ? chan.preview : r.effective?.preview;
-              const masked = effPreview ? effPreview.split(" → ")[1] ?? effPreview : null;
-              const active = sp.field?.toUpperCase() === r.code;
-              return (
-                <tr key={r.code} className={active ? "row-active" : ""}>
-                  <td><Link href={qs({ field: r.code })} className="plain-link"><div className="cell-stack"><span className="cell-primary mono">{r.code}</span><span className="cell-sub">{r.name}</span></div></Link></td>
-                  <td><Pill tone={r.sensitivity === "Sensitive" ? "red" : r.sensitivity === "Personal" ? "yellow" : "gray"} dot={false}>{r.sensitivity}</Pill></td>
-                  <td>{effLabel ? effLabel : <span className="row" style={{ gap: 4, color: "var(--red)" }}><AlertTriangle size={13} /> {r.status === "ambiguous" ? "Ambiguous" : "No rule"}</span>}</td>
-                  <td className="mono cell-sub">{masked ?? "—"}</td>
-                  <td>
-                    {r.governedBy ? (
-                      <Pill tone={r.pendingChangeId ? "yellow" : GOVERNED_TONE[r.governedBy.layer]} dot={false}>
-                        {r.pendingChangeId ? `${r.governedBy.badge} · change pending` : `${r.governedBy.badge}${r.governedBy.stricter ? " · stricter" : ""}`}
-                      </Pill>
-                    ) : <span className="cell-sub">—</span>}
-                  </td>
-                  <td className="cell-sub">{r.overrideCount > 0 ? `${r.overrideCount} overrides` : "Same everywhere"}</td>
-                  <td className="cell-sub">{r.lastChange ? `${r.lastChange.actor} · ${formatRelative(r.lastChange.at)}` : "—"}</td>
-                  <td><Link href={qs({ field: r.code })} className="row-link" style={{ display: "inline-flex", gap: 4, alignItems: "center" }}><PanelRightOpen size={14} /> Open details</Link></td>
-                </tr>
-              );
-            })}
-            {pageRows.length === 0 && (
-              <tr><td colSpan={8}><div className="empty">No fields match these filters. <Link href={qs({ q: undefined, family: undefined, governedBy: undefined, sensitivity: undefined, channel: undefined, status: undefined })} className="row-link">Clear filters</Link></div></td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <FieldInventory rows={rowsView} catalog={catalog} channelLabel={sp.channel ? CHANNEL_LABEL[sp.channel] ?? null : null} />
 
       {totalPages > 1 && (
         <div className="row" style={{ gap: 8, marginTop: 12, justifyContent: "flex-end", alignItems: "center" }}>

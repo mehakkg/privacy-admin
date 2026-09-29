@@ -20,12 +20,23 @@ async function reconcileLocks() {
   await prisma.maskingLayerRule.updateMany({ where: { fieldCode: "WALLET_ID", layer: "tenant" }, data: { locked: true } });
 }
 
+/** Two fields with NO rule at any layer — the gap-first "needs attention" demo. */
+async function ensureNoRuleFields() {
+  await prisma.maskingField.createMany({
+    data: [
+      { code: "MARKETING_TAG", name: "Marketing tag", sensitivity: "Internal", sampleValue: "mtag_5590" },
+      { code: "SUPPORT_NOTE", name: "Support note", sensitivity: "Personal", sampleValue: "ticket note text" },
+    ],
+    skipDuplicates: true,
+  });
+}
+
 async function main() {
   if (!process.env.DATABASE_URL) { console.log("patch-masking: no DATABASE_URL, skipping."); return; }
   // Guard on rule groups (a new-model marker): if present, the layered+groups
   // fixtures are already seeded, so only reconcile locks. Otherwise wipe any
   // pre-groups rows and seed the full fixture set once.
-  if ((await prisma.maskingRuleGroup.count()) > 0) { await reconcileLocks(); console.log("patch-masking: already seeded; reconciled locks."); return; }
+  if ((await prisma.maskingRuleGroup.count()) > 0) { await reconcileLocks(); await ensureNoRuleFields(); console.log("patch-masking: already seeded; reconciled locks + no-rule fields."); return; }
 
   await prisma.maskingChannelRule.deleteMany({});
   await prisma.maskingUnmaskException.deleteMany({});
@@ -102,6 +113,7 @@ async function main() {
     },
   });
 
+  await ensureNoRuleFields();
   console.log(`patch-masking: seeded ${FIELDS.length} fields, layered rules, 2 rule groups, 1 pending change.`);
 }
 

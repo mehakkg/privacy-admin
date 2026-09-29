@@ -74,11 +74,25 @@ export function reversibleOf(family: string): boolean {
   return !!FAMILIES.find((f) => f.key === family)?.reversible;
 }
 
+/** The weakest "intent": no masking at all. Offered only for non-sensitive fields. */
+export const REVEAL = "reveal";
+
+/**
+ * Intent cards for the Create-rule stepper — the families plus "Show in full"
+ * (reveal). `sensitiveHidden` intents are omitted when any selected field is
+ * Sensitive or SYSTEM-regulated.
+ */
+export interface IntentCard { key: string; label: string; description: string; onlyChannel?: Channel; sensitiveHidden?: boolean }
+export const INTENTS: IntentCard[] = [
+  ...FAMILIES.map((f) => ({ key: f.key, label: f.label, description: f.description, onlyChannel: f.onlyChannel })),
+  { key: REVEAL, label: "Show in full", description: "No masking — the value is shown as-is.", sensitiveHidden: true },
+];
+
 // --- Strictness & the floor rule -------------------------------------------
 
-/** full (6) > hash (5) > generalize (4) > tokenize (3) > fpe (2) > partial (1). */
-export const STRICTNESS_RANK: Record<Family, number> = {
-  full: 6, hash: 5, generalize: 4, tokenize: 3, fpe: 2, partial: 1,
+/** full (6) > hash (5) > generalize (4) > tokenize (3) > fpe (2) > partial (1) > reveal (0). */
+export const STRICTNESS_RANK: Record<string, number> = {
+  full: 6, hash: 5, generalize: 4, tokenize: 3, fpe: 2, partial: 1, reveal: 0,
 };
 
 export interface Rule {
@@ -125,6 +139,7 @@ export const GENERALIZE_BUCKETS: Record<string, string> = {
 /** "{Family label} · {params}", e.g. "Partial reveal · last 4", "Hash · irreversible". */
 export function ruleLabel(rule: Rule | null | undefined): string {
   if (!rule) return "No rule";
+  if (rule.family === REVEAL) return "Show in full";
   const label = FAMILY_LABEL[rule.family] ?? rule.family;
   switch (rule.family) {
     case "partial": return `${label} · ${partialSummary(rule.params)}`;
@@ -190,6 +205,7 @@ function generalize(value: string, bucket: string): string {
 
 /** Apply a masking family to a value. Always returns a string (no failure state). */
 export function runMaskCore(rule: Rule, value: string): string {
+  if (rule.family === REVEAL) return value;
   if (!value) return "";
   const p = rule.params ?? {};
   const ch = typeof p.maskChar === "string" && p.maskChar ? String(p.maskChar) : "*";
@@ -264,6 +280,15 @@ export interface RuleGroupView {
   state: GroupState;
   divergedCodes: string[];
   createdBy: string | null;
+}
+
+/** Per-field outcome of applying one rule (Create-rule Step 4). */
+export interface PlanRow {
+  code: string;
+  name: string;
+  currentSource: string;
+  outcome: "apply" | "approval" | "blocked";
+  reason: string | null;
 }
 
 /** A single rule change within a proposal/edit: a layer's default (channel null) or one channel. */

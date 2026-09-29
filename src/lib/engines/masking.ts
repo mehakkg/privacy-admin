@@ -6,7 +6,7 @@ import {
   CHANNEL_KEYS, CHANNEL_LABEL, LAYER_PRECEDENCE, layerBadge, lockTreatmentOf,
   ruleLabel, maskPreview, reversibleOf, strictness,
   type Layer, type Rule, type FieldResolution, type LayerView, type ChannelView, type RulePatch,
-  type RuleGroupView, type GroupState,
+  type RuleGroupView, type GroupState, type PlanRow,
 } from "@/lib/masking";
 
 export type { RulePatch } from "@/lib/masking";
@@ -132,14 +132,22 @@ export async function resolveField(code: string): Promise<FieldResolution | null
 
 export interface InventoryRow extends FieldResolution {
   lastChange: { actor: string; at: Date } | null;
+  /** Member of a rule group whose effective tenant rule no longer matches the group. */
+  diverged: boolean;
+  /** Gap-first: no rule, ambiguous, diverged, or a pending change. */
+  needsAttention: boolean;
 }
 
 export async function getInventory(): Promise<InventoryRow[]> {
   await expireDueExceptions();
-  const fields = await db.maskingField.findMany({
-    include: { layerRules: true, channelRules: true, exceptions: true, changeRequests: { where: { status: "pending" } } },
-    orderBy: { code: "asc" },
-  });
+  const [fields, groups] = await Promise.all([
+    db.maskingField.findMany({
+      include: { layerRules: true, channelRules: true, exceptions: true, changeRequests: { where: { status: "pending" } } },
+      orderBy: { code: "asc" },
+    }),
+    getRuleGroups(),
+  ]);
+  const divergedCodes = new Set(groups.flatMap((g) => g.divergedCodes));
   // One pass over masking audit entries for "last change" per field.
   const entries = await db.auditLogEntry.findMany({
     where: { action: { contains: "masking." }, targetType: "MaskingField" },
@@ -156,7 +164,9 @@ export async function getInventory(): Promise<InventoryRow[]> {
       layerRules: f.layerRules, channelRules: f.channelRules, exceptions: f.exceptions,
       pendingChangeId: f.changeRequests[0]?.id ?? null,
     });
-    return { ...res, lastChange: last.get(f.code) ?? null };
+    const diverged = divergedCodes.has(f.code);
+    const needsAttention = res.winningSource === "attention" || !!res.pendingChangeId || diverged;
+    return { ...res, lastChange: last.get(f.code) ?? null, diverged, needsAttention };
   });
 }
 
@@ -507,6 +517,68 @@ export async function getRuleGroups(): Promise<RuleGroupView[]> {
     const state: GroupState = diverged.length ? "diverged" : "in_sync";
     return { id: g.id, name: g.name, family: g.family, params, label: ruleLabel(def), memberCodes: codes, memberCount: codes.length, state, divergedCodes: diverged, createdBy: g.createdBy };
   });
+}
+
+// --- Create-rule plan (apply to many fields with per-field outcomes) ---------
+
+export type { PlanRow } from "@/lib/masking";
+
+/** Per-field outcome of applying one rule: apply now / needs approval / blocked. */
+export async function planRuleForFields(family: string, params: Record<string, unknown>, codes: string[]): Promise<PlanRow[]> {
+  const def: Rule = { family, params };
+  const out: PlanRow[] = [];
+  for (const code of codes) {
+    const bundle = await loadBundle(code.toUpperCase());
+    if (!bundle) { out.push({ code, name: code, currentSource: "—", outcome: "blocked", reason: "No such field." }); continue; }
+    const res = resolveBundle(bundle);
+    const currentSource = res.status === "ambiguous" ? "Ambiguous" : res.governedBy?.badge ?? "No rule";
+    const push = (outcome: PlanRow["outcome"], reason: string | null) => out.push({ code, name: bundle.name, currentSource, outcome, reason });
+
+    if (res.status === "ambiguous") { push("blocked", "Ambiguous — resolve the template collision before applying a rule."); continue; }
+    const sys = bundle.layerRules.find((l) => l.systemRegulated);
+    if (sys) { push("blocked", "SYSTEM-regulated — owned by SUPER_ADMIN, cannot be changed."); continue; }
+
+    const tenant = bundle.layerRules.find((l) => l.layer === "tenant");
+    const governedBelow = bundle.layerRules.some((l) => l.layer !== "tenant");
+    const floor = await tenantFloor(code, null);
+    if (floor && strictness(def) < strictness(floor)) { push("blocked", `Weaker than the ${layerBadge(res.chain.find((c) => !c.won)?.layer ?? "baseline", null)} floor (${ruleLabel(floor)}).`); continue; }
+    if (tenant?.locked) { push("blocked", "Self-locked — unlock the field before changing it."); continue; }
+    if (!tenant && governedBelow) { push("approval", "Governed by a template — a tenant override needs DPO approval."); continue; }
+    if (tenant && strictness(def) < strictness(ruleOf(tenant))) { push("approval", "Loosens the current tenant rule — needs DPO approval."); continue; }
+    push("apply", null);
+  }
+  return out;
+}
+
+export interface SubmitPlanResult { applied: string[]; proposed: string[] }
+
+/** Apply the "apply" fields atomically and raise proposals for the "approval" fields. */
+export async function submitRulePlan(family: string, params: Record<string, unknown>, codes: string[], reason: string, actor: AuditActor): Promise<SubmitPlanResult> {
+  const plan = await planRuleForFields(family, params, codes);
+  const blocked = plan.filter((p) => p.outcome === "blocked");
+  if (blocked.length) throw err("BlockedFieldError", `Remove the blocked field(s) first: ${blocked.map((b) => b.code).join(", ")}.`);
+  const applyCodes = plan.filter((p) => p.outcome === "apply").map((p) => p.code);
+  const approvalCodes = plan.filter((p) => p.outcome === "approval").map((p) => p.code);
+  if (approvalCodes.length && !reason.trim()) throw err("ValidationError", "A reason is required — some fields need DPO approval.");
+
+  if (applyCodes.length) {
+    await audited(
+      { actor, action: "masking.rule_edited", targetType: "MaskingRuleGroup", targetId: `apply:${applyCodes.length}`, eventDescription: `Applied ${ruleLabel({ family, params })} to ${applyCodes.length} field(s)`, payload: { rule: ruleLabel({ family, params }), fields: applyCodes } },
+      async (tx) => {
+        for (const code of applyCodes) {
+          const existing = await tx.maskingLayerRule.findFirst({ where: { fieldCode: code, layer: "tenant" } });
+          if (existing) await tx.maskingLayerRule.update({ where: { id: existing.id }, data: { family, paramsJson: encodeObject(params) } });
+          else await tx.maskingLayerRule.create({ data: { fieldCode: code, layer: "tenant", family, paramsJson: encodeObject(params) } });
+        }
+      },
+    );
+  }
+  for (const code of approvalCodes) {
+    const open = await db.maskingChangeRequest.findFirst({ where: { fieldCode: code, status: "pending" } });
+    if (open) continue; // one pending at a time
+    await proposeChange(code, [{ layer: "tenant", channel: null, family: "reveal", params: {} }], [{ layer: "tenant", channel: null, family, params }], reason, actor);
+  }
+  return { applied: applyCodes, proposed: approvalCodes };
 }
 
 /** Fields eligible to be a group member (all fields, for the create picker). */

@@ -6,7 +6,9 @@ import {
   createField, editTenantRule, proposeChange, proposeException,
   decideChange, withdrawProposal, checkCodeCollision,
   unlockSelfLocked, createAndApplyGroup, reapplyGroup, detachField, validateGroupMembers,
+  planRuleForFields, submitRulePlan,
   type CreateFieldInput, type RulePatch, type Collision, type CreateGroupInput, type GroupMemberValidation,
+  type PlanRow, type SubmitPlanResult,
 } from "@/lib/engines/masking";
 
 /**
@@ -91,4 +93,15 @@ export async function detachFieldAction(id: string, code: string): Promise<Maski
 /** Live pre-validation for the group create form. */
 export async function validateGroupAction(family: string, params: Record<string, unknown>, codes: string[]): Promise<{ members: GroupMemberValidation[] }> {
   return { members: await validateGroupMembers(family, params, codes) };
+}
+
+/** Live per-field outcome plan for the Create-rule stepper (Step 4). */
+export async function planRuleAction(family: string, params: Record<string, unknown>, codes: string[]): Promise<{ plan: PlanRow[] }> {
+  return { plan: await planRuleForFields(family, params, codes) };
+}
+
+export interface CreateRuleResult extends MaskingActionResult { result?: SubmitPlanResult }
+export async function submitRuleAction(family: string, params: Record<string, unknown>, codes: string[], reason: string): Promise<CreateRuleResult> {
+  const { actor } = await getSession();
+  try { const result = await submitRulePlan(family, params, codes, reason, actor); touch(); return { ok: true, result }; } catch (e) { return fail(e); }
 }
