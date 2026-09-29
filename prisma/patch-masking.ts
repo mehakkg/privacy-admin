@@ -22,7 +22,10 @@ async function reconcileLocks() {
 
 async function main() {
   if (!process.env.DATABASE_URL) { console.log("patch-masking: no DATABASE_URL, skipping."); return; }
-  if ((await prisma.maskingLayerRule.count()) > 0) { await reconcileLocks(); console.log("patch-masking: already seeded; reconciled locks."); return; }
+  // Guard on rule groups (a new-model marker): if present, the layered+groups
+  // fixtures are already seeded, so only reconcile locks. Otherwise wipe any
+  // pre-groups rows and seed the full fixture set once.
+  if ((await prisma.maskingRuleGroup.count()) > 0) { await reconcileLocks(); console.log("patch-masking: already seeded; reconciled locks."); return; }
 
   await prisma.maskingChannelRule.deleteMany({});
   await prisma.maskingUnmaskException.deleteMany({});
