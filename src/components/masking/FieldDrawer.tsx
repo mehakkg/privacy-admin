@@ -226,7 +226,7 @@ function ActionError({ result }: { result: MaskingActionResult | null }) {
 
 function EditForm({ res, floor, floorName, onDone, onNeedsApproval }: { res: FieldResolution; floor: Rule | null; floorName: string | null; onDone: () => void; onNeedsApproval: () => void }) {
   const { pending, result, run } = useRun();
-  const [rule, setRule] = useState<Rule>(res.effective ? { family: res.effective.family, params: res.effective.params } : { family: "partial", params: { revealLast: 4, maskChar: "*" } });
+  const [rule, setRule] = useState<Rule>(res.effective ? { family: res.effective.family, params: res.effective.params } : { family: "partial", params: { showLast: 4, maskChar: "*" } });
   const layer = res.governedBy?.layer ?? "tenant";
 
   const save = () => run(

@@ -5,25 +5,14 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { X, Search, Check, AlertTriangle, Clock, Plus } from "lucide-react";
 import { Pill } from "@/components/ui";
-import { RuleEditor } from "@/components/masking/RuleEditor";
-import { INTENTS, ruleLabel, runMaskCore, REVEAL, type Rule } from "@/lib/masking";
+import { RuleEditor, defaultParamsFor } from "@/components/masking/RuleEditor";
+import { INTENTS, runMaskCore, REVEAL, type Rule } from "@/lib/masking";
 import { planRuleAction, submitRuleAction } from "@/app/actions/masking";
 import type { PlanRow, SubmitPlanResult } from "@/lib/engines/masking";
 
 export interface CatalogField { code: string; name: string; sensitivity: string; source: string; systemRegulated: boolean; sampleValue: string }
 
 const STEPS = ["Fields", "Behavior", "Tune & preview", "Review"] as const;
-
-function defaultParams(family: string): Record<string, unknown> {
-  switch (family) {
-    case "partial": return { revealLast: 4, maskChar: "*" };
-    case "generalize": return { bucket: "age5" };
-    case "hash": return { algorithm: "SHA-256" };
-    case "tokenize": return { vault: "default" };
-    case "fpe": return { preserve: "digits" };
-    default: return {};
-  }
-}
 
 /** SCREEN 2 — Create rule stepper. Fields → Behavior → Tune & preview → Review,
  *  then a Result step. Submit is disabled while any field is blocked. */
@@ -56,7 +45,7 @@ export function CreateRuleModal({ catalog, initialSelected, onClose }: { catalog
   const canNext = step === 0 ? selected.length > 0 : step === 1 ? !!intent : step === 2 ? !!rule : true;
   const canSubmit = step === 3 && blocked.length === 0 && (needApproval.length === 0 || reason.trim().length > 0) && !pending;
 
-  const pickIntent = (family: string) => { setIntent(family); setRule({ family, params: defaultParams(family) }); };
+  const pickIntent = (family: string) => { setIntent(family); setRule({ family, params: defaultParamsFor(family) }); };
 
   const submit = () => start(async () => {
     if (!rule) return;

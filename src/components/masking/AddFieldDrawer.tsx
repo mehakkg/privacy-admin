@@ -17,7 +17,7 @@ export function AddFieldDrawer({ closeHref }: { closeHref: string }) {
   const [pattern, setPattern] = useState("");
   const [elementRef, setElementRef] = useState("");
   const [sampleValue, setSampleValue] = useState("");
-  const [rule, setRule] = useState<Rule>({ family: "partial", params: { revealLast: 4, maskChar: "*" } });
+  const [rule, setRule] = useState<Rule>({ family: "partial", params: { showLast: 4, maskChar: "*" } });
   const [overrides, setOverrides] = useState<Record<string, Rule | null>>({});
   const [openCh, setOpenCh] = useState<string | null>(null);
   const [collision, setCollision] = useState<Collision | null>(null);

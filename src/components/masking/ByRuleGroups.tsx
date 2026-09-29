@@ -103,7 +103,7 @@ function GroupRow({ g, open, onToggle }: { g: RuleGroupView; open: boolean; onTo
 function CreateGroupModal({ fields, onClose }: { fields: { code: string; name: string }[]; onClose: () => void }) {
   const { pending, result, run } = useRun();
   const [name, setName] = useState("");
-  const [rule, setRule] = useState<Rule>({ family: "partial", params: { revealLast: 4, maskChar: "*" } });
+  const [rule, setRule] = useState<Rule>({ family: "partial", params: { showLast: 4, maskChar: "*" } });
   const [selected, setSelected] = useState<string[]>([]);
   const [validation, setValidation] = useState<GroupMemberValidation[]>([]);
   const [checking, setChecking] = useState(false);

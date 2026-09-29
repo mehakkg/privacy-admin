@@ -48,7 +48,7 @@ export const EXCEPTION_ROLES = ["Grievance Officer", "DPO", "Auditor", "Support 
 
 // --- Families ---------------------------------------------------------------
 
-export type Family = "partial" | "full" | "fpe" | "hash" | "tokenize" | "generalize" | "synthetic";
+export type Family = "partial" | "full" | "pattern" | "email";
 
 export interface FamilySpec {
   key: Family;
@@ -59,14 +59,12 @@ export interface FamilySpec {
   onlyChannel?: Channel;
 }
 
+/** The four masking functions the engine supports (see the appendix reference). */
 export const FAMILIES: FamilySpec[] = [
-  { key: "partial", label: "Partial reveal", description: "Reveal a few leading/trailing characters, mask the rest.", reversible: false },
-  { key: "full", label: "Full redaction", description: "Replace the whole value — nothing recoverable.", reversible: false },
-  { key: "fpe", label: "Format-preserving", description: "Encrypt while keeping the shape (digits, letters, separators).", reversible: true },
-  { key: "hash", label: "Hash", description: "One-way SHA-256 digest — stable but irreversible.", reversible: false },
-  { key: "tokenize", label: "Tokenize", description: "Swap for a vault token that can be reversed with authority.", reversible: true },
-  { key: "generalize", label: "Generalize", description: "Reduce precision to a bucket (age band, area prefix).", reversible: false },
-  { key: "synthetic", label: "Synthetic value", description: "Replace with realistic fake data — non-production only.", reversible: false, onlyChannel: "nonprod" },
+  { key: "partial", label: "Partial mask", description: "Show the first/last N characters, mask the rest. Params: showFirst, showLast.", reversible: false },
+  { key: "full", label: "Full mask", description: "Mask every character — nothing shown.", reversible: false },
+  { key: "pattern", label: "Pattern mask", description: "Apply a template; # reveals a trailing character, other characters are literal. Param: template.", reversible: false },
+  { key: "email", label: "Email mask", description: "Mask the local part, keep first/last N, preserve the domain. Params: localVisibleChars, localVisibleLastChars, domainMode.", reversible: false },
 ];
 
 export const FAMILY_LABEL: Record<string, string> = Object.fromEntries(FAMILIES.map((f) => [f.key, f.label]));
@@ -90,9 +88,9 @@ export const INTENTS: IntentCard[] = [
 
 // --- Strictness & the floor rule -------------------------------------------
 
-/** full (6) > hash (5) > generalize (4) > tokenize (3) > fpe (2) > partial (1) > reveal (0). */
+/** full (4) > pattern (3) > email (2) > partial (1) > reveal (0). */
 export const STRICTNESS_RANK: Record<string, number> = {
-  full: 6, hash: 5, generalize: 4, tokenize: 3, fpe: 2, partial: 1, reveal: 0,
+  full: 4, pattern: 3, email: 2, partial: 1, reveal: 0,
 };
 
 export interface Rule {
@@ -100,13 +98,14 @@ export interface Rule {
   params: Record<string, unknown>;
 }
 
-/** Higher = stricter. Within `partial`, fewer revealed characters is stricter. */
+/** Higher = stricter. Within `partial`/`email`, fewer visible characters is stricter. */
 export function strictness(rule: Rule): number {
-  const rank = STRICTNESS_RANK[rule.family as Family] ?? 0;
+  const rank = STRICTNESS_RANK[rule.family] ?? 0;
   let base = rank * 100;
   if (rule.family === "partial") {
-    const revealed = (Number(rule.params.revealFirst) || 0) + (Number(rule.params.revealLast) || 0);
-    base -= revealed; // fewer revealed → stricter
+    base -= (Number(rule.params.showFirst) || 0) + (Number(rule.params.showLast) || 0);
+  } else if (rule.family === "email") {
+    base -= (Number(rule.params.localVisibleChars) || 0) + (Number(rule.params.localVisibleLastChars) || 0);
   }
   return base;
 }
@@ -119,113 +118,65 @@ export function meetsFloor(candidate: Rule, floor: Rule | null): boolean {
 
 // --- Rule label -------------------------------------------------------------
 
-function partialSummary(p: Record<string, unknown>): string {
-  const first = Number(p.revealFirst) || 0;
-  const last = Number(p.revealLast) || 0;
-  const domain = !!p.preserveDomain;
+function showSummary(first: number, last: number): string {
   const parts: string[] = [];
   if (first) parts.push(`first ${first}`);
   if (last) parts.push(`last ${last}`);
-  if (domain) parts.push("domain");
-  return parts.length ? parts.join(" + ") : "none revealed";
+  return parts.length ? parts.join(" + ") : "none shown";
 }
 
-export const GENERALIZE_BUCKETS: Record<string, string> = {
-  age5: "5-year age band",
-  age10: "10-year age band",
-  pincode3: "first 3 of pincode",
-};
-
-/** "{Family label} · {params}", e.g. "Partial reveal · last 4", "Hash · irreversible". */
+/** "{Family label} · {params}", e.g. "Partial mask · last 4", "Pattern mask · xxxx-xxxx-####". */
 export function ruleLabel(rule: Rule | null | undefined): string {
   if (!rule) return "No rule";
   if (rule.family === REVEAL) return "Show in full";
   const label = FAMILY_LABEL[rule.family] ?? rule.family;
   switch (rule.family) {
-    case "partial": return `${label} · ${partialSummary(rule.params)}`;
+    case "partial": return `${label} · ${showSummary(Number(rule.params.showFirst) || 0, Number(rule.params.showLast) || 0)}`;
     case "full": return label;
-    case "hash": return `${label} · irreversible`;
-    case "tokenize": return `${label} · reversible`;
-    case "fpe": return `${label} · reversible`;
-    case "generalize": return `${label} · ${GENERALIZE_BUCKETS[String(rule.params.bucket)] ?? "bucketed"}`;
-    case "synthetic": return `${label} · ${String(rule.params.generator ?? "synthetic")}`;
+    case "pattern": return `${label} · ${String(rule.params.template ?? "")}`;
+    case "email": return `${label} · ${showSummary(Number(rule.params.localVisibleChars) || 0, Number(rule.params.localVisibleLastChars) || 0)}, domain ${String(rule.params.domainMode ?? "PRESERVE").toLowerCase()}`;
     default: return label;
   }
 }
 
-// --- Executor (runMaskCore) -------------------------------------------------
+// --- Executor (runMaskCore) — the four masking functions --------------------
 
-/** Pure, deterministic hex digest — illustrative only, NOT the production hash. */
-function hexDigest(value: string, n: number): string {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < value.length; i++) {
-    h ^= value.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  let out = "";
-  let x = h >>> 0;
-  while (out.length < n) {
-    out += (x >>> 0).toString(16).padStart(8, "0");
-    x = Math.imul(x ^ (x >>> 13), 0x01000193) >>> 0;
-  }
-  return out.slice(0, n);
-}
-
-function maskMiddle(value: string, first: number, last: number, ch: string): string {
+/** PARTIAL_MASK: show first N + last M, mask everything else (separators too). */
+function partialMask(value: string, first: number, last: number, ch: string): string {
   const len = value.length;
-  return value
-    .split("")
-    // Reveal the first/last window; keep separators (dashes, spaces) so a grouped
-    // identifier stays legible, e.g. "2345-1234-9012" → "xxxx-xxxx-9012".
-    .map((c, i) => (i < first || i >= len - last || /[^A-Za-z0-9]/.test(c) ? c : ch))
-    .join("");
+  if (first + last >= len) return value;
+  return value.split("").map((c, i) => (i < first || i >= len - last ? c : ch)).join("");
 }
 
-function fpe(value: string): string {
-  // Format-preserving: remap each digit/letter to another of the same class,
-  // deterministically; keep separators. Illustrative, not real FPE.
-  const shift = (hexDigest(value, 2).charCodeAt(0) % 7) + 1;
-  return value.replace(/[0-9]/g, (d) => String((Number(d) + shift) % 10))
-    .replace(/[a-z]/g, (c) => String.fromCharCode(((c.charCodeAt(0) - 97 + shift) % 26) + 97))
-    .replace(/[A-Z]/g, (c) => String.fromCharCode(((c.charCodeAt(0) - 65 + shift) % 26) + 65));
+/** PATTERN_MASK: template with '#' filled left-to-right by the value's last-K chars. */
+function patternMask(value: string, template: string): string {
+  const hashes = (template.match(/#/g) || []).length;
+  const revealed = hashes > 0 ? value.slice(-hashes) : "";
+  let ri = 0;
+  return template.split("").map((c) => (c === "#" ? revealed[ri++] ?? c : c)).join("");
 }
 
-function generalize(value: string, bucket: string): string {
-  if (bucket === "pincode3") return `${value.replace(/\s/g, "").slice(0, 3)}xxx`;
-  // age band from a YYYY-MM-DD style value.
-  const m = value.match(/(\d{4})/);
-  if (m) {
-    const age = 2026 - Number(m[1]);
-    const size = bucket === "age10" ? 10 : 5;
-    const lo = Math.max(0, Math.floor(age / size) * size);
-    return `${lo}–${lo + size - 1}`;
-  }
-  return "bucketed";
+/** EMAIL_MASK: mask the local part (keep first/last N), preserve or mask the domain. */
+function emailMask(value: string, first: number, last: number, domainMode: string, ch: string): string {
+  const at = value.indexOf("@");
+  const local = at >= 0 ? value.slice(0, at) : value;
+  const domain = at >= 0 ? value.slice(at) : "";
+  const maskedLocal = partialMask(local, first, last, ch);
+  const outDomain = domainMode === "PRESERVE" || !domain ? domain : "@" + ch.repeat(Math.max(1, domain.length - 1));
+  return maskedLocal + outDomain;
 }
 
-/** Apply a masking family to a value. Always returns a string (no failure state). */
+/** Apply a masking function to a value. Always returns a string (no failure state). */
 export function runMaskCore(rule: Rule, value: string): string {
   if (rule.family === REVEAL) return value;
   if (!value) return "";
   const p = rule.params ?? {};
   const ch = typeof p.maskChar === "string" && p.maskChar ? String(p.maskChar) : "*";
   switch (rule.family) {
-    case "partial": {
-      const first = Number(p.revealFirst) || 0;
-      const last = Number(p.revealLast) || 0;
-      if (p.preserveDomain && value.includes("@")) {
-        const at = value.indexOf("@");
-        const local = value.slice(0, at);
-        return maskMiddle(local, first, last, ch) + value.slice(at);
-      }
-      return maskMiddle(value, first, last, ch);
-    }
-    case "full": return ch.repeat(Math.max(6, Math.min(value.length, 12)));
-    case "hash": { const h = hexDigest(value, 8); return `${h.slice(0, 4)}…${h.slice(4)}`; }
-    case "tokenize": return `tok_${hexDigest(value, 4)}…`;
-    case "fpe": return fpe(value);
-    case "generalize": return generalize(value, String(p.bucket ?? "age5"));
-    case "synthetic": return `SYN-${hexDigest(value, 6).toUpperCase()}`;
+    case "partial": return partialMask(value, Number(p.showFirst) || 0, Number(p.showLast) || 0, ch);
+    case "full": return ch.repeat(value.length);
+    case "pattern": return patternMask(value, String(p.template ?? ""));
+    case "email": return emailMask(value, Number(p.localVisibleChars) || 0, Number(p.localVisibleLastChars) || 0, String(p.domainMode ?? "PRESERVE"), ch);
     default: return ch.repeat(value.length);
   }
 }
