@@ -36,8 +36,8 @@ export async function ByFieldTab({ sp }: { sp: ByFieldSP }) {
 
   let filtered = rows;
   // Default shows the full applied-rules list (BASELINE + any associated templates);
-  // "needs attention" is an explicit filter, not the default.
-  if (sp.status === "attention") filtered = filtered.filter((r) => r.needsAttention);
+  // "needs attention" (unresolved: no rule or ambiguous) is an explicit filter.
+  if (sp.status === "attention") filtered = filtered.filter((r) => r.winningSource === "attention");
   if (sp.status === "norule") filtered = filtered.filter((r) => r.status === "no_rule");
   if (sp.status === "ambiguous") filtered = filtered.filter((r) => r.status === "ambiguous");
   if (sp.status === "diverged") filtered = filtered.filter((r) => r.diverged);
@@ -107,8 +107,9 @@ export async function ByFieldTab({ sp }: { sp: ByFieldSP }) {
         <Link href={qs({ governedBy: "baseline", page: undefined })} className="stat-seg"><b>{coverage.baseline}</b> baseline</Link>
         <Link href={qs({ governedBy: "regional", page: undefined })} className="stat-seg"><b>{coverage.regional}</b> regional</Link>
         <Link href={qs({ governedBy: "tenant", page: undefined })} className="stat-seg"><b>{coverage.tenant}</b> tenant</Link>
-        <Link href={qs({ status: "attention", page: undefined })} className={`stat-seg${attn.total > 0 ? " warn" : ""}`}><b>{attn.total}</b> need attention</Link>
+        <Link href={qs({ status: "attention", page: undefined })} className={`stat-seg${coverage.attention > 0 ? " warn" : ""}`}><b>{coverage.attention}</b> need attention</Link>
         <Link href={qs({ status: "pending", page: undefined })} className="stat-seg"><b>{coverage.pending}</b> pending</Link>
+        {attn.diverged > 0 && <Link href={qs({ status: "diverged", page: undefined })} className="stat-seg"><b>{attn.diverged}</b> diverged</Link>}
       </div>
 
       <PolicyFilters current={sp as Record<string, string | undefined>} basePath={BASE} />
