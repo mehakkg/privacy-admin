@@ -4,9 +4,10 @@ import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/session";
 import {
   createField, editTenantRule, proposeChange, proposeException,
-  decideChange, withdrawProposal, checkCodeCollision,
+  decideChange, withdrawProposal, counterPropose, checkCodeCollision,
   unlockSelfLocked, createAndApplyGroup, reapplyGroup, detachField, validateGroupMembers,
   planRuleForFields, submitRulePlan, setTemplateAssociation, templateFields,
+  revertToTemplate, resyncFieldToGroup,
   type CreateFieldInput, type RulePatch, type Collision, type CreateGroupInput, type GroupMemberValidation,
   type PlanRow, type SubmitPlanResult, type TemplateFieldRow,
 } from "@/lib/engines/masking";
@@ -66,6 +67,11 @@ export async function withdrawProposalAction(id: string): Promise<MaskingActionR
   try { await withdrawProposal(id, actor); touch(); return { ok: true }; } catch (e) { return fail(e); }
 }
 
+export async function counterProposeAction(id: string, family: string, params: Record<string, unknown>, note: string): Promise<MaskingActionResult> {
+  const { actor } = await getSession();
+  try { await counterPropose(id, family, params, note, actor); touch(); return { ok: true }; } catch (e) { return fail(e); }
+}
+
 export async function checkCollisionAction(code: string): Promise<{ collision: Collision | null }> {
   return { collision: await checkCodeCollision(code) };
 }
@@ -97,6 +103,16 @@ export async function reapplyGroupAction(id: string): Promise<MaskingActionResul
 export async function detachFieldAction(id: string, code: string): Promise<MaskingActionResult> {
   const { actor } = await getSession();
   try { await detachField(id, code, actor); touch(); return { ok: true }; } catch (e) { return fail(e); }
+}
+
+export async function revertToTemplateAction(code: string): Promise<MaskingActionResult> {
+  const { actor } = await getSession();
+  try { await revertToTemplate(code, actor); touch(); return { ok: true }; } catch (e) { return fail(e); }
+}
+
+export async function resyncFieldToGroupAction(groupId: string, code: string): Promise<MaskingActionResult> {
+  const { actor } = await getSession();
+  try { await resyncFieldToGroup(groupId, code, actor); touch(); return { ok: true }; } catch (e) { return fail(e); }
 }
 
 /** Live pre-validation for the group create form. */

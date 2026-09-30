@@ -3,16 +3,17 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { X, Lock, LockOpen, ShieldCheck, Pencil, GitPullRequest, Check, Ban, Clock, ExternalLink, AlertTriangle, LayoutTemplate } from "lucide-react";
+import { X, Lock, LockOpen, ShieldCheck, Pencil, GitPullRequest, Check, Ban, Clock, ExternalLink, AlertTriangle, LayoutTemplate, RotateCcw, Unlink, RefreshCw, History } from "lucide-react";
 import { Pill, type PillTone } from "@/components/ui";
-import { RuleEditor } from "@/components/masking/RuleEditor";
+import { CreateRuleModal, type CatalogField } from "@/components/masking/CreateRuleModal";
+import { RuleEditor, defaultParamsFor } from "@/components/masking/RuleEditor";
 import {
   ruleLabel, SENSITIVITY_TONE,
   type Rule, type FieldResolution, type RulePatch,
 } from "@/lib/masking";
 import {
-  editTenantRuleAction, proposeChangeAction,
-  decideChangeAction, withdrawProposalAction, unlockSelfLockedAction, templateFieldsAction, type MaskingActionResult,
+  decideChangeAction, withdrawProposalAction, counterProposeAction, unlockSelfLockedAction, templateFieldsAction,
+  revertToTemplateAction, detachFieldAction, resyncFieldToGroupAction, type MaskingActionResult,
 } from "@/app/actions/masking";
 import type { TemplateFieldRow } from "@/lib/engines/masking";
 
@@ -39,23 +40,37 @@ function useRun() {
 }
 
 export function FieldDrawer({
-  res, pending, history, role, closeHref, floor, floorName,
+  res, pending, history, role, closeHref, groupId, groupName, diverged,
 }: {
   res: FieldResolution;
   pending: PendingView | null;
   history: HistoryRow[];
   role: string;
   closeHref: string;
-  floor: Rule | null;
-  floorName: string | null;
+  groupId: string | null;
+  groupName: string | null;
+  diverged: boolean;
 }) {
   const router = useRouter();
-  const [mode, setMode] = useState<"view" | "edit" | "propose">("view");
   const gov = res.governedBy;
   const treatment = gov?.treatment ?? null;
   const isDpo = role === "dpo";
   const close = () => router.push(closeHref);
   const unlock = useRun();
+  const mutate = useRun();
+
+  // state = no_rule | regulatory_floor | template_governed | tenant_governed.
+  const state = res.status === "ambiguous" ? "ambiguous"
+    : !res.hasRule ? "no_rule"
+    : treatment === "system" ? "regulatory_floor"
+    : treatment === "governed" ? "template_governed"
+    : treatment === "self" ? "self_locked"
+    : "tenant_governed";
+
+  // The drawer's Create/Override/Edit reuse the SAME stepper as multi-select.
+  const [stepper, setStepper] = useState<null | { kind: "create" | "override" | "edit" }>(null);
+  const catalog: CatalogField[] = [{ code: res.code, name: res.name, sensitivity: res.sensitivity, source: gov?.badge ?? "No rule", systemRegulated: !!gov?.systemRegulated, sampleValue: res.sampleValue }];
+  const currentRule: Rule | undefined = res.effective ? { family: res.effective.family, params: res.effective.params } : undefined;
   const templateKey = gov ? (gov.layer === "baseline" ? "BASELINE" : gov.layer === "regional" ? gov.source : null) : null;
   const [tpl, setTpl] = useState<{ key: string; rows: TemplateFieldRow[] } | null>(null);
   const [tplLoading, setTplLoading] = useState(false);
@@ -84,36 +99,51 @@ export function FieldDrawer({
           <button className="icon-btn" onClick={close} aria-label="Close"><X size={16} /></button>
         </div>
 
-        {/* Header action — governance-dependent, two distinct lock treatments. */}
+        {/* Header actions — computed per state, never a fixed set. */}
         <div className="mask-drawer-actionbar">
-          {treatment === "system" && (
-            <span className="row cell-sub" style={{ gap: 6, color: "var(--red)" }}>
-              <ShieldCheck size={13} /> SYSTEM-regulated. Owned by SUPER_ADMIN. No tenant can edit, override, or unlock this.
-            </span>
-          )}
-          {treatment === "self" && mode === "view" && (
-            <div className="stack" style={{ gap: 6 }}>
-              <span className="row cell-sub" style={{ gap: 6, color: "var(--yellow)" }}><Lock size={13} /> Locked by your team. You can unlock this anytime.</span>
-              {unlock.result && !unlock.result.ok && <span className="cell-sub" style={{ color: "var(--red)" }}>{unlock.result.error}</span>}
-              <button className="btn sm" disabled={unlock.pending} onClick={() => unlock.run(() => unlockSelfLockedAction(res.code))}><LockOpen size={13} /> {unlock.pending ? "Unlocking…" : "Unlock"}</button>
+          {(mutate.result && !mutate.result.ok) && <div className="notice danger" style={{ marginBottom: 8 }}><div className="notice-title">Refused — {mutate.result.errorKind}</div><div>{mutate.result.error}</div></div>}
+
+          {/* While a proposal is pending, mutating actions are suppressed everywhere. */}
+          {pending ? (
+            <span className="row cell-sub" style={{ gap: 6, color: "var(--yellow)" }}><Clock size={13} /> A change is pending — see the diff below.</span>
+          ) : (
+            <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+              {state === "no_rule" && (
+                <button className="btn sm primary" onClick={() => setStepper({ kind: "create" })}><Pencil size={13} /> Create rule</button>
+              )}
+              {state === "regulatory_floor" && (
+                <span className="row cell-sub" style={{ gap: 6, color: "var(--red)" }}><ShieldCheck size={13} /> Owned by SUPER_ADMIN. No tenant, including yours, can edit, override, or unlock this.</span>
+              )}
+              {state === "template_governed" && (
+                <button className="btn sm primary" onClick={() => setStepper({ kind: "override" })}><GitPullRequest size={13} /> Override</button>
+              )}
+              {state === "self_locked" && (
+                <div className="stack" style={{ gap: 6 }}>
+                  <span className="row cell-sub" style={{ gap: 6, color: "var(--yellow)" }}><Lock size={13} /> Locked by your team. You can unlock this anytime.</span>
+                  {unlock.result && !unlock.result.ok && <span className="cell-sub" style={{ color: "var(--red)" }}>{unlock.result.error}</span>}
+                  <button className="btn sm" disabled={unlock.pending} onClick={() => unlock.run(() => unlockSelfLockedAction(res.code))}><LockOpen size={13} /> {unlock.pending ? "Unlocking…" : "Unlock"}</button>
+                </div>
+              )}
+              {state === "tenant_governed" && (
+                <>
+                  <button className="btn sm primary" onClick={() => setStepper({ kind: "edit" })}><Pencil size={13} /> Edit</button>
+                  <button className="btn sm" disabled={mutate.pending} onClick={() => mutate.run(() => revertToTemplateAction(res.code))}><RotateCcw size={13} /> Revert to template default</button>
+                  {groupId && diverged && (
+                    <>
+                      <span className="row cell-sub" style={{ gap: 6, width: "100%", color: "var(--yellow)" }}><RefreshCw size={12} /> Diverged from group “{groupName}”.</span>
+                      <button className="btn sm" disabled={mutate.pending} onClick={() => mutate.run(() => detachFieldAction(groupId, res.code))}><Unlink size={13} /> Detach from group</button>
+                      <button className="btn sm" disabled={mutate.pending} onClick={() => mutate.run(() => resyncFieldToGroupAction(groupId, res.code))}><RefreshCw size={13} /> Re-sync to group definition</button>
+                    </>
+                  )}
+                </>
+              )}
+              <Link href={`/audit?module=masking&field=${res.code}`} className="btn ghost sm"><History size={13} /> View history</Link>
             </div>
-          )}
-          {treatment === "governed" && !pending && mode === "view" && (
-            <button className="btn sm primary" onClick={() => setMode("propose")}><GitPullRequest size={13} /> Propose change</button>
-          )}
-          {treatment === "none" && !pending && mode === "view" && (
-            <button className="btn sm primary" onClick={() => setMode("edit")}><Pencil size={13} /> Edit rule</button>
-          )}
-          {!res.hasRule && res.status !== "ambiguous" && (
-            <button className="btn sm primary" onClick={() => setMode("edit")}><Pencil size={13} /> Add rule</button>
           )}
         </div>
 
         <div className="mask-drawer-body">
-          {mode === "edit" && <EditForm res={res} floor={floor} floorName={floorName} onDone={() => setMode("view")} onNeedsApproval={() => setMode("propose")} />}
-          {mode === "propose" && <ProposeForm res={res} floor={floor} floorName={floorName} onDone={() => setMode("view")} />}
-
-          {mode === "view" && (
+          {(
             <>
               {/* Ambiguity — a hard error naming both sources, never a chosen winner. */}
               {res.status === "ambiguous" && (
@@ -215,7 +245,7 @@ export function FieldDrawer({
               {/* Pending change */}
               {pending && (
                 <Section title="Pending change">
-                  <PendingBlock pending={pending} isDpo={isDpo} />
+                  <PendingBlock pending={pending} isDpo={isDpo} sampleValue={res.sampleValue} />
                 </Section>
               )}
 
@@ -239,6 +269,18 @@ export function FieldDrawer({
           )}
         </div>
       </aside>
+
+      {stepper && (
+        <CreateRuleModal
+          catalog={catalog}
+          initialSelected={[res.code]}
+          lockedField={res.code}
+          startStep={stepper.kind === "edit" ? 1 : 0}
+          initialRule={stepper.kind === "edit" ? currentRule : undefined}
+          heading={stepper.kind === "create" ? "Create rule" : stepper.kind === "override" ? "Override rule" : "Edit rule"}
+          onClose={() => setStepper(null)}
+        />
+      )}
     </>
   );
 }
@@ -257,73 +299,13 @@ function ActionError({ result }: { result: MaskingActionResult | null }) {
   return <div className="notice danger" style={{ marginBottom: 10 }}><div className="notice-title">Refused — {result.errorKind}</div><div>{result.error}</div></div>;
 }
 
-function EditForm({ res, floor, floorName, onDone, onNeedsApproval }: { res: FieldResolution; floor: Rule | null; floorName: string | null; onDone: () => void; onNeedsApproval: () => void }) {
-  const { pending, result, run } = useRun();
-  const [rule, setRule] = useState<Rule>(res.effective ? { family: res.effective.family, params: res.effective.params } : { family: "partial", params: { showLast: 4, maskChar: "*" } });
-  const layer = res.governedBy?.layer ?? "tenant";
 
-  const save = () => run(
-    () => editTenantRuleAction(res.code, [{ layer, channel: null, family: rule.family, params: rule.params }]),
-    onDone,
-  );
-
-  return (
-    <div className="stack" style={{ gap: 12 }}>
-      <h3 className="mask-section-title">{res.hasRule ? "Edit rule" : "Add rule"} — default</h3>
-      <ActionError result={result} />
-      {result?.errorKind === "NeedsApproval" && (
-        <div className="notice warn"><div className="notice-title">This loosens the current rule</div><div>A change that weakens a rule needs DPO approval. <button className="link-btn" onClick={onNeedsApproval}>Switch to a proposal →</button></div></div>
-      )}
-      <RuleEditor value={rule} onChange={setRule} floor={floor} floorName={floorName} channel={null} sampleValue={res.sampleValue} />
-      <div className="row" style={{ gap: 8 }}>
-        <button className="btn ghost sm" onClick={onDone}>Cancel</button>
-        <button className="btn primary sm" disabled={pending} onClick={save}>{pending ? "Saving…" : "Save"}</button>
-      </div>
-      <p className="cell-sub">Tightening saves directly. A change that loosens the rule becomes a proposal for the DPO.</p>
-    </div>
-  );
-}
-
-function ProposeForm({ res, floor, floorName, onDone }: { res: FieldResolution; floor: Rule | null; floorName: string | null; onDone: () => void }) {
-  const { pending, result, run } = useRun();
-  const current: Rule = res.effective ? { family: res.effective.family, params: res.effective.params } : { family: "full", params: {} };
-  const [rule, setRule] = useState<Rule>(current);
-  const [reason, setReason] = useState("");
-  const layer = res.governedBy?.layer ?? "regional";
-
-  const submit = () => run(
-    () => proposeChangeAction(
-      res.code,
-      [{ layer, channel: null, family: current.family, params: current.params }],
-      [{ layer, channel: null, family: rule.family, params: rule.params }],
-      reason,
-    ),
-    onDone,
-  );
-
-  return (
-    <div className="stack" style={{ gap: 12 }}>
-      <h3 className="mask-section-title">Propose change</h3>
-      <ActionError result={result} />
-      <div className="split-2" style={{ gap: 12 }}>
-        <div><div className="cell-sub" style={{ marginBottom: 4 }}>Current</div><div className="lock-box degraded"><strong>{ruleLabel(current)}</strong></div></div>
-        <div><div className="cell-sub" style={{ marginBottom: 4 }}>Proposed</div><RuleEditor value={rule} onChange={setRule} floor={floor} floorName={floorName} channel={null} sampleValue={res.sampleValue} /></div>
-      </div>
-      <label className="fld"><span>Reason for change</span>
-        <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why this change is needed, and which requirement drives it." />
-      </label>
-      <div className="row" style={{ gap: 8 }}>
-        <button className="btn ghost sm" onClick={onDone}>Cancel</button>
-        <button className="btn primary sm" disabled={pending || !reason.trim()} onClick={submit}>{pending ? "Submitting…" : "Submit for DPO approval"}</button>
-      </div>
-    </div>
-  );
-}
-
-function PendingBlock({ pending, isDpo }: { pending: PendingView; isDpo: boolean }) {
+function PendingBlock({ pending, isDpo, sampleValue }: { pending: PendingView; isDpo: boolean; sampleValue: string }) {
   const { pending: busy, result, run } = useRun();
   const [rejecting, setRejecting] = useState(false);
+  const [countering, setCountering] = useState(false);
   const [note, setNote] = useState("");
+  const [counterRule, setCounterRule] = useState<Rule>({ family: "partial", params: defaultParamsFor("partial") });
   const beforeLabel = pending.kind === "exception_add" ? "No exception" : pending.before.map((p) => `${p.channel ?? "default"}: ${ruleLabel(p as Rule)}`).join(", ");
   const afterLabel = pending.kind === "exception_add"
     ? `${pending.after[0]?.params.role}: ${pending.after[0]?.params.purpose} (${pending.after[0]?.params.durationMinutes} min)`
@@ -350,10 +332,21 @@ function PendingBlock({ pending, isDpo }: { pending: PendingView; isDpo: boolean
               <button className="btn ghost sm" onClick={() => setRejecting(false)}>Cancel</button>
             </div>
           </div>
+        ) : countering ? (
+          <div className="stack" style={{ gap: 8, marginTop: 10 }}>
+            <div className="cell-sub">Propose a different rule instead:</div>
+            <RuleEditor value={counterRule} onChange={setCounterRule} floor={null} floorName={null} channel={null} sampleValue={sampleValue} />
+            <input className="input sm" placeholder="Note for the counter (required)" value={note} onChange={(e) => setNote(e.target.value)} />
+            <div className="row" style={{ gap: 6 }}>
+              <button className="btn primary sm" disabled={busy || !note.trim()} onClick={() => run(() => counterProposeAction(pending.id, counterRule.family, counterRule.params, note))}>Submit counter</button>
+              <button className="btn ghost sm" onClick={() => setCountering(false)}>Cancel</button>
+            </div>
+          </div>
         ) : (
-          <div className="row" style={{ gap: 6, marginTop: 10 }}>
+          <div className="row" style={{ gap: 6, marginTop: 10, flexWrap: "wrap" }}>
             <button className="btn primary sm" disabled={busy} onClick={() => run(() => decideChangeAction(pending.id, true, ""))}><Check size={12} /> Approve</button>
             <button className="btn ghost sm" onClick={() => setRejecting(true)}><Ban size={12} /> Reject</button>
+            <button className="btn ghost sm" onClick={() => setCountering(true)}><GitPullRequest size={12} /> Counter-propose</button>
           </div>
         )
       ) : (

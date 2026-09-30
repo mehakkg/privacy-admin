@@ -1,12 +1,11 @@
 import { formatDateTime, PageHead } from "@/components/ui";
 import { Shell } from "@/components/Shell";
 import { getCurrentRole } from "@/lib/session";
-import { type Rule } from "@/lib/masking";
 import { EnforcementNotice } from "@/components/masking/EnforcementNotice";
 import { ByFieldTab, type ByFieldSP } from "@/components/masking/ByFieldTab";
 import { FieldDrawer } from "@/components/masking/FieldDrawer";
 import { AddFieldDrawer } from "@/components/masking/AddFieldDrawer";
-import { resolveField, getPendingChange, fieldHistory, associatedRegionalTemplates } from "@/lib/engines/masking";
+import { resolveField, getPendingChange, fieldHistory, associatedRegionalTemplates, getRuleGroups } from "@/lib/engines/masking";
 
 export const dynamic = "force-dynamic";
 
@@ -31,8 +30,10 @@ export default async function ProtectionRulesPage({ searchParams }: { searchPara
   const pendingRaw = res ? await getPendingChange(res.code) : null;
   const pending = pendingRaw ? { ...pendingRaw, proposedAt: formatDateTime(pendingRaw.proposedAt) } : null;
   const historyRows = res ? await fieldHistory(res.code) : [];
-  const floor: Rule | null = res && res.chain.length > 1 ? { family: res.chain[1].family, params: res.chain[1].params } : null;
-  const floorName = res && res.chain.length > 1 ? `${res.chain[1].layer === "regional" ? `${res.chain[1].source} template` : "Baseline"} floor` : null;
+  // originated_from_group_id + diverged_from_group for this field.
+  const groups = res ? await getRuleGroups() : [];
+  const grp = res ? groups.find((g) => g.memberCodes.includes(res.code)) ?? null : null;
+  const diverged = grp ? grp.divergedCodes.includes(res!.code) : false;
 
   const closeParams = new URLSearchParams();
   for (const [k, v] of Object.entries(sp)) if (v && k !== "field" && k !== "add" && k !== "created") closeParams.set(k, String(v));
@@ -46,7 +47,7 @@ export default async function ProtectionRulesPage({ searchParams }: { searchPara
 
       <ByFieldTab sp={sp} />
 
-      {res && <FieldDrawer res={res} pending={pending} history={historyRows.map((h) => ({ seq: h.seq, action: h.action, actor: h.actorLabel, at: formatDateTime(h.timestamp) }))} role={role} closeHref={closeHref} floor={floor} floorName={floorName} />}
+      {res && <FieldDrawer res={res} pending={pending} history={historyRows.map((h) => ({ seq: h.seq, action: h.action, actor: h.actorLabel, at: formatDateTime(h.timestamp) }))} role={role} closeHref={closeHref} groupId={grp?.id ?? null} groupName={grp?.name ?? null} diverged={diverged} />}
       {sp.add && <AddFieldDrawer closeHref={closeHref} regionalNames={regional.map((t) => t.name)} />}
     </Shell>
   );

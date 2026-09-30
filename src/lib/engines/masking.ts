@@ -453,6 +453,22 @@ export async function decideChange(id: string, approve: boolean, note: string, a
   );
 }
 
+/** DPO counter-proposal: reject the pending proposal and raise the DPO's alternative. */
+export async function counterPropose(id: string, family: string, params: Record<string, unknown>, note: string, actor: AuditActor) {
+  await assertDpo(actor);
+  const cr = await db.maskingChangeRequest.findUnique({ where: { id } });
+  if (!cr) throw err("NotFoundError", "That proposal no longer exists.");
+  if (cr.status !== "pending") throw err("ValidationError", "This proposal has already been decided.");
+  if (!note.trim()) throw err("ValidationError", "A note is required for a counter-proposal.");
+  return audited(
+    { actor, action: "masking.change_countered", targetType: "MaskingField", targetId: cr.fieldCode, eventDescription: `Counter-proposed a different rule for ${cr.fieldCode}`, payload: { code: cr.fieldCode, counter: ruleLabel({ family, params }) } },
+    async (tx) => {
+      await tx.maskingChangeRequest.update({ where: { id }, data: { status: "rejected", decidedBy: actor.label, decidedAt: new Date(), decisionNote: `Counter-proposed: ${note.trim()}` } });
+      await tx.maskingChangeRequest.create({ data: { fieldCode: cr.fieldCode, kind: "rule_change", proposedBy: actor.label, beforeJson: cr.beforeJson, afterJson: encodeObject([{ layer: "tenant", channel: null, family, params }]), reason: note.trim(), status: "pending" } });
+    },
+  );
+}
+
 export async function withdrawProposal(id: string, actor: AuditActor) {
   const cr = await db.maskingChangeRequest.findUnique({ where: { id } });
   if (!cr) throw err("NotFoundError", "That proposal no longer exists.");
@@ -561,6 +577,40 @@ export async function detachField(id: string, code: string, actor: AuditActor) {
   );
 }
 
+/**
+ * Revert a field to its template default — UNILATERAL, no approval. Removes the
+ * tenant rule (and its channel overrides) so the field falls back to the regional
+ * template or BASELINE per normal resolution. This direction is always the safer
+ * one (returning to what DPO/CISO govern), so it is not gated.
+ */
+export async function revertToTemplate(code: string, actor: AuditActor) {
+  const tenant = await db.maskingLayerRule.findFirst({ where: { fieldCode: code, layer: "tenant" } });
+  if (!tenant) throw err("ValidationError", "This field has no tenant rule to revert.");
+  if (tenant.systemRegulated) throw err("ForbiddenError", "A SYSTEM-regulated field cannot be reverted.");
+  return audited(
+    { actor, action: "masking.reverted", targetType: "MaskingField", targetId: code, eventDescription: `Reverted ${code} to its template default (tenant rule removed)`, payload: { code } },
+    async (tx) => {
+      await tx.maskingChannelRule.deleteMany({ where: { fieldCode: code, layer: "tenant" } });
+      await tx.maskingLayerRule.delete({ where: { id: tenant.id } });
+    },
+  );
+}
+
+/** Re-sync ONE field's tenant rule back to its group's definition (unilateral). */
+export async function resyncFieldToGroup(groupId: string, code: string, actor: AuditActor) {
+  const group = await db.maskingRuleGroup.findUnique({ where: { id: groupId } });
+  if (!group) throw err("NotFoundError", "That group no longer exists.");
+  const params = decodeObject<Record<string, unknown>>(group.paramsJson) ?? {};
+  return audited(
+    { actor, action: "masking.group_resynced", targetType: "MaskingField", targetId: code, eventDescription: `Re-synced ${code} to group "${group.name}" (${ruleLabel({ family: group.family, params })})`, payload: { code, group: group.name } },
+    async (tx) => {
+      const existing = await tx.maskingLayerRule.findFirst({ where: { fieldCode: code, layer: "tenant" } });
+      if (existing) await tx.maskingLayerRule.update({ where: { id: existing.id }, data: { family: group.family, paramsJson: group.paramsJson } });
+      else await tx.maskingLayerRule.create({ data: { fieldCode: code, layer: "tenant", family: group.family, paramsJson: group.paramsJson } });
+    },
+  );
+}
+
 /** Groups with derived state (in_sync | diverged) and each member's effective source. */
 export async function getRuleGroups(): Promise<RuleGroupView[]> {
   const groups = await db.maskingRuleGroup.findMany({ orderBy: { createdAt: "desc" } });
@@ -594,16 +644,20 @@ export async function planRuleForFields(family: string, params: Record<string, u
     const push = (outcome: PlanRow["outcome"], reason: string | null) => out.push({ code, name: bundle.name, currentSource, outcome, reason });
 
     if (res.status === "ambiguous") { push("blocked", "Ambiguous — resolve the template collision before applying a rule."); continue; }
+    // regulatory_floor (Aadhaar/PAN/ABHA only): no override anywhere, ever.
     const sys = bundle.layerRules.find((l) => l.systemRegulated);
     if (sys) { push("blocked", "SYSTEM-regulated — owned by SUPER_ADMIN, cannot be changed."); continue; }
 
     const tenant = bundle.layerRules.find((l) => l.layer === "tenant");
     const governedBelow = bundle.layerRules.some((l) => l.layer !== "tenant");
-    const floor = await tenantFloor(code, null);
-    if (floor && strictness(def) < strictness(floor)) { push("blocked", `Weaker than the ${layerBadge(res.chain.find((c) => !c.won)?.layer ?? "baseline", null)} floor (${ruleLabel(floor)}).`); continue; }
     if (tenant?.locked) { push("blocked", "Self-locked — unlock the field before changing it."); continue; }
-    if (!tenant && governedBelow) { push("approval", "Governed by a template — a tenant override needs DPO approval."); continue; }
-    if (tenant && strictness(def) < strictness(ruleOf(tenant))) { push("approval", "Loosens the current tenant rule — needs DPO approval."); continue; }
+    // tenant_governed: EVERY edit to an existing tenant rule routes to DPO approval
+    // (no silent drift — the Scenario 6 re-approval discipline).
+    if (tenant) { push("approval", "Editing an existing tenant rule needs a fresh DPO approval."); continue; }
+    // template_governed: overriding a template (BASELINE or a regional template) is
+    // a governance decision — always to DPO approval, regardless of the new value.
+    if (governedBelow) { push("approval", "Overriding a template needs DPO approval."); continue; }
+    // no_rule: a first tenant rule is created directly.
     push("apply", null);
   }
   return out;
@@ -635,7 +689,11 @@ export async function submitRulePlan(family: string, params: Record<string, unkn
   for (const code of approvalCodes) {
     const open = await db.maskingChangeRequest.findFirst({ where: { fieldCode: code, status: "pending" } });
     if (open) continue; // one pending at a time
-    await proposeChange(code, [{ layer: "tenant", channel: null, family: "reveal", params: {} }], [{ layer: "tenant", channel: null, family, params }], reason, actor);
+    const cur = await resolveField(code);
+    const before: RulePatch[] = cur?.effective
+      ? [{ layer: "tenant", channel: null, family: cur.effective.family, params: cur.effective.params }]
+      : [{ layer: "tenant", channel: null, family: "reveal", params: {} }];
+    await proposeChange(code, before, [{ layer: "tenant", channel: null, family, params }], reason, actor);
   }
   return { applied: applyCodes, proposed: approvalCodes };
 }

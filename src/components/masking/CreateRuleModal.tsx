@@ -16,14 +16,14 @@ const STEPS = ["Fields", "Behavior", "Tune & preview", "Review"] as const;
 
 /** SCREEN 2 — Create rule stepper. Fields → Behavior → Tune & preview → Review,
  *  then a Result step. Submit is disabled while any field is blocked. */
-export function CreateRuleModal({ catalog, initialSelected, onClose }: { catalog: CatalogField[]; initialSelected: string[]; onClose: () => void }) {
+export function CreateRuleModal({ catalog, initialSelected, onClose, lockedField, startStep = 0, initialRule, heading }: { catalog: CatalogField[]; initialSelected: string[]; onClose: () => void; lockedField?: string; startStep?: number; initialRule?: Rule; heading?: string }) {
   const router = useRouter();
   const [pending, start] = useTransition();
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState(startStep);
   const [selected, setSelected] = useState<string[]>(initialSelected);
   const [q, setQ] = useState("");
-  const [intent, setIntent] = useState<string | null>(null);
-  const [rule, setRule] = useState<Rule | null>(null);
+  const [intent, setIntent] = useState<string | null>(initialRule?.family ?? null);
+  const [rule, setRule] = useState<Rule | null>(initialRule ?? null);
   const [reason, setReason] = useState("");
   const [plan, setPlan] = useState<PlanRow[]>([]);
   const [result, setResult] = useState<SubmitPlanResult | null>(null);
@@ -62,7 +62,7 @@ export function CreateRuleModal({ catalog, initialSelected, onClose }: { catalog
       <div className="modal std-modal lg" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div className="std-modal-head">
           <div className="stack" style={{ gap: 6 }}>
-            <h3 style={{ margin: 0 }}>{result ? "Rule applied" : "Create rule"}</h3>
+            <h3 style={{ margin: 0 }}>{result ? "Rule applied" : heading ?? "Create rule"}</h3>
             {!result && (
               <div className="row" style={{ gap: 4, flexWrap: "wrap" }}>
                 {STEPS.map((s, i) => <Pill key={s} tone={i === step ? "blue" : i < step ? "green" : "gray"} dot={false}>{i + 1}. {s}</Pill>)}
@@ -78,6 +78,15 @@ export function CreateRuleModal({ catalog, initialSelected, onClose }: { catalog
           ) : (
             <>
               {step === 0 && (
+                lockedField ? (
+                  <div className="stack" style={{ gap: 10 }}>
+                    <p className="cell-sub" style={{ margin: 0 }}>This rule applies to a single, pre-locked field.</p>
+                    <div className="row" style={{ gap: 8, alignItems: "center", padding: "8px 10px", border: "1px solid var(--border-soft)", borderRadius: 8, background: "var(--bg-selected)" }}>
+                      <span className="mono cell-primary" style={{ flex: 1 }}>{selectedFields[0]?.code ?? lockedField} <span className="cell-sub">{selectedFields[0]?.name}</span></span>
+                      <Pill tone="gray" dot={false}>{selectedFields[0]?.source}</Pill>
+                    </div>
+                  </div>
+                ) : (
                 <div className="stack" style={{ gap: 12 }}>
                   <p className="cell-sub" style={{ margin: 0 }}>Fields this rule will apply to. Each shows its current source.</p>
                   <div className="row" style={{ gap: 6, alignItems: "center" }}>
@@ -95,6 +104,7 @@ export function CreateRuleModal({ catalog, initialSelected, onClose }: { catalog
                   </div>
                   <Link href="/data-flow/protection-rules?add=1" className="row-link"><Plus size={12} style={{ verticalAlign: -1 }} /> Field not listed? Add custom field</Link>
                 </div>
+                )
               )}
 
               {step === 1 && (
@@ -166,7 +176,7 @@ export function CreateRuleModal({ catalog, initialSelected, onClose }: { catalog
 
         {!result && (
           <div className="std-modal-foot">
-            {step > 0 ? <button className="btn" onClick={() => setStep((s) => s - 1)}>Back</button> : <button className="btn" onClick={onClose}>Cancel</button>}
+            {step > startStep ? <button className="btn" onClick={() => setStep((s) => s - 1)}>Back</button> : <button className="btn" onClick={onClose}>Cancel</button>}
             {step < 3 ? <button className="btn primary" disabled={!canNext} onClick={() => setStep((s) => s + 1)}>Next</button>
               : <button className="btn primary" disabled={!canSubmit} onClick={submit}>{pending ? "Applying…" : "Apply rule"}</button>}
           </div>
