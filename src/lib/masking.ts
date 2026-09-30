@@ -59,12 +59,16 @@ export interface FamilySpec {
   onlyChannel?: Channel;
 }
 
-/** The four masking functions the engine supports (see the appendix reference). */
+/**
+ * The four masking functions the engine supports (see the appendix reference).
+ * Labels are PLAIN-LANGUAGE intents — the backend function names (PARTIAL_MASK,
+ * FULL_MASK, PATTERN_MASK, EMAIL_MASK) are never shown in the UI.
+ */
 export const FAMILIES: FamilySpec[] = [
-  { key: "partial", label: "Partial mask", description: "Show the first/last N characters, mask the rest. Params: showFirst, showLast.", reversible: false },
-  { key: "full", label: "Full mask", description: "Mask every character — nothing shown.", reversible: false },
-  { key: "pattern", label: "Pattern mask", description: "Apply a template; # reveals a trailing character, other characters are literal. Param: template.", reversible: false },
-  { key: "email", label: "Email mask", description: "Mask the local part, keep first/last N, preserve the domain. Params: localVisibleChars, localVisibleLastChars, domainMode.", reversible: false },
+  { key: "partial", label: "Show first / last characters", description: "Reveal a few characters at the start or end; mask the rest.", reversible: false },
+  { key: "full", label: "Hide completely", description: "Mask every character — nothing is shown.", reversible: false },
+  { key: "pattern", label: "Keep a pattern", description: "Show the value in a fixed shape, revealing only the trailing characters.", reversible: false },
+  { key: "email", label: "Email style", description: "Reveal a little of the name and keep the domain.", reversible: false },
 ];
 
 export const FAMILY_LABEL: Record<string, string> = Object.fromEntries(FAMILIES.map((f) => [f.key, f.label]));
@@ -125,17 +129,23 @@ function showSummary(first: number, last: number): string {
   return parts.length ? parts.join(" + ") : "none shown";
 }
 
-/** "{Family label} · {params}", e.g. "Partial mask · last 4", "Pattern mask · xxxx-xxxx-####". */
+/**
+ * PLAIN-LANGUAGE description of a rule — e.g. "Show last 4", "Hidden completely",
+ * "Pattern xxxx-xxxx-####", "Email · show first 2 + last 2, keep domain". Never
+ * emits a backend function name.
+ */
 export function ruleLabel(rule: Rule | null | undefined): string {
   if (!rule) return "No rule";
-  if (rule.family === REVEAL) return "Show in full";
-  const label = FAMILY_LABEL[rule.family] ?? rule.family;
+  if (rule.family === REVEAL) return "Shown in full";
   switch (rule.family) {
-    case "partial": return `${label} · ${showSummary(Number(rule.params.showFirst) || 0, Number(rule.params.showLast) || 0)}`;
-    case "full": return label;
-    case "pattern": return `${label} · ${String(rule.params.template ?? "")}`;
-    case "email": return `${label} · ${showSummary(Number(rule.params.localVisibleChars) || 0, Number(rule.params.localVisibleLastChars) || 0)}, domain ${String(rule.params.domainMode ?? "PRESERVE").toLowerCase()}`;
-    default: return label;
+    case "partial": {
+      const s = showSummary(Number(rule.params.showFirst) || 0, Number(rule.params.showLast) || 0);
+      return s === "none shown" ? "Masked" : `Show ${s}`;
+    }
+    case "full": return "Hidden completely";
+    case "pattern": return `Pattern ${String(rule.params.template ?? "")}`;
+    case "email": return `Email · show ${showSummary(Number(rule.params.localVisibleChars) || 0, Number(rule.params.localVisibleLastChars) || 0)}, keep domain`;
+    default: return FAMILY_LABEL[rule.family] ?? rule.family;
   }
 }
 

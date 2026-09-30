@@ -155,7 +155,7 @@ export function CreateRuleModal({ catalog, initialSelected, onClose, lockedField
                               <td>
                                 {p.outcome === "apply" && <Pill tone="green" dot={false}>applies now</Pill>}
                                 {p.outcome === "approval" && <span className="row" style={{ gap: 6 }}><Pill tone="yellow" dot={false}>needs approval</Pill><span className="cell-sub">{p.reason}</span></span>}
-                                {p.outcome === "blocked" && <span className="row" style={{ gap: 6 }}><Pill tone="red" dot={false}>blocked</Pill><span className="cell-sub">{p.reason}</span></span>}
+                                {p.outcome === "blocked" && <span className="row" style={{ gap: 6, flexWrap: "wrap" }}><Pill tone="red" dot={false}>blocked</Pill><span className="cell-sub">{p.reason}</span><Link href={`/data-flow/protection-rules?field=${p.code}`} className="row-link" onClick={onClose}>View item →</Link></span>}
                               </td>
                             </tr>
                           ))}

@@ -112,7 +112,7 @@ export function FieldDrawer({
                 <button className="btn sm primary" onClick={() => setStepper({ kind: "create" })}><Pencil size={13} /> Create rule</button>
               )}
               {state === "regulatory_floor" && (
-                <span className="row cell-sub" style={{ gap: 6, color: "var(--red)" }}><ShieldCheck size={13} /> Owned by SUPER_ADMIN. No tenant, including yours, can edit, override, or unlock this.</span>
+                <span className="row cell-sub" style={{ gap: 6, color: "var(--red)" }}><ShieldCheck size={13} /> This field is owned by the platform. No tenant, including yours, can ever change it.</span>
               )}
               {state === "template_governed" && (
                 <button className="btn sm primary" onClick={() => setStepper({ kind: "override" })}><GitPullRequest size={13} /> Override</button>
@@ -168,6 +168,17 @@ export function FieldDrawer({
                       <strong>{res.effective.label}</strong>
                       <Pill tone={res.effective.reversible ? "blue" : "gray"} dot={false}>{res.effective.reversible ? "reversible" : "irreversible"}</Pill>
                     </div>
+                    {/* Plain-language governance explanation. */}
+                    {state === "template_governed" && gov && (
+                      <p className="cell-sub" style={{ marginTop: 8 }}>
+                        This field is governed by the <strong>{gov.badge}</strong>{gov.layer === "regional" ? ", which takes precedence over the BASELINE default" : " default"}. Right now it shows as <span className="mono">{res.effective.preview.split(" → ")[1] ?? res.effective.preview}</span>. Overriding it is a governance decision, so any change goes to the DPO for approval.
+                      </p>
+                    )}
+                    {state === "tenant_governed" && gov && (
+                      <p className="cell-sub" style={{ marginTop: 8 }}>
+                        This field uses your tenant&rsquo;s own rule{gov.stricter ? ", stricter than the template beneath it" : ""}. Editing it goes to the DPO for approval; reverting to the template default is immediate.
+                      </p>
+                    )}
                     {res.citation && <p className="cell-sub" style={{ marginTop: 6, color: "var(--blue)" }}>{res.citation}</p>}
                   </>
                 ) : (
