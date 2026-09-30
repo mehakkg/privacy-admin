@@ -6,7 +6,7 @@ import Link from "next/link";
 import { X, Search, Check, AlertTriangle, Clock, Plus, CheckCircle2 } from "lucide-react";
 import { Pill } from "@/components/ui";
 import { RuleEditor, defaultParamsFor } from "@/components/masking/RuleEditor";
-import { INTENTS, runMaskCore, REVEAL, SENSITIVITIES, type Rule } from "@/lib/masking";
+import { INTENTS, runMaskCore, intentPreview, REVEAL, SENSITIVITIES, type Rule } from "@/lib/masking";
 import { planRuleAction, submitRuleAction, checkCollisionAction, createBareFieldAction } from "@/app/actions/masking";
 import type { PlanRow, SubmitPlanResult } from "@/lib/engines/masking";
 
@@ -113,12 +113,22 @@ export function CreateRuleModal({ catalog, initialSelected, onClose, lockedField
                 <div className="stack" style={{ gap: 12 }}>
                   <p className="cell-sub" style={{ margin: 0 }}>How should these fields be protected?{anySensitive && " (Show in full is hidden — a selected field is sensitive or regulated.)"}</p>
                   <div className="card-grid">
-                    {intents.map((i) => (
+                    {intents.map((i) => {
+                      const ex = intentPreview(i.key);
+                      return (
                       <button key={i.key} className={`role-card${intent === i.key ? " sel" : ""}`} onClick={() => pickIntent(i.key)} style={{ textAlign: "left" }}>
+                        {ex && (
+                          <span className="intent-preview" aria-hidden>
+                            <span className="ip-before">{ex.before}</span>
+                            <span className="ip-arrow">→</span>
+                            <span className="ip-after">{ex.after}</span>
+                          </span>
+                        )}
                         <span className="cell-primary">{i.label}</span>
                         <p className="cell-sub role-card-desc">{i.description}</p>
                       </button>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}

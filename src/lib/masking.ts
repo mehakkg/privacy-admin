@@ -90,6 +90,26 @@ export const INTENTS: IntentCard[] = [
   { key: REVEAL, label: "Show in full", description: "No masking — the value is shown as-is.", sensitiveHidden: true },
 ];
 
+/**
+ * A canonical, representative sample for each intent so the picker can show a
+ * "before → after" preview on top of every card. Each uses a real masking rule
+ * (so the "after" is what the engine would actually produce), not hand-typed.
+ */
+const INTENT_SAMPLE: Record<string, { value: string; rule: Rule }> = {
+  partial: { value: "9860153210", rule: { family: "partial", params: { showFirst: 2, showLast: 2, maskChar: "*" } } },
+  full: { value: "Ramkumar", rule: { family: "full", params: { maskChar: "*" } } },
+  pattern: { value: "4111111111110366", rule: { family: "pattern", params: { template: "****-****-****-####" } } },
+  email: { value: "karthik.nair@gmail.com", rule: { family: "email", params: { localVisibleChars: 2, localVisibleLastChars: 2, domainMode: "PRESERVE", maskChar: "*" } } },
+  [REVEAL]: { value: "Ramkumar", rule: { family: REVEAL, params: {} } },
+};
+
+/** { before, after } example for an intent card, or null if none is defined. */
+export function intentPreview(key: string): { before: string; after: string } | null {
+  const s = INTENT_SAMPLE[key];
+  if (!s) return null;
+  return { before: s.value, after: runMaskCore(s.rule, s.value) };
+}
+
 // --- Strictness & the floor rule -------------------------------------------
 
 /** full (4) > pattern (3) > email (2) > partial (1) > reveal (0). */

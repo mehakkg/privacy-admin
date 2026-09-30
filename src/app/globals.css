@@ -2984,6 +2984,26 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
   font: inherit;
 }
 .role-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,.06)); }
+.intent-preview {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--bg-subtle, #f4f5f7);
+  border: 1px solid var(--border);
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 11.5px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.intent-preview .ip-before { color: var(--text-muted, #6b7280); text-decoration: line-through; text-decoration-color: var(--border-strong, #c7ccd1); }
+.intent-preview .ip-arrow { color: var(--text-muted, #9aa0a6); }
+.intent-preview .ip-after { color: var(--text, #111827); font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.role-card.sel .intent-preview { border-color: var(--blue); }
 .role-card-desc {
   margin: 0;
   display: -webkit-box;
