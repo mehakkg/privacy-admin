@@ -3851,3 +3851,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 /* Group tag under a field code */
 .group-tag { display: inline-flex; align-items: center; gap: 3px; margin-top: 3px; font-size: 11px; color: var(--text-link); text-decoration: none; }
 .group-tag:hover { text-decoration: underline; }
+
+/* Compact inline search in the Protection rules filter bar */
+.mask-search { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; width: 200px; }
+.mask-search .input { flex: 1; min-width: 0; }
+.mask-filterbar > select.input { flex: 0 0 auto; width: auto; min-width: 120px; }
