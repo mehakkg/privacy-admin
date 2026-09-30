@@ -3853,6 +3853,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 .group-tag:hover { text-decoration: underline; }
 
 /* Compact inline search in the Protection rules filter bar */
-.mask-search { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; width: 200px; }
-.mask-search .input { flex: 1; min-width: 0; }
+.mask-search { display: inline-flex; align-items: center; gap: 7px; flex: 0 0 auto; width: 220px; height: 36px; padding: 0 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.mask-search svg { flex-shrink: 0; }
+.mask-search .input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 0; height: auto; box-shadow: none !important; outline: none; }
+.mask-search .input:focus { border: 0; box-shadow: none !important; outline: none; }
 .mask-filterbar > select.input { flex: 0 0 auto; width: auto; min-width: 120px; }

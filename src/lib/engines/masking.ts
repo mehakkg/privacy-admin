@@ -266,6 +266,32 @@ export async function checkCodeCollision(rawCode: string): Promise<Collision | n
   return { templateName: "an existing field", source: "existing", ruleLabel: "" };
 }
 
+export interface BareFieldInput { code: string; name: string; sensitivity: string; sampleValue: string; detectionPattern?: string; dataElementRef?: string }
+
+/**
+ * Create a custom field with NO rule (the inline "Add custom field" in the stepper).
+ * The stepper's chosen rule is then applied to it as a first tenant rule. Hard-blocks
+ * on a collision with an associated regional template.
+ */
+export async function createBareField(input: BareFieldInput, actor: AuditActor) {
+  const code = input.code.trim().toUpperCase();
+  if (!code) throw err("ValidationError", "Give the field a code.");
+  if (!/^[A-Z0-9_]+$/.test(code)) throw err("ValidationError", "A code may use only A–Z, 0–9 and underscores.");
+  if (!input.name.trim()) throw err("ValidationError", "Give the field a name.");
+  const [existing, collision] = await Promise.all([
+    db.maskingField.findUnique({ where: { code } }),
+    checkCodeCollision(code),
+  ]);
+  if (existing) throw err("DuplicateError", `A field with code ${code} already exists.`);
+  if (collision && collision.source !== "existing") {
+    throw err("CollisionError", `${code} is already governed by the ${collision.templateName} (${collision.ruleLabel}). Edit that item instead.`, { collision });
+  }
+  return audited(
+    { actor, action: "masking.field_created", targetType: "MaskingField", targetId: code, eventDescription: `Created custom field ${code} (no rule yet)`, payload: { code, name: input.name.trim() } },
+    (tx) => tx.maskingField.create({ data: { code, name: input.name.trim(), sensitivity: input.sensitivity, detectionPattern: input.detectionPattern?.trim() || null, dataElementRef: input.dataElementRef?.trim() || null, sampleValue: input.sampleValue.trim(), createdBy: actor.label } }),
+  );
+}
+
 export async function getPendingChange(code: string) {
   const cr = await db.maskingChangeRequest.findFirst({ where: { fieldCode: code.toUpperCase(), status: "pending" }, orderBy: { proposedAt: "desc" } });
   if (!cr) return null;

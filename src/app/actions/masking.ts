@@ -7,7 +7,7 @@ import {
   decideChange, withdrawProposal, counterPropose, checkCodeCollision,
   unlockSelfLocked, createAndApplyGroup, reapplyGroup, detachField, validateGroupMembers,
   planRuleForFields, submitRulePlan, setTemplateAssociation, templateFields,
-  revertToTemplate, resyncFieldToGroup,
+  revertToTemplate, resyncFieldToGroup, createBareField, type BareFieldInput,
   type CreateFieldInput, type RulePatch, type Collision, type CreateGroupInput, type GroupMemberValidation,
   type PlanRow, type SubmitPlanResult, type TemplateFieldRow,
 } from "@/lib/engines/masking";
@@ -74,6 +74,11 @@ export async function counterProposeAction(id: string, family: string, params: R
 
 export async function checkCollisionAction(code: string): Promise<{ collision: Collision | null }> {
   return { collision: await checkCodeCollision(code) };
+}
+
+export async function createBareFieldAction(input: BareFieldInput): Promise<MaskingActionResult> {
+  const { actor } = await getSession();
+  try { await createBareField(input, actor); touch(); return { ok: true }; } catch (e) { return fail(e); }
 }
 
 export async function unlockSelfLockedAction(code: string): Promise<MaskingActionResult> {

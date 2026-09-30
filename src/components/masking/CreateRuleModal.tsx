@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { X, Search, Check, AlertTriangle, Clock, Plus } from "lucide-react";
+import { X, Search, Check, AlertTriangle, Clock, Plus, CheckCircle2 } from "lucide-react";
 import { Pill } from "@/components/ui";
 import { RuleEditor, defaultParamsFor } from "@/components/masking/RuleEditor";
-import { INTENTS, runMaskCore, REVEAL, type Rule } from "@/lib/masking";
-import { planRuleAction, submitRuleAction } from "@/app/actions/masking";
+import { INTENTS, runMaskCore, REVEAL, SENSITIVITIES, type Rule } from "@/lib/masking";
+import { planRuleAction, submitRuleAction, checkCollisionAction, createBareFieldAction } from "@/app/actions/masking";
 import type { PlanRow, SubmitPlanResult } from "@/lib/engines/masking";
 
 export interface CatalogField { code: string; name: string; sensitivity: string; source: string; systemRegulated: boolean; sampleValue: string }
@@ -28,8 +28,9 @@ export function CreateRuleModal({ catalog, initialSelected, onClose, lockedField
   const [plan, setPlan] = useState<PlanRow[]>([]);
   const [result, setResult] = useState<SubmitPlanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [cat, setCat] = useState<CatalogField[]>(catalog);
 
-  const selectedFields = catalog.filter((f) => selected.includes(f.code));
+  const selectedFields = cat.filter((f) => selected.includes(f.code));
   const anySensitive = selectedFields.some((f) => f.sensitivity === "Sensitive" || f.systemRegulated);
   const intents = INTENTS.filter((i) => !i.onlyChannel && !(i.sensitiveHidden && anySensitive));
 
@@ -54,7 +55,8 @@ export function CreateRuleModal({ catalog, initialSelected, onClose, lockedField
     else setError(r.error ?? "Failed.");
   });
 
-  const matches = q.trim() ? catalog.filter((f) => f.code.toLowerCase().includes(q.toLowerCase()) || f.name.toLowerCase().includes(q.toLowerCase())) : catalog;
+  const matches = q.trim() ? cat.filter((f) => f.code.toLowerCase().includes(q.toLowerCase()) || f.name.toLowerCase().includes(q.toLowerCase())) : cat;
+  const onFieldCreated = (f: CatalogField) => { setCat((c) => (c.some((x) => x.code === f.code) ? c : [f, ...c])); setSelected((s) => (s.includes(f.code) ? s : [...s, f.code])); };
   const toggle = (code: string) => setSelected((s) => (s.includes(code) ? s.filter((c) => c !== code) : [...s, code]));
 
   return (
@@ -102,7 +104,7 @@ export function CreateRuleModal({ catalog, initialSelected, onClose, lockedField
                       </label>
                     ))}
                   </div>
-                  <Link href="/data-flow/protection-rules?add=1" className="row-link"><Plus size={12} style={{ verticalAlign: -1 }} /> Field not listed? Add custom field</Link>
+                  <InlineAddField onCreated={onFieldCreated} />
                 </div>
                 )
               )}
@@ -209,6 +211,73 @@ function ResultView({ result, onClose }: { result: SubmitPlanResult; onClose: ()
       {result.applied.length === 0 && result.proposed.length === 0 && <p className="cell-sub">No changes were made.</p>}
       <p className="cell-sub">Both applied changes and proposals are written to the config audit log automatically.</p>
       <div className="row" style={{ justifyContent: "flex-end" }}><button className="btn primary" onClick={onClose}>Done</button></div>
+    </div>
+  );
+}
+
+/** Inline "Add custom field" inside the picker — never opens the hidden right drawer. */
+function InlineAddField({ onCreated }: { onCreated: (f: CatalogField) => void }) {
+  const [open, setOpen] = useState(false);
+  const [pending, start] = useTransition();
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [sensitivity, setSensitivity] = useState("Personal");
+  const [sample, setSample] = useState("");
+  const [collision, setCollision] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const seq = useRef(0);
+
+  const normalized = code.trim().toUpperCase();
+  const codeValid = /^[A-Z0-9_]+$/.test(normalized);
+
+  useEffect(() => {
+    if (!open || !normalized || !codeValid) { setCollision(null); setChecking(false); return; }
+    setChecking(true);
+    const mine = ++seq.current;
+    const t = setTimeout(async () => {
+      const { collision } = await checkCollisionAction(normalized);
+      if (mine === seq.current) { setCollision(collision ? `${normalized} is already governed by the ${collision.templateName}. Edit that item instead.` : null); setChecking(false); }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [open, normalized, codeValid]);
+
+  const canCreate = open && !!normalized && codeValid && !!name.trim() && !collision && !checking && !pending;
+  const create = () => start(async () => {
+    const r = await createBareFieldAction({ code: normalized, name, sensitivity, sampleValue: sample });
+    if (r.ok) {
+      onCreated({ code: normalized, name: name.trim(), sensitivity, source: "No rule", systemRegulated: false, sampleValue: sample.trim() });
+      setOpen(false); setCode(""); setName(""); setSample(""); setError(null);
+    } else setError(r.error ?? "Failed.");
+  });
+
+  if (!open) return <button className="link-btn" onClick={() => setOpen(true)}><Plus size={12} /> Field not listed? Add custom field</button>;
+
+  return (
+    <div className="stack" style={{ gap: 8, border: "1px solid var(--border-soft)", borderRadius: 8, padding: 10 }}>
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+        <strong className="cell-primary">New custom field</strong>
+        <button className="icon-btn" onClick={() => setOpen(false)} aria-label="Close"><X size={14} /></button>
+      </div>
+      {error && <div className="notice danger" style={{ margin: 0 }}><div>{error}</div></div>}
+      <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+        <label className="fld" style={{ flex: "1 1 160px" }}><span>Field code</span><input className="input mono" value={normalized} onChange={(e) => setCode(e.target.value)} placeholder="WALLET_ID" /></label>
+        <label className="fld" style={{ flex: "1 1 160px" }}><span>Name</span><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Wallet identifier" /></label>
+      </div>
+      <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+        <label className="fld" style={{ flex: "0 0 150px" }}><span>Sensitivity</span>
+          <select className="input" value={sensitivity} onChange={(e) => setSensitivity(e.target.value)}>{SENSITIVITIES.map((s) => <option key={s} value={s}>{s}</option>)}</select>
+        </label>
+        <label className="fld" style={{ flex: "1 1 160px" }}><span>Sample value</span><input className="input" value={sample} onChange={(e) => setSample(e.target.value)} placeholder="e.g. W-771203" /></label>
+      </div>
+      {normalized && !codeValid && <span className="cell-sub" style={{ color: "var(--red)" }}>Only A–Z, 0–9 and underscores.</span>}
+      {checking && <span className="cell-sub">Checking templates…</span>}
+      {collision && <div className="notice danger" style={{ margin: 0 }}><div className="row" style={{ gap: 6 }}><AlertTriangle size={13} style={{ color: "var(--red)" }} /> {collision}</div></div>}
+      {!collision && !checking && normalized && codeValid && <span className="row cell-sub" style={{ gap: 6, color: "var(--green)" }}><CheckCircle2 size={13} /> Code is free.</span>}
+      <div className="row" style={{ gap: 6 }}>
+        <button className="btn ghost sm" onClick={() => setOpen(false)}>Cancel</button>
+        <button className="btn primary sm" disabled={!canCreate} onClick={create}>{pending ? "Adding…" : "Add & select"}</button>
+      </div>
     </div>
   );
 }
