@@ -3810,9 +3810,10 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 /* Rule templates card */
 .rtpl-card { display: flex; flex-direction: row; align-items: center; gap: 14px; flex-wrap: wrap; padding: 14px 16px; border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface); margin: 16px 0 4px; }
 .tpl-card-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 9px; background: var(--bg-selected); color: var(--text-link); flex-shrink: 0; }
-.tpl-card-main { min-width: 180px; }
+.tpl-card-main { flex: 1 1 200px; min-width: 180px; }
 .tpl-card-title { font-weight: 600; }
-.tpl-chips { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-left: auto; }
+.tpl-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
+.tpl-chips { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
 .tpl-chip2 { display: inline-flex; align-items: center; }
 .tpl-chip2-label { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; background: var(--bg-subtle, #f4f5f7); border: 1px solid var(--border-soft); font-size: 12.5px; text-decoration: none; color: inherit; }
 .tpl-chip2-label:hover { border-color: var(--border-strong); }

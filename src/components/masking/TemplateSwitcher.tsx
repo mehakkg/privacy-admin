@@ -38,6 +38,7 @@ export function RuleTemplates({ templates, customTemplates }: { templates: Templ
         <div className="tpl-card-title">Rule templates</div>
         <div className="cell-sub">Apply a trusted baseline, then tailor it to your teams.</div>
       </div>
+      <div className="tpl-right">
       <div className="tpl-chips">
         {templates.map((t) => {
           const href = `${BASE}?governedBy=${t.kind === "baseline" ? "baseline" : t.key}&status=all`;
@@ -62,6 +63,7 @@ export function RuleTemplates({ templates, customTemplates }: { templates: Templ
         ))}
       </div>
       <CustomTemplateCreator />
+      </div>
       {result && !result.ok && <span className="cell-sub" style={{ color: "var(--red)", flexBasis: "100%" }}>{result.error}</span>}
     </section>
   );
