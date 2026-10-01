@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { FolderPlus, X } from "lucide-react";
 import { createCustomTemplateAction } from "@/app/actions/masking";
@@ -17,6 +18,8 @@ export function CustomTemplateCreator() {
   const [name, setName] = useState("");
   const [copyBaseline, setCopyBaseline] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const close = () => { setOpen(false); setName(""); setCopyBaseline(false); setError(null); };
   const create = () => start(async () => {
@@ -28,7 +31,7 @@ export function CustomTemplateCreator() {
   return (
     <>
       <button className="btn sm tpl-create" onClick={() => setOpen(true)}><FolderPlus size={13} /> Create custom</button>
-      {open && (
+      {open && mounted && createPortal(
         <div className="modal-scrim" onClick={close}>
           <div className="modal std-modal sm" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="New custom template">
             <div className="std-modal-head">
@@ -54,7 +57,8 @@ export function CustomTemplateCreator() {
               <button className="btn primary" disabled={!name.trim() || pending} onClick={create}>{pending ? "Creating…" : "Create"}</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
