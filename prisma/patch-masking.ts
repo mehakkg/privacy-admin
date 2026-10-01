@@ -48,12 +48,57 @@ async function ensureNoRuleFields() {
   await prisma.maskingLayerRule.deleteMany({ where: { fieldCode: { in: codes } } });
 }
 
+/**
+ * Idempotent fixtures for the FINAL spec's new states (Override On/Off, approved
+ * Visibility Matrix variant, custom template + moved member, a prior approved
+ * version for history-based Restore). Runs on EVERY deploy — new demo data must
+ * live here, never in the one-time reseed block, so it lands on the live DB.
+ */
+async function ensureNewStateFixtures() {
+  // 1. Override OFF: a DPDP-governed field with a stored tenant rule that is switched
+  //    off, so it resolves live to the DPDP value while keeping the stored rule.
+  if (!(await prisma.maskingField.findUnique({ where: { code: "MOBILE_WALLET_KYC" } }))) {
+    await prisma.maskingField.create({ data: { code: "MOBILE_WALLET_KYC", name: "Mobile wallet KYC ref", sensitivity: "Sensitive", sampleValue: "WKYC-99120034" } });
+    await prisma.maskingLayerRule.create({ data: { fieldCode: "MOBILE_WALLET_KYC", layer: "regional", source: "DPDP", family: "partial", paramsJson: J({ showFirst: 0, showLast: 4, maskChar: "*" }), locked: true, citation: "DPDP Act 2023, s.8" } });
+    await prisma.maskingLayerRule.create({ data: { fieldCode: "MOBILE_WALLET_KYC", layer: "tenant", family: "full", paramsJson: J({}), active: false } });
+  }
+
+  // 2. Approved Visibility Matrix variant on a tenant-governed field (VOTER_ID). It
+  //    is approved but NOT live (enforcement_active is false) — still resolves to Default.
+  if (await prisma.maskingField.findUnique({ where: { code: "VOTER_ID" } })) {
+    await prisma.maskingVisibilityVariant.upsert({
+      where: { fieldCode_scopeType_scopeValue: { fieldCode: "VOTER_ID", scopeType: "role", scopeValue: "Grievance Officer" } },
+      update: {},
+      create: { fieldCode: "VOTER_ID", scopeType: "role", scopeValue: "Grievance Officer", family: "partial", paramsJson: J({ showFirst: 0, showLast: 4, maskChar: "*" }), status: "approved", createdBy: "R. Iyer" },
+    });
+    // 4. A prior approved version so "Restore earlier version" has history to show.
+    const priorVersion = await prisma.maskingChangeRequest.findFirst({ where: { fieldCode: "VOTER_ID", status: "approved", kind: "rule_change" } });
+    if (!priorVersion) {
+      await prisma.maskingChangeRequest.create({ data: {
+        fieldCode: "VOTER_ID", kind: "rule_change", proposedBy: "R. Iyer", proposedAt: new Date("2026-09-10T09:00:00Z"),
+        beforeJson: J([{ layer: "tenant", channel: null, family: "partial", params: { showFirst: 0, showLast: 4, maskChar: "*" } }]),
+        afterJson: J([{ layer: "tenant", channel: null, family: "full", params: {} }]),
+        reason: "Fully mask Voter ID in all surfaces.", status: "approved", decidedBy: "Kavita Menon", decidedAt: new Date("2026-09-11T06:00:00Z"), decisionNote: "Approved.",
+      } });
+    }
+  }
+
+  // 3. A tenant-owned custom template with one moved member (true re-association).
+  await prisma.maskingTemplate.upsert({
+    where: { key: "CUSTOM_ANALYTICS" },
+    update: {},
+    create: { key: "CUSTOM_ANALYTICS", name: "Analytics identifiers", kind: "custom", associated: true, sortOrder: 50, createdBy: "R. Iyer" },
+  });
+  const sess = await prisma.maskingLayerRule.findFirst({ where: { fieldCode: "SESSION_ID", layer: "tenant" } });
+  if (sess && !sess.templateKey) await prisma.maskingLayerRule.update({ where: { id: sess.id }, data: { templateKey: "CUSTOM_ANALYTICS" } });
+}
+
 async function main() {
   if (!process.env.DATABASE_URL) { console.log("patch-masking: no DATABASE_URL, skipping."); return; }
   await ensureTemplates();
   if (await prisma.maskingField.findUnique({ where: { code: "PHONE_NUMBER" } })) {
-    await reconcileLocks(); await ensureNoRuleFields();
-    console.log("patch-masking: canonical fixtures present; ensured templates, reconciled locks + no-rule fields.");
+    await reconcileLocks(); await ensureNoRuleFields(); await ensureNewStateFixtures();
+    console.log("patch-masking: canonical fixtures present; ensured templates, locks, no-rule fields + new-state fixtures.");
     return;
   }
 
@@ -146,7 +191,8 @@ async function main() {
   });
 
   await ensureNoRuleFields();
-  console.log(`patch-masking: seeded ${FIELDS.length} fields (BASELINE + DPDP + demo), 2 rule groups, 1 pending change.`);
+  await ensureNewStateFixtures();
+  console.log(`patch-masking: seeded ${FIELDS.length} fields (BASELINE + DPDP + demo), 2 rule groups, 1 pending change, new-state fixtures.`);
 }
 
 main().catch((e) => console.error("patch-masking failed (continuing):", e)).finally(async () => { await prisma.$disconnect(); });

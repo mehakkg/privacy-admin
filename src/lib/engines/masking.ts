@@ -6,7 +6,7 @@ import {
   CHANNEL_KEYS, CHANNEL_LABEL, LAYER_PRECEDENCE, layerBadge, lockTreatmentOf,
   ruleLabel, maskPreview, reversibleOf, strictness,
   type Layer, type Rule, type FieldResolution, type LayerView, type ChannelView, type RulePatch,
-  type RuleGroupView, type GroupState, type PlanRow, type TemplateView,
+  type RuleGroupView, type GroupState, type PlanRow, type TemplateView, type VariantView, type RuleVersion,
 } from "@/lib/masking";
 export type { TemplateView } from "@/lib/masking";
 
@@ -26,8 +26,9 @@ function err(name: string, message: string, extra?: Record<string, unknown>) {
   return Object.assign(new Error(message), { name, ...(extra ?? {}) });
 }
 
-type LayerRow = { id: string; layer: string; source: string | null; family: string; paramsJson: string; locked: boolean; systemRegulated: boolean; citation: string | null };
+type LayerRow = { id: string; layer: string; source: string | null; family: string; paramsJson: string; locked: boolean; systemRegulated: boolean; citation: string | null; active: boolean; templateKey: string | null };
 type ChannelRow = { layer: string; channel: string; family: string; paramsJson: string };
+type VariantRow = { id: string; scopeType: string; scopeValue: string; family: string; paramsJson: string; status: string };
 
 const ruleOf = (r: { family: string; paramsJson: string }): Rule => ({ family: r.family, params: decodeObject<Record<string, unknown>>(r.paramsJson) ?? {} });
 
@@ -82,18 +83,22 @@ export async function setTemplateAssociation(key: string, associated: boolean, a
 interface FieldBundle {
   code: string; name: string; sensitivity: string; sampleValue: string;
   detectionPattern: string | null; dataElementRef: string | null; createdBy: string | null;
-  layerRules: LayerRow[]; channelRules: ChannelRow[];
+  layerRules: LayerRow[]; channelRules: ChannelRow[]; variants: VariantRow[];
   exceptions: { id: string; role: string; purpose: string; durationMinutes: number; approvedBy: string | null; expiresAt: Date | null }[];
   pendingChangeId: string | null;
 }
 
 function resolveBundle(f: FieldBundle, activeRegional?: Set<string>): FieldResolution {
   const prec = (l: LayerRow) => LAYER_PRECEDENCE[l.layer as Layer] ?? 0;
+  // Override On/Off: a tenant rule with active=false is retained but does NOT
+  // participate — the field falls through live to the template/BASELINE value.
+  const inactiveTenant = f.layerRules.find((l) => l.layer === "tenant" && l.active === false) ?? null;
   // A regional rule participates only while its template is associated. Baseline
-  // and tenant layers always participate.
-  const participating = activeRegional
+  // and tenant layers always participate (unless the tenant rule is switched off).
+  const participating = (activeRegional
     ? f.layerRules.filter((l) => l.layer !== "regional" || (l.source != null && activeRegional.has(l.source)))
-    : f.layerRules;
+    : f.layerRules
+  ).filter((l) => !(l.layer === "tenant" && l.active === false));
   const layers = [...participating].sort((a, b) => prec(b) - prec(a));
   const topPrec = layers.length ? prec(layers[0]) : -1;
   const topRows = layers.filter((l) => prec(l) === topPrec);
@@ -153,10 +158,23 @@ function resolveBundle(f: FieldBundle, activeRegional?: Set<string>): FieldResol
   const winningSource: FieldResolution["winningSource"] =
     status !== "resolved" ? "attention" : (winning!.layer as "baseline" | "regional" | "tenant");
 
+  const storedRuleOf = (l: LayerRow) => { const r = ruleOf(l); return { family: r.family, params: r.params, label: ruleLabel(r) }; };
+  const activeTenant = f.layerRules.find((l) => l.layer === "tenant" && l.active !== false) ?? null;
+  // Variants (Visibility Matrix) — surfaced for the drawer but NEVER applied: while
+  // ENFORCEMENT_ACTIVE is false every request resolves to `default`, above.
+  const variants: VariantView[] = f.variants.map((v) => {
+    const r = ruleOf(v);
+    return { id: v.id, scopeType: v.scopeType, scopeValue: v.scopeValue, family: v.family, params: r.params, label: ruleLabel(r), preview: f.sampleValue ? maskPreview(r, f.sampleValue) : ruleLabel(r), status: v.status };
+  });
+
   return {
     code: f.code, name: f.name, sensitivity: f.sensitivity, sampleValue: f.sampleValue,
     detectionPattern: f.detectionPattern, dataElementRef: f.dataElementRef,
     hasRule: !!winning, status,
+    overrideOff: !!inactiveTenant && !activeTenant,
+    storedRule: inactiveTenant ? storedRuleOf(inactiveTenant) : null,
+    templateKey: (winning?.layer === "tenant" ? winning.templateKey : null) ?? inactiveTenant?.templateKey ?? null,
+    variants,
     ambiguity: ambiguous ? { sources: topRows.map((l) => layerBadge(l.layer, l.source)) } : null,
     effective, governedBy, citation, winningSource, chain, channels, overrideCount,
     exceptions, pendingChangeId: f.pendingChangeId, createdBy: f.createdBy,
@@ -166,13 +184,13 @@ function resolveBundle(f: FieldBundle, activeRegional?: Set<string>): FieldResol
 async function loadBundle(code: string): Promise<FieldBundle | null> {
   const f = await db.maskingField.findUnique({
     where: { code },
-    include: { layerRules: true, channelRules: true, exceptions: true, changeRequests: { where: { status: "pending" } } },
+    include: { layerRules: true, channelRules: true, exceptions: true, variants: true, changeRequests: { where: { status: "pending" } } },
   });
   if (!f) return null;
   return {
     code: f.code, name: f.name, sensitivity: f.sensitivity, sampleValue: f.sampleValue,
     detectionPattern: f.detectionPattern, dataElementRef: f.dataElementRef, createdBy: f.createdBy,
-    layerRules: f.layerRules, channelRules: f.channelRules,
+    layerRules: f.layerRules, channelRules: f.channelRules, variants: f.variants,
     exceptions: f.exceptions, pendingChangeId: f.changeRequests[0]?.id ?? null,
   };
 }
@@ -196,7 +214,7 @@ export async function getInventory(): Promise<InventoryRow[]> {
   await expireDueExceptions();
   const [fields, groups, active] = await Promise.all([
     db.maskingField.findMany({
-      include: { layerRules: true, channelRules: true, exceptions: true, changeRequests: { where: { status: "pending" } } },
+      include: { layerRules: true, channelRules: true, exceptions: true, variants: true, changeRequests: { where: { status: "pending" } } },
       orderBy: { code: "asc" },
     }),
     getRuleGroups(),
@@ -218,7 +236,7 @@ export async function getInventory(): Promise<InventoryRow[]> {
     const res = resolveBundle({
       code: f.code, name: f.name, sensitivity: f.sensitivity, sampleValue: f.sampleValue,
       detectionPattern: f.detectionPattern, dataElementRef: f.dataElementRef, createdBy: f.createdBy,
-      layerRules: f.layerRules, channelRules: f.channelRules, exceptions: f.exceptions,
+      layerRules: f.layerRules, channelRules: f.channelRules, variants: f.variants, exceptions: f.exceptions,
       pendingChangeId: f.changeRequests[0]?.id ?? null,
     }, active);
     const diverged = divergedCodes.has(f.code);
@@ -456,7 +474,23 @@ export async function decideChange(id: string, approve: boolean, note: string, a
     async (tx) => {
       await tx.maskingChangeRequest.update({ where: { id }, data: { status: approve ? "approved" : "rejected", decidedBy: actor.label, decidedAt: new Date(), decisionNote: note.trim() || null } });
       if (!approve) return;
-      if (cr.kind === "exception_add") {
+      if (cr.kind === "reactivate") {
+        // Turning an Override back On: restore the stored tenant rule to active.
+        const lr = await tx.maskingLayerRule.findFirst({ where: { fieldCode: cr.fieldCode, layer: "tenant" } });
+        if (lr) await tx.maskingLayerRule.update({ where: { id: lr.id }, data: { active: true } });
+        await recordAction(tx as never, { actor, action: "masking.override_on", targetType: "MaskingField", targetId: cr.fieldCode, eventDescription: `Override switched back On for ${cr.fieldCode}`, payload: { code: cr.fieldCode } });
+      } else if (cr.kind === "variant_add") {
+        // A role/channel Visibility Matrix variant — stored approved, but STILL not
+        // applied until enforcement_active is true (resolver ignores variants).
+        const p = after[0];
+        if (p) {
+          await tx.maskingVisibilityVariant.upsert({
+            where: { fieldCode_scopeType_scopeValue: { fieldCode: cr.fieldCode, scopeType: String(p.params.scopeType), scopeValue: String(p.params.scopeValue) } },
+            update: { family: p.family, paramsJson: encodeObject(p.params.ruleParams ?? {}), status: "approved" },
+            create: { fieldCode: cr.fieldCode, scopeType: String(p.params.scopeType), scopeValue: String(p.params.scopeValue), family: p.family, paramsJson: encodeObject(p.params.ruleParams ?? {}), status: "approved", createdBy: cr.proposedBy },
+          });
+        }
+      } else if (cr.kind === "exception_add") {
         const p = after[0]?.params ?? {};
         const mins = Number(p.durationMinutes) || 15;
         await tx.maskingUnmaskException.create({ data: { fieldCode: cr.fieldCode, role: String(p.role), purpose: String(p.purpose), durationMinutes: mins, expiresAt: new Date(Date.now() + mins * 60000), createdBy: cr.proposedBy, approvedBy: actor.label } });
@@ -502,6 +536,164 @@ export async function withdrawProposal(id: string, actor: AuditActor) {
   return audited(
     { actor, action: "masking.change_rejected", targetType: "MaskingField", targetId: cr.fieldCode, eventDescription: `Withdrew the proposed change to ${cr.fieldCode}`, payload: { code: cr.fieldCode, withdrawn: true } },
     (tx) => tx.maskingChangeRequest.update({ where: { id }, data: { status: "rejected", decidedBy: actor.label, decidedAt: new Date(), decisionNote: "Withdrawn by proposer." } }),
+  );
+}
+
+/**
+ * Override OFF — UNILATERAL, no approval (always the safer direction). The tenant
+ * rule is retained but switched inactive, so resolution falls through live to the
+ * template/BASELINE and stays correct even if that default later changes.
+ */
+export async function setOverrideOff(code: string, actor: AuditActor) {
+  const tenant = await db.maskingLayerRule.findFirst({ where: { fieldCode: code, layer: "tenant" } });
+  if (!tenant) throw err("ValidationError", "This field has no tenant rule to switch off.");
+  if (tenant.systemRegulated) throw err("ForbiddenError", "A SYSTEM-regulated field cannot be changed.");
+  if (!tenant.active) throw err("ValidationError", "The override is already off.");
+  return audited(
+    { actor, action: "masking.override_off", targetType: "MaskingField", targetId: code, eventDescription: `Switched the override Off for ${code} — resolving to the template/BASELINE value`, payload: { code } },
+    (tx) => tx.maskingLayerRule.update({ where: { id: tenant.id }, data: { active: false } }),
+  );
+}
+
+/**
+ * Override ON — requires DPO approval (same as any Edit). Raises a `reactivate`
+ * proposal; on approval the stored tenant rule is restored to active.
+ */
+export async function proposeOverrideOn(code: string, reason: string, actor: AuditActor) {
+  const tenant = await db.maskingLayerRule.findFirst({ where: { fieldCode: code, layer: "tenant" } });
+  if (!tenant) throw err("ValidationError", "This field has no stored tenant rule.");
+  if (tenant.active) throw err("ValidationError", "The override is already on.");
+  const open = await db.maskingChangeRequest.findFirst({ where: { fieldCode: code, status: "pending" } });
+  if (open) throw err("ConflictError", "A change is already pending for this field.");
+  const stored = ruleOf(tenant);
+  return audited(
+    { actor, action: "masking.change_proposed", targetType: "MaskingField", targetId: code, eventDescription: `Proposed turning the override back On for ${code} — awaiting DPO approval`, payload: { code, rule: ruleLabel(stored) } },
+    (tx) => tx.maskingChangeRequest.create({ data: { fieldCode: code, kind: "reactivate", proposedBy: actor.label, beforeJson: encodeObject([{ layer: "tenant", channel: null, family: "reveal", params: {} }]), afterJson: encodeObject([{ layer: "tenant", channel: null, family: stored.family, params: stored.params }]), reason: reason.trim() || `Restore the stored rule (${ruleLabel(stored)}).`, status: "pending" } }),
+  );
+}
+
+/**
+ * Delete a tenant rule entirely (distinct from, and more consequential than, the
+ * Off toggle). Removes the rule, its channel overrides and its variants. Single-rule
+ * delete is exposed directly in this prototype (the atomic bulk path remains for
+ * multi-field apply). SYSTEM-regulated fields can never be deleted.
+ */
+export async function deleteRule(code: string, actor: AuditActor) {
+  const tenant = await db.maskingLayerRule.findFirst({ where: { fieldCode: code, layer: "tenant" } });
+  if (!tenant) throw err("ValidationError", "This field has no tenant rule to delete.");
+  if (tenant.systemRegulated) throw err("ForbiddenError", "A SYSTEM-regulated rule can never be deleted.");
+  return audited(
+    { actor, action: "masking.rule_deleted", targetType: "MaskingField", targetId: code, eventDescription: `Deleted the tenant rule on ${code}`, payload: { code, deleted: ruleLabel(ruleOf(tenant)) } },
+    async (tx) => {
+      await tx.maskingChannelRule.deleteMany({ where: { fieldCode: code, layer: "tenant" } });
+      await tx.maskingVisibilityVariant.deleteMany({ where: { fieldCode: code } });
+      await tx.maskingLayerRule.delete({ where: { id: tenant.id } });
+    },
+  );
+}
+
+/**
+ * Prior values of this field's tenant rule, for manual history-based revert
+ * (distinct from the Off toggle — this re-enters an earlier value, it does not
+ * fall through to a template). Sourced from decided change requests, which store
+ * full params, newest first.
+ */
+export async function ruleVersions(code: string): Promise<RuleVersion[]> {
+  const crs = await db.maskingChangeRequest.findMany({
+    where: { fieldCode: code.toUpperCase(), status: "approved", kind: "rule_change" },
+    orderBy: { decidedAt: "desc" }, take: 8,
+  });
+  const out: RuleVersion[] = [];
+  const seen = new Set<string>();
+  for (const cr of crs) {
+    const patches = decodeObject<RulePatch[]>(cr.afterJson) ?? [];
+    const def = patches.find((p) => !p.channel);
+    if (!def) continue;
+    const key = `${def.family}:${encodeObject(def.params)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ family: def.family, params: def.params, label: ruleLabel(def as Rule), at: (cr.decidedAt ?? cr.proposedAt).toISOString().slice(0, 16).replace("T", " "), by: cr.decidedBy ?? cr.proposedBy, source: "approved change" });
+  }
+  return out;
+}
+
+// --- Visibility Matrix (role/channel) — GATED by ENFORCEMENT_ACTIVE ---------
+
+/**
+ * Add a role/channel variant. EVERY variant is a DPO proposal (kind variant_add),
+ * never applied directly — and even once approved it does NOT change resolution
+ * while enforcement_active is false. Only template_governed / tenant_governed
+ * fields may carry variants; SYSTEM-regulated fields cannot (enforced here).
+ */
+export async function proposeVariant(code: string, scopeType: string, scopeValue: string, family: string, params: Record<string, unknown>, reason: string, actor: AuditActor) {
+  if (!scopeValue.trim()) throw err("ValidationError", "Choose a role or channel for this view.");
+  const bundle = await loadBundle(code.toUpperCase());
+  if (!bundle) throw err("NotFoundError", "That field no longer exists.");
+  if (bundle.layerRules.some((l) => l.systemRegulated)) throw err("ForbiddenError", "A platform-owned field cannot carry role or channel views.");
+  const open = await db.maskingChangeRequest.findFirst({ where: { fieldCode: code, status: "pending" } });
+  if (open) throw err("ConflictError", "A change is already pending for this field.");
+  const after: RulePatch[] = [{ layer: "tenant", channel: null, family, params: { scopeType, scopeValue: scopeValue.trim(), ruleParams: params } }];
+  return audited(
+    { actor, action: "masking.change_proposed", targetType: "MaskingField", targetId: code, eventDescription: `Proposed a ${scopeType} view (${scopeValue.trim()}) on ${code} — awaiting DPO approval`, payload: { code, scopeType, scopeValue: scopeValue.trim(), rule: ruleLabel({ family, params }) } },
+    (tx) => tx.maskingChangeRequest.create({ data: { fieldCode: code, kind: "variant_add", proposedBy: actor.label, beforeJson: encodeObject([]), afterJson: encodeObject(after), reason: reason.trim() || `Add a ${scopeType} view for ${scopeValue.trim()}.`, status: "pending" } }),
+  );
+}
+
+/** Remove an approved variant (its own approvable unit — removal is immediate for the tenant's own variants). */
+export async function removeVariant(id: string, actor: AuditActor) {
+  const v = await db.maskingVisibilityVariant.findUnique({ where: { id } });
+  if (!v) throw err("NotFoundError", "That view no longer exists.");
+  return audited(
+    { actor, action: "masking.variant_removed", targetType: "MaskingField", targetId: v.fieldCode, eventDescription: `Removed the ${v.scopeType} view (${v.scopeValue}) from ${v.fieldCode}`, payload: { code: v.fieldCode, scopeType: v.scopeType, scopeValue: v.scopeValue } },
+    (tx) => tx.maskingVisibilityVariant.delete({ where: { id } }),
+  );
+}
+
+// --- Custom templates (tenant-owned) ----------------------------------------
+
+export interface CustomTemplateView { key: string; name: string; fields: number; createdBy: string | null }
+
+export async function getCustomTemplates(): Promise<CustomTemplateView[]> {
+  const [templates, counts] = await Promise.all([
+    db.maskingTemplate.findMany({ where: { kind: "custom" }, orderBy: { createdAt: "asc" } }),
+    db.maskingLayerRule.groupBy({ by: ["templateKey"], where: { templateKey: { not: null } }, _count: true }),
+  ]);
+  return templates.map((t) => ({ key: t.key, name: t.name, createdBy: t.createdBy, fields: counts.find((c) => c.templateKey === t.key)?._count ?? 0 }));
+}
+
+/** Create a tenant-owned custom template (optionally copying BASELINE field codes as members). */
+export async function createCustomTemplate(name: string, copyBaseline: boolean, actor: AuditActor) {
+  if (!name.trim()) throw err("ValidationError", "Name the custom template.");
+  const key = `CUSTOM_${name.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_|_$/g, "")}`.slice(0, 40);
+  const existing = await db.maskingTemplate.findUnique({ where: { key } });
+  if (existing) throw err("DuplicateError", "A custom template with a similar name already exists.");
+  return audited(
+    { actor, action: "masking.template_created", targetType: "MaskingTemplate", targetId: key, eventDescription: `Created the custom template "${name.trim()}"`, payload: { key, name: name.trim(), copyBaseline } },
+    async (tx) => {
+      const t = await tx.maskingTemplate.create({ data: { key, name: name.trim(), kind: "custom", associated: true, sortOrder: 50, createdBy: actor.label } });
+      if (copyBaseline) {
+        const baseCodes = await tx.maskingLayerRule.findMany({ where: { layer: "baseline" }, select: { fieldCode: true } });
+        const codes = baseCodes.map((b) => b.fieldCode);
+        await tx.maskingLayerRule.updateMany({ where: { fieldCode: { in: codes }, layer: "tenant" }, data: { templateKey: key } });
+      }
+      return t;
+    },
+  );
+}
+
+/**
+ * Move a tenant rule into a custom template — a TRUE re-association: the same rule
+ * row keeps its identity and audit history, only its templateKey changes.
+ */
+export async function moveRuleToTemplate(code: string, templateKey: string, actor: AuditActor) {
+  const tenant = await db.maskingLayerRule.findFirst({ where: { fieldCode: code, layer: "tenant" } });
+  if (!tenant) throw err("ValidationError", "This field has no tenant rule to move.");
+  if (tenant.systemRegulated) throw err("ForbiddenError", "A SYSTEM-regulated field cannot be moved.");
+  const t = await db.maskingTemplate.findUnique({ where: { key: templateKey } });
+  if (!t || t.kind !== "custom") throw err("NotFoundError", "Choose a custom template.");
+  return audited(
+    { actor, action: "masking.rule_moved", targetType: "MaskingField", targetId: code, eventDescription: `Moved ${code} into the custom template "${t.name}" (same rule, history continues)`, payload: { code, templateKey, templateName: t.name } },
+    (tx) => tx.maskingLayerRule.update({ where: { id: tenant.id }, data: { templateKey } }),
   );
 }
 

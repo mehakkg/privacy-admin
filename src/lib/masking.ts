@@ -48,7 +48,7 @@ export const EXCEPTION_ROLES = ["Grievance Officer", "DPO", "Auditor", "Support 
 
 // --- Families ---------------------------------------------------------------
 
-export type Family = "partial" | "full" | "pattern" | "email";
+export type Family = "partial" | "full" | "pattern" | "format" | "email" | "hash" | "redact";
 
 export interface FamilySpec {
   key: Family;
@@ -60,15 +60,19 @@ export interface FamilySpec {
 }
 
 /**
- * The four masking functions the engine supports (see the appendix reference).
- * Labels are PLAIN-LANGUAGE intents — the backend function names (PARTIAL_MASK,
- * FULL_MASK, PATTERN_MASK, EMAIL_MASK) are never shown in the UI.
+ * The eight built-in masking functions the engine supports. Labels are
+ * PLAIN-LANGUAGE intents — the backend function names (PARTIAL_MASK, FULL_MASK,
+ * PATTERN_MASK, FPE, EMAIL_MASK, HASH, REDACT, PASSTHROUGH) are never shown in the
+ * UI. The eighth, "Show in full" (passthrough), is the REVEAL intent below.
  */
 export const FAMILIES: FamilySpec[] = [
-  { key: "partial", label: "Show first / last characters", description: "Reveal a few characters at the start or end; mask the rest.", reversible: false },
+  { key: "partial", label: "Show last N / first N", description: "Reveal a few characters at the start or end; mask the rest.", reversible: false },
   { key: "full", label: "Hide completely", description: "Mask every character — nothing is shown.", reversible: false },
   { key: "pattern", label: "Keep a pattern", description: "Show the value in a fixed shape, revealing only the trailing characters.", reversible: false },
+  { key: "format", label: "Keep the format", description: "Produce a same-shaped value — same length and character types — with the real data replaced.", reversible: true },
   { key: "email", label: "Email style", description: "Reveal a little of the name and keep the domain.", reversible: false },
+  { key: "hash", label: "Replace with an irreversible token", description: "Swap the value for a fixed token. The original can never be recovered.", reversible: false },
+  { key: "redact", label: "Remove the value", description: "Drop the value entirely — nothing is shown in its place.", reversible: false },
 ];
 
 export const FAMILY_LABEL: Record<string, string> = Object.fromEntries(FAMILIES.map((f) => [f.key, f.label]));
@@ -99,7 +103,10 @@ const INTENT_SAMPLE: Record<string, { value: string; rule: Rule }> = {
   partial: { value: "9860153210", rule: { family: "partial", params: { showFirst: 2, showLast: 2, maskChar: "*" } } },
   full: { value: "Ramkumar", rule: { family: "full", params: { maskChar: "*" } } },
   pattern: { value: "4111111111110366", rule: { family: "pattern", params: { template: "****-****-****-####" } } },
+  format: { value: "9860153210", rule: { family: "format", params: {} } },
   email: { value: "karthik.nair@gmail.com", rule: { family: "email", params: { localVisibleChars: 2, localVisibleLastChars: 2, domainMode: "PRESERVE", maskChar: "*" } } },
+  hash: { value: "9860153210", rule: { family: "hash", params: {} } },
+  redact: { value: "confidential-note", rule: { family: "redact", params: {} } },
   [REVEAL]: { value: "Ramkumar", rule: { family: REVEAL, params: {} } },
 };
 
@@ -107,14 +114,16 @@ const INTENT_SAMPLE: Record<string, { value: string; rule: Rule }> = {
 export function intentPreview(key: string): { before: string; after: string } | null {
   const s = INTENT_SAMPLE[key];
   if (!s) return null;
-  return { before: s.value, after: runMaskCore(s.rule, s.value) };
+  const after = runMaskCore(s.rule, s.value);
+  return { before: s.value, after: after === "" ? "(removed)" : after };
 }
 
 // --- Strictness & the floor rule -------------------------------------------
 
-/** full (4) > pattern (3) > email (2) > partial (1) > reveal (0). */
+/** redact > full > hash > format > pattern > email > partial > reveal. Higher
+ *  = less real information is exposed. */
 export const STRICTNESS_RANK: Record<string, number> = {
-  full: 4, pattern: 3, email: 2, partial: 1, reveal: 0,
+  redact: 7, full: 6, hash: 5, format: 4, pattern: 3, email: 2, partial: 1, reveal: 0,
 };
 
 export interface Rule {
@@ -164,7 +173,10 @@ export function ruleLabel(rule: Rule | null | undefined): string {
     }
     case "full": return "Hidden completely";
     case "pattern": return `Pattern ${String(rule.params.template ?? "")}`;
+    case "format": return "Format kept, value replaced";
     case "email": return `Email · show ${showSummary(Number(rule.params.localVisibleChars) || 0, Number(rule.params.localVisibleLastChars) || 0)}, keep domain`;
+    case "hash": return "Irreversible token";
+    case "redact": return "Removed";
     default: return FAMILY_LABEL[rule.family] ?? rule.family;
   }
 }
@@ -184,6 +196,32 @@ function patternMask(value: string, template: string): string {
   const revealed = hashes > 0 ? value.slice(-hashes) : "";
   let ri = 0;
   return template.split("").map((c) => (c === "#" ? revealed[ri++] ?? c : c)).join("");
+}
+
+/**
+ * FPE (format-preserving): replace each character with another of the SAME class
+ * (digit→digit, upper→upper, lower→lower) so length and shape are kept but the
+ * real value is gone. Pure and deterministic — illustrative, not the production
+ * cipher. Reversible in principle, hence the "reversible" flag.
+ */
+function formatPreserve(value: string): string {
+  const shift = 7;
+  return value.split("").map((c) => {
+    if (c >= "0" && c <= "9") return String((c.charCodeAt(0) - 48 + shift) % 10);
+    if (c >= "A" && c <= "Z") return String.fromCharCode(((c.charCodeAt(0) - 65 + shift) % 26) + 65);
+    if (c >= "a" && c <= "z") return String.fromCharCode(((c.charCodeAt(0) - 97 + shift) % 26) + 97);
+    return c;
+  }).join("");
+}
+
+/**
+ * HASH: swap the value for a fixed, irreversible token. Uses a pure 32-bit string
+ * digest (FNV-style) — illustrative masked output, never the production hash.
+ */
+function hashToken(value: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < value.length; i++) { h ^= value.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return "tok_" + (h >>> 0).toString(36).padStart(7, "0").slice(0, 8);
 }
 
 /** EMAIL_MASK: mask the local part (keep first/last N), preserve or mask the domain. */
@@ -206,14 +244,18 @@ export function runMaskCore(rule: Rule, value: string): string {
     case "partial": return partialMask(value, Number(p.showFirst) || 0, Number(p.showLast) || 0, ch);
     case "full": return ch.repeat(value.length);
     case "pattern": return patternMask(value, String(p.template ?? ""));
+    case "format": return formatPreserve(value);
     case "email": return emailMask(value, Number(p.localVisibleChars) || 0, Number(p.localVisibleLastChars) || 0, String(p.domainMode ?? "PRESERVE"), ch);
+    case "hash": return hashToken(value);
+    case "redact": return "";
     default: return ch.repeat(value.length);
   }
 }
 
-/** "{sample} → {masked}". */
+/** "{sample} → {masked}". Redact (empty output) renders as "(removed)". */
 export function maskPreview(rule: Rule, value: string): string {
-  return `${value} → ${runMaskCore(rule, value)}`;
+  const out = runMaskCore(rule, value);
+  return `${value} → ${out === "" ? "(removed)" : out}`;
 }
 
 /** Compact relative time, e.g. "2h ago", "3d ago". */
@@ -323,6 +365,31 @@ export interface ExceptionView {
   expiresAt: string | null;
 }
 
+/** Role/channel enforcement is not live: the resolver ALWAYS returns `default`. */
+export const ENFORCEMENT_ACTIVE = false;
+
+/** A role- or channel-scoped variant of a rule (the Visibility Matrix). */
+export interface VariantView {
+  id: string;
+  scopeType: "role" | "channel" | string;
+  scopeValue: string;
+  family: string;
+  params: Record<string, unknown>;
+  label: string;
+  preview: string;
+  status: "approved" | "pending" | string;
+}
+
+/** A prior value of this field's tenant rule, for manual history-based revert. */
+export interface RuleVersion {
+  family: string;
+  params: Record<string, unknown>;
+  label: string;
+  at: string;
+  by: string;
+  source: string;
+}
+
 export interface FieldResolution {
   code: string;
   name: string;
@@ -331,6 +398,14 @@ export interface FieldResolution {
   detectionPattern: string | null;
   dataElementRef: string | null;
   hasRule: boolean;
+  /** Override On/Off: a tenant rule exists but is switched off; resolution falls
+   *  through live to the template/BASELINE, and the stored value is retained. */
+  overrideOff: boolean;
+  storedRule: { family: string; params: Record<string, unknown>; label: string } | null;
+  /** The custom template this tenant rule was moved into, if any. */
+  templateKey: string | null;
+  /** Role/channel variants (Visibility Matrix) — never applied while enforcement is off. */
+  variants: VariantView[];
   /** resolved | ambiguous (two non-BASELINE templates) | no_rule. */
   status: "resolved" | "ambiguous" | "no_rule";
   /** Present only when status === "ambiguous": the colliding sources. */

@@ -4,7 +4,8 @@ import { PolicyFilters } from "@/components/masking/PolicyFilters";
 import { FieldInventory, type InventoryRowView } from "@/components/masking/FieldInventory";
 import type { CatalogField } from "@/components/masking/CreateRuleModal";
 import { TemplateSwitcher } from "@/components/masking/TemplateSwitcher";
-import { getInventory, getCoverage, getTemplates, type InventoryRow } from "@/lib/engines/masking";
+import { CustomTemplateCreator } from "@/components/masking/CustomTemplateCreator";
+import { getInventory, getCoverage, getTemplates, getCustomTemplates, type InventoryRow } from "@/lib/engines/masking";
 import { CHANNEL_LABEL, FAMILY_LABEL, formatRelative } from "@/lib/masking";
 
 const PER_PAGE = 25;
@@ -13,6 +14,7 @@ const BASE = "/data-flow/protection-rules";
 export type ByFieldSP = { q?: string; family?: string; governedBy?: string; sensitivity?: string; channel?: string; status?: string; group?: string; field?: string; add?: string; created?: string; page?: string };
 
 function matchGoverned(row: InventoryRow, gb: string): boolean {
+  if (gb.startsWith("custom:")) return row.templateKey === gb.slice(7);
   if (gb === "baseline" || gb === "regional" || gb === "tenant") return row.winningSource === gb;
   if (gb === "DPDP" || gb === "RBI") return row.governedBy?.layer === "regional" && row.governedBy?.source === gb;
   return true;
@@ -24,7 +26,7 @@ function matchGoverned(row: InventoryRow, gb: string): boolean {
  * "Fields" tile shows everything. Selection + the sticky bar start rule creation.
  */
 export async function ByFieldTab({ sp }: { sp: ByFieldSP }) {
-  const [rows, templates] = await Promise.all([getInventory(), getTemplates()]);
+  const [rows, templates, customTemplates] = await Promise.all([getInventory(), getTemplates(), getCustomTemplates()]);
   const coverage = getCoverage(rows);
   const attn = {
     total: rows.filter((r) => r.needsAttention).length,
@@ -35,9 +37,11 @@ export async function ByFieldTab({ sp }: { sp: ByFieldSP }) {
   };
 
   let filtered = rows;
-  // Default shows the full applied-rules list (BASELINE + any associated templates);
-  // "needs attention" (unresolved: no rule or ambiguous) is an explicit filter.
-  if (sp.status === "attention") filtered = filtered.filter((r) => r.winningSource === "attention");
+  // GAP-FIRST LANDING (criterion 1): with no explicit Status, the default view is
+  // "Needs attention" — no rule · ambiguous · diverged · pending. The "Fields" tile
+  // (status=all) opens the full applied-rules list; no template step precedes this.
+  const effectiveStatus = sp.status ?? "attention";
+  if (effectiveStatus === "attention") filtered = filtered.filter((r) => r.needsAttention);
   if (sp.status === "norule") filtered = filtered.filter((r) => r.status === "no_rule");
   if (sp.status === "ambiguous") filtered = filtered.filter((r) => r.status === "ambiguous");
   if (sp.status === "diverged") filtered = filtered.filter((r) => r.diverged);
@@ -72,7 +76,7 @@ export async function ByFieldTab({ sp }: { sp: ByFieldSP }) {
   if (sp.governedBy) activeFilters.push({ key: "governedBy", label: `Governed by: ${sp.governedBy === "baseline" ? "Baseline" : sp.governedBy === "regional" ? "Regional" : sp.governedBy === "tenant" ? "Tenant" : sp.governedBy}` });
   if (sp.sensitivity) activeFilters.push({ key: "sensitivity", label: sp.sensitivity });
   if (sp.channel) activeFilters.push({ key: "channel", label: `Channel: ${CHANNEL_LABEL[sp.channel] ?? sp.channel}` });
-  if (sp.status) activeFilters.push({ key: "status", label: `Status: ${sp.status}` });
+  if (sp.status && sp.status !== "all") activeFilters.push({ key: "status", label: `Status: ${sp.status}` });
   if (sp.group) activeFilters.push({ key: "group", label: `Group: ${sp.group}` });
 
   const chan = sp.channel;
@@ -99,11 +103,14 @@ export async function ByFieldTab({ sp }: { sp: ByFieldSP }) {
 
   return (
     <>
-      <TemplateSwitcher templates={templates} />
+      <div className="row" style={{ gap: 8, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+        <TemplateSwitcher templates={templates} />
+        <CustomTemplateCreator />
+      </div>
 
       {/* Compact hairline stat strip — reconciled (b·r·t·attention sums to Fields). */}
       <div className="mask-statstrip">
-        <Link href={qs({ status: undefined, governedBy: undefined, sensitivity: undefined, family: undefined, q: undefined, page: undefined })} className="stat-seg"><b>{coverage.total}</b> Fields</Link>
+        <Link href={qs({ status: "all", governedBy: undefined, sensitivity: undefined, family: undefined, q: undefined, page: undefined })} className="stat-seg"><b>{coverage.total}</b> Fields</Link>
         <Link href={qs({ governedBy: "baseline", page: undefined })} className="stat-seg"><b>{coverage.baseline}</b> baseline</Link>
         <Link href={qs({ governedBy: "regional", page: undefined })} className="stat-seg"><b>{coverage.regional}</b> regional</Link>
         <Link href={qs({ governedBy: "tenant", page: undefined })} className="stat-seg"><b>{coverage.tenant}</b> tenant</Link>
@@ -112,7 +119,7 @@ export async function ByFieldTab({ sp }: { sp: ByFieldSP }) {
         {attn.diverged > 0 && <Link href={qs({ status: "diverged", page: undefined })} className="stat-seg"><b>{attn.diverged}</b> diverged</Link>}
       </div>
 
-      <PolicyFilters current={sp as Record<string, string | undefined>} basePath={BASE} />
+      <PolicyFilters current={sp as Record<string, string | undefined>} basePath={BASE} customTemplates={customTemplates.map((t) => ({ key: t.key, name: t.name }))} />
       {activeFilters.length > 0 && (
         <div className="row" style={{ gap: 6, margin: "10px 0", flexWrap: "wrap", alignItems: "center" }}>
           {activeFilters.map((f) => <Link key={f.key} href={chipHref(f.key)} className="filter-chip">{f.label} <X size={11} /></Link>)}

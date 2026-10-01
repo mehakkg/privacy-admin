@@ -3004,6 +3004,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 .intent-preview .ip-arrow { color: var(--text-muted, #9aa0a6); }
 .intent-preview .ip-after { color: var(--text, #111827); font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
 .role-card.sel .intent-preview { border-color: var(--blue); }
+.btn.danger-ghost { color: var(--red); border-color: transparent; background: transparent; }
+.btn.danger-ghost:hover:not(:disabled) { background: var(--red-bg); border-color: var(--red-border); }
+.btn.ghost.on { background: var(--bg-selected, #eef2ff); border-color: var(--blue); color: var(--blue); }
 .role-card-desc {
   margin: 0;
   display: -webkit-box;

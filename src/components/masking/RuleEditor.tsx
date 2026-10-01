@@ -87,11 +87,14 @@ export function RuleEditor({
         </div>
       )}
       {value.family === "full" && <p className="cell-sub">Every character is masked.</p>}
+      {value.family === "format" && <p className="cell-sub">Each character is swapped for one of the same type, so length and shape are kept and the real value is gone.</p>}
+      {value.family === "hash" && <p className="cell-sub">The value becomes a fixed, irreversible token. It can never be turned back into the original.</p>}
+      {value.family === "redact" && <p className="cell-sub">The value is dropped entirely — nothing is shown in its place.</p>}
 
       <div className="mask-preview sm">
         <code className="mask-before">{sampleValue || "—"}</code>
         <span className="muted">→</span>
-        <code className="mask-after">{sampleValue ? runMaskCore(value, sampleValue) : "—"}</code>
+        <code className="mask-after">{sampleValue ? (runMaskCore(value, sampleValue) || "(removed)") : "—"}</code>
       </div>
       {belowFloor && (
         <p className="cell-sub" style={{ color: "var(--red)" }}>

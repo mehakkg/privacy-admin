@@ -144,7 +144,7 @@ export function CreateRuleModal({ catalog, initialSelected, onClose, lockedField
                     <div className="cell-sub" style={{ marginBottom: 4 }}>Live preview per field</div>
                     <div className="table-wrap"><table className="dtable compact"><tbody>
                       {selectedFields.map((f) => (
-                        <tr key={f.code}><td className="mono">{f.code}</td><td className="mono cell-sub">{f.sampleValue}</td><td className="muted">→</td><td className="mono">{runMaskCore(rule, f.sampleValue)}</td></tr>
+                        <tr key={f.code}><td className="mono">{f.code}</td><td className="mono cell-sub">{f.sampleValue}</td><td className="muted">→</td><td className="mono">{runMaskCore(rule, f.sampleValue) || "(removed)"}</td></tr>
                       ))}
                     </tbody></table></div>
                   </div>

@@ -1558,10 +1558,16 @@ model ProtectionRuleTemplate {
 model MaskingTemplate {
   key        String  @id
   name       String
-  /// baseline | regional
+  /// baseline | regional | custom
   kind       String
   associated Boolean @default(false)
   sortOrder  Int     @default(0)
+  /// Tenant-owned custom templates (kind = custom): who owns/created them. The
+  /// SYSTEM-template uniqueness constraint does NOT apply to these — they are
+  /// private and rely on the live per-tenant field conflict pre-check instead.
+  tenantId   String?
+  createdBy  String?
+  createdAt  DateTime @default(now())
 }
 
 /// A field — the thing being masked. `code` is the natural key rules point at,
@@ -1584,6 +1590,7 @@ model MaskingField {
   channelRules   MaskingChannelRule[]
   exceptions     MaskingUnmaskException[]
   changeRequests MaskingChangeRequest[]
+  variants       MaskingVisibilityVariant[]
 }
 
 /// A field's default rule at one layer. `locked` marks a governed rule the tenant
@@ -1609,8 +1616,39 @@ model MaskingLayerRule {
   /// SUPER_ADMIN permanent floor (Aadhaar/PAN/ABHA): exact-match only, no edit,
   /// override, unlock or propose path exists — visually distinct from a self-lock.
   systemRegulated Boolean @default(false)
+  /// Override On/Off (tenant layer only). When false the rule is retained but does
+  /// NOT participate in resolution — the field falls through to the template/
+  /// BASELINE value live. Turning Off is unilateral; turning On needs DPO approval.
+  active     Boolean @default(true)
+  /// The Custom Template this tenant rule was moved into, if any (a true
+  /// re-association — identity and audit history continue). Null = standalone.
+  templateKey String?
 
   @@unique([fieldCode, layer, source])
+  @@index([fieldCode])
+}
+
+/// A role- or channel-scoped variant of a rule's default behaviour (the Visibility
+/// Matrix). Built in full now, but GATED: while enforcement_active is false the
+/// resolver always returns the rule's `default` and never a variant — so an
+/// approved variant still resolves to Default until server-side role/channel
+/// enforcement genuinely ships. Each variant is its own approvable unit.
+model MaskingVisibilityVariant {
+  id         String @id @default(cuid())
+  fieldCode  String
+  field      MaskingField @relation(fields: [fieldCode], references: [code], onDelete: Cascade)
+  /// role | channel
+  scopeType  String
+  /// e.g. "DPO", "Grievance Officer" (role) or a channel key.
+  scopeValue String
+  family     String
+  paramsJson String @default("{}")
+  /// approved | pending — a pending variant is also tracked as a MaskingChangeRequest.
+  status     String @default("approved")
+  createdBy  String?
+  createdAt  DateTime @default(now())
+
+  @@unique([fieldCode, scopeType, scopeValue])
   @@index([fieldCode])
 }
 

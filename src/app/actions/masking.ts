@@ -7,10 +7,14 @@ import {
   decideChange, withdrawProposal, counterPropose, checkCodeCollision,
   unlockSelfLocked, createAndApplyGroup, reapplyGroup, detachField, validateGroupMembers,
   planRuleForFields, submitRulePlan, setTemplateAssociation, templateFields,
-  revertToTemplate, resyncFieldToGroup, createBareField, type BareFieldInput,
-  type CreateFieldInput, type RulePatch, type Collision, type CreateGroupInput, type GroupMemberValidation,
+  revertToTemplate, resyncFieldToGroup, createBareField,
+  setOverrideOff, proposeOverrideOn, deleteRule, ruleVersions,
+  proposeVariant, removeVariant, createCustomTemplate, moveRuleToTemplate, getCustomTemplates,
+  type BareFieldInput, type CreateFieldInput, type RulePatch, type Collision,
+  type CreateGroupInput, type GroupMemberValidation, type CustomTemplateView,
   type PlanRow, type SubmitPlanResult, type TemplateFieldRow,
 } from "@/lib/engines/masking";
+import type { RuleVersion } from "@/lib/masking";
 
 /**
  * Masking policy server actions — thin adapters over the engine. Refusals return
@@ -118,6 +122,49 @@ export async function revertToTemplateAction(code: string): Promise<MaskingActio
 export async function resyncFieldToGroupAction(groupId: string, code: string): Promise<MaskingActionResult> {
   const { actor } = await getSession();
   try { await resyncFieldToGroup(groupId, code, actor); touch(); return { ok: true }; } catch (e) { return fail(e); }
+}
+
+export async function setOverrideOffAction(code: string): Promise<MaskingActionResult> {
+  const { actor } = await getSession();
+  try { await setOverrideOff(code, actor); touch(); return { ok: true }; } catch (e) { return fail(e); }
+}
+
+export async function proposeOverrideOnAction(code: string, reason: string): Promise<MaskingActionResult> {
+  const { actor } = await getSession();
+  try { await proposeOverrideOn(code, reason, actor); touch(); return { ok: true }; } catch (e) { return fail(e); }
+}
+
+export async function deleteRuleAction(code: string): Promise<MaskingActionResult> {
+  const { actor } = await getSession();
+  try { await deleteRule(code, actor); touch(); return { ok: true }; } catch (e) { return fail(e); }
+}
+
+export async function ruleVersionsAction(code: string): Promise<{ versions: RuleVersion[] }> {
+  return { versions: await ruleVersions(code) };
+}
+
+export async function proposeVariantAction(code: string, scopeType: string, scopeValue: string, family: string, params: Record<string, unknown>, reason: string): Promise<MaskingActionResult> {
+  const { actor } = await getSession();
+  try { await proposeVariant(code, scopeType, scopeValue, family, params, reason, actor); touch(); return { ok: true }; } catch (e) { return fail(e); }
+}
+
+export async function removeVariantAction(id: string): Promise<MaskingActionResult> {
+  const { actor } = await getSession();
+  try { await removeVariant(id, actor); touch(); return { ok: true }; } catch (e) { return fail(e); }
+}
+
+export async function createCustomTemplateAction(name: string, copyBaseline: boolean): Promise<MaskingActionResult> {
+  const { actor } = await getSession();
+  try { await createCustomTemplate(name, copyBaseline, actor); touch(); return { ok: true }; } catch (e) { return fail(e); }
+}
+
+export async function moveRuleToTemplateAction(code: string, templateKey: string): Promise<MaskingActionResult> {
+  const { actor } = await getSession();
+  try { await moveRuleToTemplate(code, templateKey, actor); touch(); return { ok: true }; } catch (e) { return fail(e); }
+}
+
+export async function getCustomTemplatesAction(): Promise<{ templates: CustomTemplateView[] }> {
+  return { templates: await getCustomTemplates() };
 }
 
 /** Live pre-validation for the group create form. */

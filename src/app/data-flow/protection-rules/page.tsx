@@ -4,8 +4,9 @@ import { getCurrentRole } from "@/lib/session";
 import { EnforcementNotice } from "@/components/masking/EnforcementNotice";
 import { ByFieldTab, type ByFieldSP } from "@/components/masking/ByFieldTab";
 import { FieldDrawer } from "@/components/masking/FieldDrawer";
+import type { CatalogField } from "@/components/masking/CreateRuleModal";
 import { AddFieldDrawer } from "@/components/masking/AddFieldDrawer";
-import { resolveField, getPendingChange, fieldHistory, associatedRegionalTemplates, getRuleGroups } from "@/lib/engines/masking";
+import { resolveField, getPendingChange, fieldHistory, associatedRegionalTemplates, getRuleGroups, getInventory, getCustomTemplates } from "@/lib/engines/masking";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,12 @@ export default async function ProtectionRulesPage({ searchParams }: { searchPara
   const groups = res ? await getRuleGroups() : [];
   const grp = res ? groups.find((g) => g.memberCodes.includes(res.code)) ?? null : null;
   const diverged = grp ? grp.divergedCodes.includes(res!.code) : false;
+  // Custom templates (Move-to-template targets) + the full field catalog (Duplicate
+  // needs to pick another field). Only loaded when the drawer is open.
+  const [customTemplates, invForCatalog] = res
+    ? await Promise.all([getCustomTemplates(), getInventory()])
+    : [[], []];
+  const fullCatalog: CatalogField[] = invForCatalog.map((r) => ({ code: r.code, name: r.name, sensitivity: r.sensitivity, source: r.governedBy?.badge ?? (r.status === "ambiguous" ? "Ambiguous" : "No rule"), systemRegulated: !!r.governedBy?.systemRegulated, sampleValue: r.sampleValue }));
 
   const closeParams = new URLSearchParams();
   for (const [k, v] of Object.entries(sp)) if (v && k !== "field" && k !== "add" && k !== "created") closeParams.set(k, String(v));
@@ -47,7 +54,7 @@ export default async function ProtectionRulesPage({ searchParams }: { searchPara
 
       <ByFieldTab sp={sp} />
 
-      {res && <FieldDrawer res={res} pending={pending} history={historyRows.map((h) => ({ seq: h.seq, action: h.action, actor: h.actorLabel, at: formatDateTime(h.timestamp) }))} role={role} closeHref={closeHref} groupId={grp?.id ?? null} groupName={grp?.name ?? null} diverged={diverged} />}
+      {res && <FieldDrawer res={res} pending={pending} history={historyRows.map((h) => ({ seq: h.seq, action: h.action, actor: h.actorLabel, at: formatDateTime(h.timestamp) }))} role={role} closeHref={closeHref} groupId={grp?.id ?? null} groupName={grp?.name ?? null} diverged={diverged} customTemplates={customTemplates} fullCatalog={fullCatalog} />}
       {sp.add && <AddFieldDrawer closeHref={closeHref} regionalNames={regional.map((t) => t.name)} />}
     </Shell>
   );
