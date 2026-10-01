@@ -8,7 +8,7 @@ import {
   unlockSelfLocked, createAndApplyGroup, reapplyGroup, detachField, validateGroupMembers,
   planRuleForFields, submitRulePlan, setTemplateAssociation, templateFields,
   revertToTemplate, resyncFieldToGroup, createBareField,
-  setOverrideOff, proposeOverrideOn, deleteRule, ruleVersions,
+  setOverrideOff, proposeOverrideOn, deleteRule, ruleVersions, resolveField, getInventory,
   proposeVariant, removeVariant, createCustomTemplate, moveRuleToTemplate, getCustomTemplates,
   type BareFieldInput, type CreateFieldInput, type RulePatch, type Collision,
   type CreateGroupInput, type GroupMemberValidation, type CustomTemplateView,
@@ -141,6 +141,29 @@ export async function deleteRuleAction(code: string): Promise<MaskingActionResul
 
 export async function ruleVersionsAction(code: string): Promise<{ versions: RuleVersion[] }> {
   return { versions: await ruleVersions(code) };
+}
+
+export interface CatField { code: string; name: string; sensitivity: string; source: string; systemRegulated: boolean; sampleValue: string }
+export interface RuleContext {
+  rule: { family: string; params: Record<string, unknown> } | null;
+  field: CatField | null;
+  catalog: CatField[];
+}
+/** Everything the row-action modals need: the field's current rule, its catalog
+ *  entry, and the full field catalog (for Duplicate's target picker). */
+export async function ruleContextAction(code: string): Promise<RuleContext> {
+  const [res, inv] = await Promise.all([resolveField(code), getInventory()]);
+  const srcOf = (badge: string | null | undefined, ambiguous: boolean) => badge ?? (ambiguous ? "Ambiguous" : "No rule");
+  const field: CatField | null = res
+    ? { code: res.code, name: res.name, sensitivity: res.sensitivity, source: srcOf(res.governedBy?.badge, res.status === "ambiguous"), systemRegulated: !!res.governedBy?.systemRegulated, sampleValue: res.sampleValue }
+    : null;
+  const rule = res?.effective
+    ? { family: res.effective.family, params: res.effective.params }
+    : res?.storedRule
+      ? { family: res.storedRule.family, params: res.storedRule.params }
+      : null;
+  const catalog: CatField[] = inv.map((r) => ({ code: r.code, name: r.name, sensitivity: r.sensitivity, source: srcOf(r.governedBy?.badge, r.status === "ambiguous"), systemRegulated: !!r.governedBy?.systemRegulated, sampleValue: r.sampleValue }));
+  return { rule, field, catalog };
 }
 
 export async function proposeVariantAction(code: string, scopeType: string, scopeValue: string, family: string, params: Record<string, unknown>, reason: string): Promise<MaskingActionResult> {

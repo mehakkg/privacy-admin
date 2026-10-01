@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { X, Search, Check, AlertTriangle, Clock, Plus, CheckCircle2, FolderInput } from "lucide-react";
@@ -77,7 +78,11 @@ export function CreateRuleModal({ catalog, initialSelected, onClose, lockedField
   const onFieldCreated = (f: CatalogField) => { setCat((c) => (c.some((x) => x.code === f.code) ? c : [f, ...c])); setSelected((s) => (s.includes(f.code) ? s : [...s, f.code])); };
   const toggle = (code: string) => setSelected((s) => (s.includes(code) ? s.filter((c) => c !== code) : [...s, code]));
 
-  return (
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return null;
+
+  return createPortal(
     <div className="modal-scrim" onClick={onClose}>
       <div className="modal std-modal lg" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div className="std-modal-head">
@@ -231,7 +236,8 @@ export function CreateRuleModal({ catalog, initialSelected, onClose, lockedField
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
