@@ -41,7 +41,7 @@ export async function activeRegionalSet(): Promise<Set<string>> {
 /** Templates with their field counts, for the By-field template switcher. */
 export async function getTemplates(): Promise<TemplateView[]> {
   const [templates, counts] = await Promise.all([
-    db.maskingTemplate.findMany({ orderBy: { sortOrder: "asc" } }),
+    db.maskingTemplate.findMany({ where: { kind: { in: ["baseline", "regional"] } }, orderBy: { sortOrder: "asc" } }),
     db.maskingLayerRule.groupBy({ by: ["layer", "source"], _count: true }),
   ]);
   const countFor = (t: { key: string; kind: string }) =>
