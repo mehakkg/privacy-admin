@@ -3,11 +3,11 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { X, Search, Check, AlertTriangle, Clock, Plus, CheckCircle2 } from "lucide-react";
+import { X, Search, Check, AlertTriangle, Clock, Plus, CheckCircle2, FolderInput } from "lucide-react";
 import { Pill } from "@/components/ui";
 import { RuleEditor, defaultParamsFor } from "@/components/masking/RuleEditor";
 import { INTENTS, runMaskCore, intentPreview, REVEAL, SENSITIVITIES, type Rule } from "@/lib/masking";
-import { planRuleAction, submitRuleAction, checkCollisionAction, createBareFieldAction } from "@/app/actions/masking";
+import { planRuleAction, submitRuleAction, checkCollisionAction, createBareFieldAction, getCustomTemplatesAction, createCustomTemplateAction } from "@/app/actions/masking";
 import type { PlanRow, SubmitPlanResult } from "@/lib/engines/masking";
 
 export interface CatalogField { code: string; name: string; sensitivity: string; source: string; systemRegulated: boolean; sampleValue: string }
@@ -29,6 +29,13 @@ export function CreateRuleModal({ catalog, initialSelected, onClose, lockedField
   const [result, setResult] = useState<SubmitPlanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cat, setCat] = useState<CatalogField[]>(catalog);
+  // Custom-template placement (optional): "" = standalone, a key, or create new.
+  const [templates, setTemplates] = useState<{ key: string; name: string }[]>([]);
+  const [placement, setPlacement] = useState<string>("");
+  const [newTplName, setNewTplName] = useState("");
+  const [tplBusy, setTplBusy] = useState(false);
+  const [tplErr, setTplErr] = useState<string | null>(null);
+  useEffect(() => { getCustomTemplatesAction().then(({ templates }) => setTemplates(templates.map((t) => ({ key: t.key, name: t.name })))); }, []);
 
   const selectedFields = cat.filter((f) => selected.includes(f.code));
   const anySensitive = selectedFields.some((f) => f.sensitivity === "Sensitive" || f.systemRegulated);
@@ -44,16 +51,27 @@ export function CreateRuleModal({ catalog, initialSelected, onClose, lockedField
   const blocked = plan.filter((p) => p.outcome === "blocked");
   const needApproval = plan.filter((p) => p.outcome === "approval");
   const canNext = step === 0 ? selected.length > 0 : step === 1 ? !!intent : step === 2 ? !!rule : true;
-  const canSubmit = step === 3 && blocked.length === 0 && (needApproval.length === 0 || reason.trim().length > 0) && !pending;
+  const canSubmit = step === 3 && blocked.length === 0 && (needApproval.length === 0 || reason.trim().length > 0) && placement !== "__new__" && !pending;
 
   const pickIntent = (family: string) => { setIntent(family); setRule({ family, params: defaultParamsFor(family) }); };
 
   const submit = () => start(async () => {
     if (!rule) return;
-    const r = await submitRuleAction(rule.family, rule.params, selected, reason);
+    const templateKey = placement && placement !== "__new__" ? placement : null;
+    const r = await submitRuleAction(rule.family, rule.params, selected, reason, templateKey);
     if (r.ok && r.result) { setResult(r.result); setError(null); router.refresh(); }
     else setError(r.error ?? "Failed.");
   });
+
+  const createTemplate = () => {
+    if (!newTplName.trim()) return;
+    setTplBusy(true); setTplErr(null);
+    createCustomTemplateAction(newTplName.trim(), false).then((r) => {
+      setTplBusy(false);
+      if (r.ok && r.key) { setTemplates((t) => [...t, { key: r.key!, name: newTplName.trim() }]); setPlacement(r.key); setNewTplName(""); }
+      else setTplErr(r.error ?? "Failed to create template.");
+    });
+  };
 
   const matches = q.trim() ? cat.filter((f) => f.code.toLowerCase().includes(q.toLowerCase()) || f.name.toLowerCase().includes(q.toLowerCase())) : cat;
   const onFieldCreated = (f: CatalogField) => { setCat((c) => (c.some((x) => x.code === f.code) ? c : [f, ...c])); setSelected((s) => (s.includes(f.code) ? s : [...s, f.code])); };
@@ -177,6 +195,25 @@ export function CreateRuleModal({ catalog, initialSelected, onClose, lockedField
                           <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why this change is needed." />
                         </label>
                       )}
+
+                      {/* Move to a custom template (optional) — group the applied rules under a template. */}
+                      <div className="stack" style={{ gap: 6, borderTop: "1px solid var(--border-soft)", paddingTop: 10 }}>
+                        <label className="fld"><span className="row" style={{ gap: 6, alignItems: "center" }}><FolderInput size={13} /> Move to a custom template <span className="cell-sub">(optional)</span></span>
+                          <select className="input" value={placement} onChange={(e) => { setPlacement(e.target.value); setTplErr(null); }}>
+                            <option value="">No template — standalone rule</option>
+                            {templates.map((t) => <option key={t.key} value={t.key}>{t.name}</option>)}
+                            <option value="__new__">+ Create a new template…</option>
+                          </select>
+                        </label>
+                        {placement === "__new__" && (
+                          <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+                            <input className="input sm" style={{ flex: "1 1 180px" }} placeholder="New template name" value={newTplName} onChange={(e) => setNewTplName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); createTemplate(); } }} />
+                            <button className="btn sm" disabled={!newTplName.trim() || tplBusy} onClick={createTemplate}>{tplBusy ? "Creating…" : "Create template"}</button>
+                          </div>
+                        )}
+                        {tplErr && <span className="cell-sub" style={{ color: "var(--red)" }}>{tplErr}</span>}
+                        {placement && placement !== "__new__" && <span className="cell-sub">Fields applied now are added to “{templates.find((t) => t.key === placement)?.name}”. Fields routed to approval stay as-is until approved.</span>}
+                      </div>
                       {error && <div className="notice danger"><div className="notice-title">Refused</div><div>{error}</div></div>}
                     </>
                   )}

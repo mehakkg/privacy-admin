@@ -887,8 +887,12 @@ export async function planRuleForFields(family: string, params: Record<string, u
 
 export interface SubmitPlanResult { applied: string[]; proposed: string[] }
 
-/** Apply the "apply" fields atomically and raise proposals for the "approval" fields. */
-export async function submitRulePlan(family: string, params: Record<string, unknown>, codes: string[], reason: string, actor: AuditActor): Promise<SubmitPlanResult> {
+/**
+ * Apply the "apply" fields atomically and raise proposals for the "approval"
+ * fields. `templateKey` (optional) places the applied tenant rules into a custom
+ * template — the same re-association as "Move to template", chosen at creation.
+ */
+export async function submitRulePlan(family: string, params: Record<string, unknown>, codes: string[], reason: string, actor: AuditActor, templateKey?: string | null): Promise<SubmitPlanResult> {
   const plan = await planRuleForFields(family, params, codes);
   const blocked = plan.filter((p) => p.outcome === "blocked");
   if (blocked.length) throw err("BlockedFieldError", `Remove the blocked field(s) first: ${blocked.map((b) => b.code).join(", ")}.`);
@@ -896,14 +900,21 @@ export async function submitRulePlan(family: string, params: Record<string, unkn
   const approvalCodes = plan.filter((p) => p.outcome === "approval").map((p) => p.code);
   if (approvalCodes.length && !reason.trim()) throw err("ValidationError", "A reason is required — some fields need DPO approval.");
 
+  let template: { key: string; name: string } | null = null;
+  if (templateKey) {
+    const t = await db.maskingTemplate.findUnique({ where: { key: templateKey } });
+    if (!t || t.kind !== "custom") throw err("NotFoundError", "Choose a valid custom template.");
+    template = { key: t.key, name: t.name };
+  }
+
   if (applyCodes.length) {
     await audited(
-      { actor, action: "masking.rule_edited", targetType: "MaskingRuleGroup", targetId: `apply:${applyCodes.length}`, eventDescription: `Applied ${ruleLabel({ family, params })} to ${applyCodes.length} field(s)`, payload: { rule: ruleLabel({ family, params }), fields: applyCodes } },
+      { actor, action: "masking.rule_edited", targetType: "MaskingRuleGroup", targetId: `apply:${applyCodes.length}`, eventDescription: `Applied ${ruleLabel({ family, params })} to ${applyCodes.length} field(s)${template ? ` in template "${template.name}"` : ""}`, payload: { rule: ruleLabel({ family, params }), fields: applyCodes, template: template?.key ?? null } },
       async (tx) => {
         for (const code of applyCodes) {
           const existing = await tx.maskingLayerRule.findFirst({ where: { fieldCode: code, layer: "tenant" } });
-          if (existing) await tx.maskingLayerRule.update({ where: { id: existing.id }, data: { family, paramsJson: encodeObject(params) } });
-          else await tx.maskingLayerRule.create({ data: { fieldCode: code, layer: "tenant", family, paramsJson: encodeObject(params) } });
+          if (existing) await tx.maskingLayerRule.update({ where: { id: existing.id }, data: { family, paramsJson: encodeObject(params), ...(template ? { templateKey: template.key } : {}) } });
+          else await tx.maskingLayerRule.create({ data: { fieldCode: code, layer: "tenant", family, paramsJson: encodeObject(params), ...(template ? { templateKey: template.key } : {}) } });
         }
       },
     );

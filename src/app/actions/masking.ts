@@ -153,9 +153,9 @@ export async function removeVariantAction(id: string): Promise<MaskingActionResu
   try { await removeVariant(id, actor); touch(); return { ok: true }; } catch (e) { return fail(e); }
 }
 
-export async function createCustomTemplateAction(name: string, copyBaseline: boolean): Promise<MaskingActionResult> {
+export async function createCustomTemplateAction(name: string, copyBaseline: boolean): Promise<MaskingActionResult & { key?: string }> {
   const { actor } = await getSession();
-  try { await createCustomTemplate(name, copyBaseline, actor); touch(); return { ok: true }; } catch (e) { return fail(e); }
+  try { const t = await createCustomTemplate(name, copyBaseline, actor); touch(); return { ok: true, key: (t as { key: string }).key }; } catch (e) { return fail(e); }
 }
 
 export async function moveRuleToTemplateAction(code: string, templateKey: string): Promise<MaskingActionResult> {
@@ -178,7 +178,7 @@ export async function planRuleAction(family: string, params: Record<string, unkn
 }
 
 export interface CreateRuleResult extends MaskingActionResult { result?: SubmitPlanResult }
-export async function submitRuleAction(family: string, params: Record<string, unknown>, codes: string[], reason: string): Promise<CreateRuleResult> {
+export async function submitRuleAction(family: string, params: Record<string, unknown>, codes: string[], reason: string, templateKey?: string | null): Promise<CreateRuleResult> {
   const { actor } = await getSession();
-  try { const result = await submitRulePlan(family, params, codes, reason, actor); touch(); return { ok: true, result }; } catch (e) { return fail(e); }
+  try { const result = await submitRulePlan(family, params, codes, reason, actor, templateKey); touch(); return { ok: true, result }; } catch (e) { return fail(e); }
 }
