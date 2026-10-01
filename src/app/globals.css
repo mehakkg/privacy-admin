@@ -3808,13 +3808,19 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 .mask-tile.warn .tile-n { color: var(--yellow-700, #b45309); }
 
 /* Rule templates card */
-.rtpl-card { display: flex; flex-direction: row; align-items: center; gap: 14px; flex-wrap: wrap; padding: 14px 16px; border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface); margin: 16px 0 4px; }
+.rtpl-card { display: flex; flex-direction: row; align-items: center; gap: 14px; flex-wrap: nowrap; padding: 14px 16px; border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface); margin: 16px 0 4px; }
 .tpl-card-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 9px; background: var(--bg-selected); color: var(--text-link); flex-shrink: 0; }
-.tpl-card-main { flex: 1 1 200px; min-width: 180px; }
+.tpl-card-main { flex: 0 1 auto; min-width: 150px; }
 .tpl-card-title { font-weight: 600; }
-.tpl-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
-.tpl-chips { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
-.tpl-chip2 { display: inline-flex; align-items: center; }
+/* Chips live in a single-line horizontal-scroll strip so they never wrap to a
+   second row as custom templates grow; Create custom stays pinned on the right. */
+.tpl-right { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; justify-content: flex-end; margin-left: auto; }
+.tpl-chips { position: relative; flex: 1 1 auto; min-width: 0; display: flex; gap: 8px; flex-wrap: nowrap; align-items: center; justify-content: flex-start; overflow-x: auto; scrollbar-width: thin; padding: 2px 2px 4px; -webkit-mask-image: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 20px), transparent 100%); mask-image: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 20px), transparent 100%); }
+.tpl-chips::-webkit-scrollbar { height: 6px; }
+.tpl-chips::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+.tpl-chip2 { display: inline-flex; align-items: center; flex: 0 0 auto; }
+.tpl-create { flex: 0 0 auto; }
+@media (max-width: 880px) { .rtpl-card { flex-wrap: wrap; } .tpl-right { flex-basis: 100%; justify-content: flex-start; } }
 .tpl-chip2-label { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; background: var(--bg-subtle, #f4f5f7); border: 1px solid var(--border-soft); font-size: 12.5px; text-decoration: none; color: inherit; }
 .tpl-chip2-label:hover { border-color: var(--border-strong); }
 .tpl-state { display: inline-flex; align-items: center; gap: 4px; background: none; border: 0; font: inherit; font-size: 12px; cursor: pointer; color: var(--text); opacity: 0.7; padding: 0; }
@@ -3859,6 +3865,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 .mask-drawer-section { padding: 14px 0; border-bottom: 1px solid var(--border-soft); }
 .mask-drawer-section:last-child { border-bottom: 0; }
 .mask-section-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text); opacity: 0.6; margin: 0 0 8px; }
+.mask-section-toggle { display: flex; align-items: center; gap: 6px; width: 100%; background: none; border: 0; padding: 0; font: inherit; cursor: pointer; color: var(--text); text-align: left; }
+.mask-section-toggle .mask-section-title { margin: 0; }
+.mask-section-toggle:hover .mask-section-title { opacity: 0.85; }
 
 .chan-override { border: 1px solid var(--border-soft); border-radius: 8px; padding: 6px 10px; }
 .chan-override-head { background: none; border: 0; font: inherit; cursor: pointer; padding: 2px 0; }

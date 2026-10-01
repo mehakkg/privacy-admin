@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { X, Lock, LockOpen, ShieldCheck, Pencil, GitPullRequest, Check, Ban, Clock, ExternalLink, AlertTriangle, LayoutTemplate, RotateCcw, Unlink, RefreshCw, History, ToggleLeft, ToggleRight, Trash2, Copy, FolderInput, Users } from "lucide-react";
+import { X, Lock, LockOpen, ShieldCheck, Pencil, GitPullRequest, Check, Ban, Clock, ExternalLink, AlertTriangle, LayoutTemplate, RotateCcw, Unlink, RefreshCw, History, ToggleLeft, ToggleRight, Trash2, Copy, FolderInput, Users, ChevronDown, ChevronRight } from "lucide-react";
 import { Pill, type PillTone } from "@/components/ui";
 import { CreateRuleModal, type CatalogField } from "@/components/masking/CreateRuleModal";
 import { RuleEditor, defaultParamsFor } from "@/components/masking/RuleEditor";
@@ -286,9 +286,9 @@ export function FieldDrawer({
                 </Section>
               )}
 
-              {/* Rule by channel */}
+              {/* Rule by channel — collapsed to a one-liner when no channel overrides exist. */}
               {res.channels.length > 0 && (
-                <Section title="Rule by channel">
+                <Section title="Rule by channel" collapsible defaultOpen={res.overrideCount > 0} summary={res.overrideCount > 0 ? `${res.overrideCount} override${res.overrideCount === 1 ? "" : "s"}` : "Same on all channels"}>
                   <div className="table-wrap">
                     <table className="dtable compact">
                       <thead><tr><th>Channel</th><th>Rule</th><th>Preview</th><th>Source</th></tr></thead>
@@ -333,7 +333,7 @@ export function FieldDrawer({
               {/* Visibility Matrix (role/channel) — only for governed/tenant fields,
                   structurally ABSENT for regulatory_floor and ambiguous. Gated. */}
               {(state === "template_governed" || state === "tenant_governed") && res.status !== "ambiguous" && (
-                <Section title="Who sees what (role & channel views)">
+                <Section title="Who sees what (role & channel views)" collapsible defaultOpen={res.variants.length > 0} summary={res.variants.length > 0 ? `${res.variants.length} view${res.variants.length === 1 ? "" : "s"} · resolves to Default` : "Default only · not enforced yet"}>
                   <VisibilityMatrix res={res} canEdit={!pending} />
                 </Section>
               )}
@@ -346,7 +346,7 @@ export function FieldDrawer({
               )}
 
               {/* History */}
-              <Section title="History">
+              <Section title="History" collapsible defaultOpen={false} summary={history.length === 0 ? "None" : `${history.length} recent`}>
                 {history.length === 0 ? <p className="cell-sub">No changes recorded.</p> : (
                   <div className="stack" style={{ gap: 4 }}>
                     {history.map((h) => (
@@ -474,11 +474,24 @@ function VisibilityMatrix({ res, canEdit }: { res: FieldResolution; canEdit: boo
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children, collapsible, defaultOpen = true, summary }: { title: string; children: React.ReactNode; collapsible?: boolean; defaultOpen?: boolean; summary?: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
+  if (!collapsible) {
+    return (
+      <section className="mask-drawer-section">
+        <h3 className="mask-section-title">{title}</h3>
+        {children}
+      </section>
+    );
+  }
   return (
     <section className="mask-drawer-section">
-      <h3 className="mask-section-title">{title}</h3>
-      {children}
+      <button className="mask-section-toggle" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        <span className="mask-section-title" style={{ margin: 0 }}>{title}</span>
+        {!open && summary && <span className="cell-sub" style={{ marginLeft: "auto" }}>{summary}</span>}
+      </button>
+      {open && <div style={{ marginTop: 8 }}>{children}</div>}
     </section>
   );
 }
