@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { AlertTriangle, Plus, X, Lock, LayoutTemplate, User, Layers, MoreHorizontal } from "lucide-react";
+import { AlertTriangle, Plus, X, Lock, LayoutTemplate, User, Layers } from "lucide-react";
 import { CreateRuleModal, type CatalogField } from "@/components/masking/CreateRuleModal";
+import { RowActionMenu } from "@/components/masking/RowActionMenu";
 
 export interface InventoryRowView {
   code: string; name: string; path: string; sensitivity: string;
@@ -12,6 +14,8 @@ export interface InventoryRowView {
   coveredSub: string | null; channel: string | null; roleTag: string | null;
   pending: boolean; stricter: boolean; overrides: number;
   group: string | null; groupHref: string | null;
+  /** no_rule | regulatory_floor | template_governed | self_locked | override_off | tenant_governed | ambiguous */
+  state: string; canMove: boolean;
   lastChange: string; attention: boolean; ambiguous: boolean; href: string;
 }
 
@@ -41,9 +45,16 @@ function CoveredBy({ r }: { r: InventoryRowView }) {
  * change. Channel/Role are advisory (enforcement is off).
  */
 export function FieldInventory({ rows, catalog }: { rows: InventoryRowView[]; catalog: CatalogField[] }) {
+  const router = useRouter();
   const [selected, setSelected] = useState<string[]>([]);
   const [modal, setModal] = useState<null | string[]>(null);
   const toggle = (c: string) => setSelected((s) => (s.includes(c) ? s.filter((x) => x !== c) : [...s, c]));
+  // Row click opens the drawer, except when the click lands on an interactive
+  // control (checkbox, the ⋯ menu, a link).
+  const rowClick = (e: React.MouseEvent, href: string) => {
+    if ((e.target as HTMLElement).closest("input,button,a,.row-menu")) return;
+    router.push(href);
+  };
   const allOnPage = rows.map((r) => r.code);
   const allSelected = allOnPage.length > 0 && allOnPage.every((c) => selected.includes(c));
 
@@ -57,17 +68,17 @@ export function FieldInventory({ rows, catalog }: { rows: InventoryRowView[]; ca
           </tr></thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.code} className={selected.includes(r.code) ? "row-active" : ""}>
+              <tr key={r.code} className={`rules-row${selected.includes(r.code) ? " row-active" : ""}`} onClick={(e) => rowClick(e, r.href)}>
                 <td><input type="checkbox" checked={selected.includes(r.code)} onChange={() => toggle(r.code)} aria-label={`Select ${r.code}`} /></td>
                 <td>
-                  <Link href={r.href} className="plain-link"><div className="cell-stack">
+                  <div className="cell-stack">
                     <span className="row" style={{ gap: 6, alignItems: "center" }}>
                       <span className="sens-dot" title={r.sensitivity} style={{ background: SENS_COLOR[r.sensitivity] }} />
                       <span className="cell-primary mono">{r.code}</span>
                     </span>
                     <span className="cell-sub mono">{r.path}</span>
-                  </div></Link>
-                  {r.group && r.groupHref && <Link href={r.groupHref} className="group-tag"><Layers size={10} /> {r.group}</Link>}
+                  </div>
+                  {r.group && r.groupHref && <Link href={r.groupHref} className="group-tag" onClick={(e) => e.stopPropagation()}><Layers size={10} /> {r.group}</Link>}
                 </td>
                 <td>{r.effLabel ? r.effLabel : <span className="row" style={{ gap: 4, color: "var(--red)" }}><AlertTriangle size={13} /> {r.ambiguous ? "Ambiguous" : "No rule"}</span>}</td>
                 <td className="mono cell-sub">{r.masked ?? "—"}</td>
@@ -75,7 +86,7 @@ export function FieldInventory({ rows, catalog }: { rows: InventoryRowView[]; ca
                 <td className="cell-sub">{r.channel ?? "—"}</td>
                 <td className="cell-sub">{r.selfLocked || r.systemRegulated ? <span className="row" style={{ gap: 4, alignItems: "center" }}><Lock size={11} /> {r.roleTag ?? "Restricted"}</span> : (r.roleTag ?? "—")}</td>
                 <td className="cell-sub">{r.lastChange}</td>
-                <td><Link href={r.href} className="icon-btn" aria-label={`Open ${r.code}`}><MoreHorizontal size={16} /></Link></td>
+                <td><RowActionMenu row={r} /></td>
               </tr>
             ))}
             {rows.length === 0 && <tr><td colSpan={9}><div className="empty">No rules match.</div></td></tr>}

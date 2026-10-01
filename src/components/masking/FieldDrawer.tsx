@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { X, Lock, LockOpen, ShieldCheck, Pencil, GitPullRequest, Check, Ban, Clock, ExternalLink, AlertTriangle, LayoutTemplate, RotateCcw, Unlink, RefreshCw, History, ToggleLeft, ToggleRight, Trash2, Copy, FolderInput, Users } from "lucide-react";
@@ -43,7 +43,7 @@ function useRun() {
 }
 
 export function FieldDrawer({
-  res, pending, history, role, closeHref, groupId, groupName, diverged, customTemplates, fullCatalog,
+  res, pending, history, role, closeHref, groupId, groupName, diverged, customTemplates, fullCatalog, autoDo,
 }: {
   res: FieldResolution;
   pending: PendingView | null;
@@ -55,6 +55,7 @@ export function FieldDrawer({
   diverged: boolean;
   customTemplates: CustomTemplateView[];
   fullCatalog: CatalogField[];
+  autoDo: string | null;
 }) {
   const router = useRouter();
   const gov = res.governedBy;
@@ -95,6 +96,16 @@ export function FieldDrawer({
     setTplLoading(true);
     templateFieldsAction(templateKey).then(({ fields }) => { setTpl({ key: templateKey, rows: fields }); setTplLoading(false); });
   };
+
+  // Auto-open the action the ⋯ menu asked for (via ?do=), once on mount.
+  useEffect(() => {
+    if (!autoDo || pending) return;
+    if (autoDo === "create" || autoDo === "edit" || autoDo === "override" || autoDo === "duplicate") setStepper({ kind: autoDo as "create" | "edit" | "override" | "duplicate" });
+    else if (autoDo === "template") openTemplate();
+    else if (autoDo === "restore") loadVersions();
+    else if (autoDo === "move") setMoveOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <>

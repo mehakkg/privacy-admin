@@ -61,7 +61,7 @@ export default async function ProtectionRulesPage({ searchParams }: { searchPara
 
       <ByFieldTab sp={sp} />
 
-      {res && <FieldDrawer res={res} pending={pending} history={historyRows.map((h) => ({ seq: h.seq, action: h.action, actor: h.actorLabel, at: formatDateTime(h.timestamp) }))} role={role} closeHref={closeHref} groupId={grp?.id ?? null} groupName={grp?.name ?? null} diverged={diverged} customTemplates={customTemplates} fullCatalog={fullCatalog} />}
+      {res && <FieldDrawer res={res} pending={pending} history={historyRows.map((h) => ({ seq: h.seq, action: h.action, actor: h.actorLabel, at: formatDateTime(h.timestamp) }))} role={role} closeHref={closeHref} groupId={grp?.id ?? null} groupName={grp?.name ?? null} diverged={diverged} customTemplates={customTemplates} fullCatalog={fullCatalog} autoDo={sp.do ?? null} />}
       {sp.add && <AddFieldDrawer closeHref={closeHref} regionalNames={regional.map((t) => t.name)} />}
     </Shell>
   );

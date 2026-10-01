@@ -11,7 +11,17 @@ import { FAMILY_LABEL, formatRelative } from "@/lib/masking";
 const PER_PAGE = 12;
 const BASE = "/data-flow/protection-rules";
 
-export type ByFieldSP = { q?: string; family?: string; governedBy?: string; sensitivity?: string; channel?: string; role?: string; owner?: string; status?: string; group?: string; field?: string; add?: string; created?: string; page?: string };
+export type ByFieldSP = { q?: string; family?: string; governedBy?: string; sensitivity?: string; channel?: string; role?: string; owner?: string; status?: string; group?: string; field?: string; add?: string; created?: string; page?: string; do?: string };
+
+function rowState(r: InventoryRow): string {
+  if (r.status === "ambiguous") return "ambiguous";
+  if (!r.hasRule && !r.overrideOff) return "no_rule";
+  if (r.governedBy?.systemRegulated) return "regulatory_floor";
+  if (r.overrideOff) return "override_off";
+  if (r.governedBy?.treatment === "governed") return "template_governed";
+  if (r.governedBy?.treatment === "self") return "self_locked";
+  return "tenant_governed";
+}
 
 function matchGoverned(row: InventoryRow, gb: string): boolean {
   if (gb.startsWith("custom:")) return row.templateKey === gb.slice(7);
@@ -91,6 +101,7 @@ export async function ByFieldTab({ sp }: { sp: ByFieldSP }) {
       pending: !!r.pendingChangeId, stricter: !!r.governedBy?.stricter, overrides: r.overrideCount,
       group: r.group ?? null,
       groupHref: r.group ? qs({ group: r.group, field: undefined, status: undefined, page: undefined }) : null,
+      state: rowState(r), canMove: customTemplates.length > 0,
       lastChange: r.lastChange ? `${r.lastChange.actor} · ${formatRelative(r.lastChange.at)}` : "—",
       attention: r.needsAttention, ambiguous: r.status === "ambiguous",
       href: qs({ field: r.code }),
