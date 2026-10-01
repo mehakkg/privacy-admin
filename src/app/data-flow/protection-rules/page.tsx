@@ -1,7 +1,6 @@
-import Link from "next/link";
-import { BookOpen } from "lucide-react";
 import { formatDateTime, PageHead } from "@/components/ui";
 import { Shell } from "@/components/Shell";
+import { RuleGuide } from "@/components/masking/RuleGuide";
 import { getCurrentRole } from "@/lib/session";
 import { EnforcementNotice } from "@/components/masking/EnforcementNotice";
 import { ByFieldTab, type ByFieldSP } from "@/components/masking/ByFieldTab";
@@ -55,7 +54,7 @@ export default async function ProtectionRulesPage({ searchParams }: { searchPara
         crumbs={[{ label: "Governance" }, { label: "Protection rules" }]}
         title="Protection rules"
         subtitle="Define how sensitive data is masked, shown, and governed across your organization."
-        actions={<Link href="/audit?module=masking" className="row-link" style={{ gap: 6, alignItems: "center" }}><BookOpen size={15} /> Rule guide</Link>}
+        actions={<RuleGuide />}
       />
       <EnforcementNotice />
 

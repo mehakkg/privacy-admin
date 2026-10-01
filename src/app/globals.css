@@ -3855,6 +3855,14 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 .row-menu-confirm { padding: 8px 9px; font-size: 12.5px; color: var(--text); }
 .row-menu-err { padding: 6px 9px; font-size: 12px; color: var(--red); }
 
+/* Rule guide modal */
+.guide-h { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text); opacity: 0.65; }
+.guide-chain { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.guide-layer { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg-subtle, #f4f5f7); font-size: 12.5px; }
+.guide-arrow { font-size: 11px; color: var(--text); opacity: 0.55; }
+.guide-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.guide-list li { color: var(--text); }
+
 /* Field detail / add drawer */
 .mask-drawer-scrim { position: fixed; inset: 0; background: transparent; z-index: 40; }
 .mask-drawer { position: fixed; top: 0; right: 0; height: 100vh; width: 480px; max-width: 94vw; background: var(--surface); border-left: 1px solid var(--border-strong); box-shadow: -8px 0 28px rgba(0,0,0,0.12); z-index: 41; display: flex; flex-direction: column; }

@@ -13,7 +13,7 @@ import type { PlanRow, SubmitPlanResult } from "@/lib/engines/masking";
 
 export interface CatalogField { code: string; name: string; sensitivity: string; source: string; systemRegulated: boolean; sampleValue: string }
 
-const STEPS = ["Fields", "Behavior", "Tune & preview", "Review"] as const;
+const STEPS = ["Fields", "Behavior", "Tune & preview", "Review & catalog"] as const;
 
 /** SCREEN 2 — Create rule stepper. Fields → Behavior → Tune & preview → Review,
  *  then a Result step. Submit is disabled while any field is blocked. */
