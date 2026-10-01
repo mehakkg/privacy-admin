@@ -3808,7 +3808,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 .mask-tile.warn .tile-n { color: var(--yellow-700, #b45309); }
 
 /* Rule templates card */
-.tpl-card { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 14px 16px; border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface); margin: 16px 0 4px; }
+.rtpl-card { display: flex; flex-direction: row; align-items: center; gap: 14px; flex-wrap: wrap; padding: 14px 16px; border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface); margin: 16px 0 4px; }
 .tpl-card-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 9px; background: var(--bg-selected); color: var(--text-link); flex-shrink: 0; }
 .tpl-card-main { min-width: 180px; }
 .tpl-card-title { font-weight: 600; }

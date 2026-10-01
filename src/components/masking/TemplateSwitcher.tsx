@@ -32,7 +32,7 @@ export function RuleTemplates({ templates, customTemplates }: { templates: Templ
   };
 
   return (
-    <section className="tpl-card">
+    <section className="rtpl-card">
       <div className="tpl-card-icon"><Layers size={18} /></div>
       <div className="tpl-card-main">
         <div className="tpl-card-title">Rule templates</div>
