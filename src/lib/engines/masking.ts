@@ -83,6 +83,7 @@ export async function setTemplateAssociation(key: string, associated: boolean, a
 interface FieldBundle {
   code: string; name: string; sensitivity: string; sampleValue: string;
   detectionPattern: string | null; dataElementRef: string | null; createdBy: string | null;
+  primaryChannel: string | null; primaryRole: string | null; ownerTeam: string | null;
   layerRules: LayerRow[]; channelRules: ChannelRow[]; variants: VariantRow[];
   exceptions: { id: string; role: string; purpose: string; durationMinutes: number; approvedBy: string | null; expiresAt: Date | null }[];
   pendingChangeId: string | null;
@@ -170,6 +171,7 @@ function resolveBundle(f: FieldBundle, activeRegional?: Set<string>): FieldResol
   return {
     code: f.code, name: f.name, sensitivity: f.sensitivity, sampleValue: f.sampleValue,
     detectionPattern: f.detectionPattern, dataElementRef: f.dataElementRef,
+    primaryChannel: f.primaryChannel, primaryRole: f.primaryRole, ownerTeam: f.ownerTeam,
     hasRule: !!winning, status,
     overrideOff: !!inactiveTenant && !activeTenant,
     storedRule: inactiveTenant ? storedRuleOf(inactiveTenant) : null,
@@ -190,6 +192,7 @@ async function loadBundle(code: string): Promise<FieldBundle | null> {
   return {
     code: f.code, name: f.name, sensitivity: f.sensitivity, sampleValue: f.sampleValue,
     detectionPattern: f.detectionPattern, dataElementRef: f.dataElementRef, createdBy: f.createdBy,
+    primaryChannel: f.primaryChannel, primaryRole: f.primaryRole, ownerTeam: f.ownerTeam,
     layerRules: f.layerRules, channelRules: f.channelRules, variants: f.variants,
     exceptions: f.exceptions, pendingChangeId: f.changeRequests[0]?.id ?? null,
   };
@@ -236,6 +239,7 @@ export async function getInventory(): Promise<InventoryRow[]> {
     const res = resolveBundle({
       code: f.code, name: f.name, sensitivity: f.sensitivity, sampleValue: f.sampleValue,
       detectionPattern: f.detectionPattern, dataElementRef: f.dataElementRef, createdBy: f.createdBy,
+      primaryChannel: f.primaryChannel, primaryRole: f.primaryRole, ownerTeam: f.ownerTeam,
       layerRules: f.layerRules, channelRules: f.channelRules, variants: f.variants, exceptions: f.exceptions,
       pendingChangeId: f.changeRequests[0]?.id ?? null,
     }, active);

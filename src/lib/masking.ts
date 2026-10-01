@@ -397,6 +397,10 @@ export interface FieldResolution {
   sampleValue: string;
   detectionPattern: string | null;
   dataElementRef: string | null;
+  /** Advisory display metadata (not resolution inputs). */
+  primaryChannel: string | null;
+  primaryRole: string | null;
+  ownerTeam: string | null;
   hasRule: boolean;
   /** Override On/Off: a tenant rule exists but is switched off; resolution falls
    *  through live to the template/BASELINE, and the stored value is retained. */

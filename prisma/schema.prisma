@@ -1583,6 +1583,12 @@ model MaskingField {
   dataElementRef   String?
   /// A representative value for the masked-output preview.
   sampleValue      String  @default("")
+  /// Advisory display metadata (NOT inputs to resolution — enforcement is off):
+  /// the field's primary channel + role context and the owning team, shown as
+  /// table columns and used by the Channel/Role/Owner filters.
+  primaryChannel   String?
+  primaryRole      String?
+  ownerTeam        String?
   createdBy        String?
   createdAt        DateTime @default(now())
 

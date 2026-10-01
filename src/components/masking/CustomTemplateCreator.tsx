@@ -24,7 +24,7 @@ export function CustomTemplateCreator() {
     else setError(r.error ?? "Failed.");
   });
 
-  if (!open) return <button className="btn ghost sm" onClick={() => setOpen(true)}><FolderPlus size={13} /> Create custom template</button>;
+  if (!open) return <button className="btn sm tpl-create" onClick={() => setOpen(true)}><FolderPlus size={13} /> Create custom</button>;
 
   return (
     <div className="stack" style={{ gap: 8, border: "1px solid var(--border-soft)", borderRadius: 8, padding: 10, minWidth: 280 }}>

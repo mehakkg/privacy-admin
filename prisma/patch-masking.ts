@@ -91,6 +91,42 @@ async function ensureNewStateFixtures() {
   });
   const sess = await prisma.maskingLayerRule.findFirst({ where: { fieldCode: "SESSION_ID", layer: "tenant" } });
   if (sess && !sess.templateKey) await prisma.maskingLayerRule.update({ where: { id: sess.id }, data: { templateKey: "CUSTOM_ANALYTICS" } });
+
+  // 5. Advisory display metadata (field path, primary channel/role, owner team) for
+  //    the Rules table columns + Channel/Role/Owner filters. NOT resolution inputs.
+  //    Set only where unset, so later edits survive. [path, channel, role, team]
+  const advisory: Record<string, [string, string, string, string]> = {
+    PHONE_NUMBER: ["profile.phone", "API", "Support", "Operations"],
+    EMAIL_ADDRESS: ["profile.email", "API", "Support", "Identity"],
+    FULL_NAME: ["profile.full_name", "Portal", "Admin", "Identity"],
+    DATE_OF_BIRTH: ["profile.dob", "Portal", "Admin", "Identity"],
+    CREDIT_CARD_NUMBER: ["billing.card_no", "API", "Support", "Payments"],
+    ACCOUNT_NUMBER: ["accounts.account_no", "API", "Support", "Operations"],
+    AADHAAR: ["kyc.aadhaar", "Portal", "Admin", "Compliance"],
+    PAN: ["kyc.pan", "Portal", "Admin", "Compliance"],
+    ABHA_NUMBER: ["health.abha", "Portal", "Admin", "Compliance"],
+    UAN: ["hr.uan", "Portal", "HR", "People Ops"],
+    PASSPORT_NUMBER: ["kyc.passport", "Portal", "Admin", "Compliance"],
+    VOTER_ID: ["kyc.voter_id", "Portal", "Admin", "Compliance"],
+    DRIVING_LICENSE_NUMBER: ["kyc.dl_no", "Portal", "Admin", "Compliance"],
+    UPI_ID: ["payments.upi_id", "API", "Support", "Payments"],
+    SEGMENT_CODE: ["crm.segment_code", "Web", "Analyst", "Data platform"],
+    WALLET_ID: ["payments.wallet_id", "API", "Support", "Payments"],
+    SESSION_ID: ["events.session_id", "Web", "Analyst", "Data platform"],
+    DEVICE_ID: ["events.device_id", "Web", "Analyst", "Data platform"],
+    REFERRER_URL: ["events.referrer_url", "Web", "Analyst", "Data platform"],
+    IP_ADDRESS: ["events.ip_address", "Logs", "Security", "Security"],
+    USER_AGENT: ["events.user_agent", "Logs", "Security", "Security"],
+    GEO_CITY: ["events.geo_city", "Web", "Analyst", "Data platform"],
+    EXPERIMENT_ID: ["exp.experiment_id", "Web", "Analyst", "Data platform"],
+    ANALYTICS_COHORT: ["analytics.cohort_id", "Web", "Analyst", "Data platform"],
+    MARKETING_TAG: ["crm.marketing_tag", "Web", "Analyst", "Marketing"],
+    SUPPORT_NOTE: ["support.note", "Portal", "Support", "Support"],
+    MOBILE_WALLET_KYC: ["kyc.wallet_ref", "API", "Support", "Payments"],
+  };
+  for (const [code, [path, channel, role, team]] of Object.entries(advisory)) {
+    await prisma.maskingField.updateMany({ where: { code, primaryChannel: null }, data: { primaryChannel: channel, primaryRole: role, ownerTeam: team, dataElementRef: path } });
+  }
 }
 
 async function main() {

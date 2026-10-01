@@ -16,10 +16,10 @@ export function EnforcementNotice() {
       <div className="row" style={{ gap: 8, alignItems: "center" }}>
         <ShieldAlert size={15} style={{ flexShrink: 0 }} />
         <span style={{ flex: 1 }}>
-          Enforcement is not active at the API — proposals and role checks shown here are advisory, not blocked server-side.
+          Enforcement is not active at the API level — proposals and role checks shown here are advisory, not blocked server-side.
         </span>
         <button className="link-btn" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-          {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />} Details
+          {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />} Review setup
         </button>
       </div>
       {open && (

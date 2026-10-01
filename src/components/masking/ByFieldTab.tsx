@@ -3,15 +3,15 @@ import { X } from "lucide-react";
 import { PolicyFilters } from "@/components/masking/PolicyFilters";
 import { FieldInventory, type InventoryRowView } from "@/components/masking/FieldInventory";
 import type { CatalogField } from "@/components/masking/CreateRuleModal";
-import { TemplateSwitcher } from "@/components/masking/TemplateSwitcher";
-import { CustomTemplateCreator } from "@/components/masking/CustomTemplateCreator";
+import { NewRuleButton } from "@/components/masking/NewRuleButton";
+import { RuleTemplates } from "@/components/masking/TemplateSwitcher";
 import { getInventory, getCoverage, getTemplates, getCustomTemplates, type InventoryRow } from "@/lib/engines/masking";
-import { CHANNEL_LABEL, FAMILY_LABEL, formatRelative } from "@/lib/masking";
+import { FAMILY_LABEL, formatRelative } from "@/lib/masking";
 
-const PER_PAGE = 25;
+const PER_PAGE = 12;
 const BASE = "/data-flow/protection-rules";
 
-export type ByFieldSP = { q?: string; family?: string; governedBy?: string; sensitivity?: string; channel?: string; status?: string; group?: string; field?: string; add?: string; created?: string; page?: string };
+export type ByFieldSP = { q?: string; family?: string; governedBy?: string; sensitivity?: string; channel?: string; role?: string; owner?: string; status?: string; group?: string; field?: string; add?: string; created?: string; page?: string };
 
 function matchGoverned(row: InventoryRow, gb: string): boolean {
   if (gb.startsWith("custom:")) return row.templateKey === gb.slice(7);
@@ -21,25 +21,18 @@ function matchGoverned(row: InventoryRow, gb: string): boolean {
 }
 
 /**
- * SCREEN 1 — Protection rules › By field, gap-first. The default view surfaces
- * fields that need attention (no rule · ambiguous · diverged · pending); the
- * "Fields" tile shows everything. Selection + the sticky bar start rule creation.
+ * PROTECTION RULES › Rules table. Boxed stat tiles, a Rule-templates card, then
+ * the Rules card: header + filter row + table + footer. Default is gap-first
+ * (Needs attention); the Total tile opens the full list.
  */
 export async function ByFieldTab({ sp }: { sp: ByFieldSP }) {
   const [rows, templates, customTemplates] = await Promise.all([getInventory(), getTemplates(), getCustomTemplates()]);
   const coverage = getCoverage(rows);
-  const attn = {
-    total: rows.filter((r) => r.needsAttention).length,
-    noRule: rows.filter((r) => r.status === "no_rule").length,
-    ambiguous: rows.filter((r) => r.status === "ambiguous").length,
-    diverged: rows.filter((r) => r.diverged).length,
-    pending: rows.filter((r) => r.pendingChangeId).length,
-  };
+  const weekAgo = Date.now() - 7 * 86400000;
+  const changedThisWeek = rows.filter((r) => r.lastChange && r.lastChange.at.getTime() > weekAgo).length;
 
   let filtered = rows;
-  // GAP-FIRST LANDING (criterion 1): with no explicit Status, the default view is
-  // "Needs attention" — no rule · ambiguous · diverged · pending. The "Fields" tile
-  // (status=all) opens the full applied-rules list; no template step precedes this.
+  // GAP-FIRST LANDING: with no explicit Status, default to "Needs attention".
   const effectiveStatus = sp.status ?? "attention";
   if (effectiveStatus === "attention") filtered = filtered.filter((r) => r.needsAttention);
   if (sp.status === "norule") filtered = filtered.filter((r) => r.status === "no_rule");
@@ -48,10 +41,13 @@ export async function ByFieldTab({ sp }: { sp: ByFieldSP }) {
   if (sp.status === "pending") filtered = filtered.filter((r) => r.pendingChangeId);
   if (sp.status === "active") filtered = filtered.filter((r) => r.status === "resolved" && !r.needsAttention);
   if (sp.status === "exceptions") filtered = filtered.filter((r) => r.exceptions.length > 0);
-  if (sp.q) { const n = sp.q.toLowerCase(); filtered = filtered.filter((r) => r.code.toLowerCase().includes(n) || r.name.toLowerCase().includes(n)); }
-  if (sp.family) filtered = filtered.filter((r) => r.effective?.family === sp.family || r.channels.some((c) => c.family === sp.family));
+  if (sp.q) { const n = sp.q.toLowerCase(); filtered = filtered.filter((r) => r.code.toLowerCase().includes(n) || r.name.toLowerCase().includes(n) || (r.dataElementRef ?? "").toLowerCase().includes(n)); }
+  if (sp.family) filtered = filtered.filter((r) => r.effective?.family === sp.family);
   if (sp.governedBy) filtered = filtered.filter((r) => matchGoverned(r, sp.governedBy!));
   if (sp.sensitivity) filtered = filtered.filter((r) => r.sensitivity === sp.sensitivity);
+  if (sp.channel) filtered = filtered.filter((r) => r.primaryChannel === sp.channel);
+  if (sp.role) filtered = filtered.filter((r) => r.primaryRole === sp.role);
+  if (sp.owner === "me") filtered = filtered.filter((r) => r.winningSource === "tenant");
   if (sp.group) filtered = filtered.filter((r) => r.group === sp.group);
 
   filtered = [...filtered].sort((a, b) => {
@@ -60,7 +56,8 @@ export async function ByFieldTab({ sp }: { sp: ByFieldSP }) {
   });
 
   const page = Math.max(1, Number(sp.page) || 1);
-  const pageRows = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  const start = (page - 1) * PER_PAGE;
+  const pageRows = filtered.slice(start, start + PER_PAGE);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
 
   const qs = (patch: ByFieldSP) => {
@@ -73,24 +70,24 @@ export async function ByFieldTab({ sp }: { sp: ByFieldSP }) {
   const activeFilters: { key: keyof ByFieldSP; label: string }[] = [];
   if (sp.q) activeFilters.push({ key: "q", label: `“${sp.q}”` });
   if (sp.family) activeFilters.push({ key: "family", label: FAMILY_LABEL[sp.family] ?? sp.family });
-  if (sp.governedBy) activeFilters.push({ key: "governedBy", label: `Governed by: ${sp.governedBy === "baseline" ? "Baseline" : sp.governedBy === "regional" ? "Regional" : sp.governedBy === "tenant" ? "Tenant" : sp.governedBy}` });
+  if (sp.governedBy) activeFilters.push({ key: "governedBy", label: `Governed by: ${sp.governedBy.startsWith("custom:") ? sp.governedBy.slice(7) : sp.governedBy === "baseline" ? "Baseline" : sp.governedBy === "regional" ? "Regional" : sp.governedBy === "tenant" ? "Tenant" : sp.governedBy}` });
   if (sp.sensitivity) activeFilters.push({ key: "sensitivity", label: sp.sensitivity });
-  if (sp.channel) activeFilters.push({ key: "channel", label: `Channel: ${CHANNEL_LABEL[sp.channel] ?? sp.channel}` });
+  if (sp.channel) activeFilters.push({ key: "channel", label: `Channel: ${sp.channel}` });
+  if (sp.role) activeFilters.push({ key: "role", label: `Role: ${sp.role}` });
+  if (sp.owner === "me") activeFilters.push({ key: "owner", label: "Owned by me" });
   if (sp.status && sp.status !== "all") activeFilters.push({ key: "status", label: `Status: ${sp.status}` });
   if (sp.group) activeFilters.push({ key: "group", label: `Group: ${sp.group}` });
 
-  const chan = sp.channel;
   const rowsView: InventoryRowView[] = pageRows.map((r) => {
-    const c = chan ? r.channels.find((x) => x.channel === chan) : null;
-    const effLabel = c ? c.label : r.effective?.label ?? null;
-    const prev = c ? c.preview : r.effective?.preview ?? null;
+    const prev = r.effective?.preview ?? null;
     return {
-      code: r.code, name: r.name, sensitivity: r.sensitivity,
-      effLabel, masked: prev ? prev.split(" → ")[1] ?? prev : null,
+      code: r.code, name: r.name, path: r.dataElementRef ?? r.name, sensitivity: r.sensitivity,
+      effLabel: r.effective?.label ?? null, masked: prev ? prev.split(" → ")[1] ?? prev : null,
       governedBadge: r.governedBy?.badge ?? null,
       governedLayer: r.governedBy?.layer ?? null,
       systemRegulated: !!r.governedBy?.systemRegulated,
       selfLocked: r.governedBy?.treatment === "self",
+      coveredSub: r.ownerTeam, channel: r.primaryChannel, roleTag: r.primaryRole,
       pending: !!r.pendingChangeId, stricter: !!r.governedBy?.stricter, overrides: r.overrideCount,
       group: r.group ?? null,
       groupHref: r.group ? qs({ group: r.group, field: undefined, status: undefined, page: undefined }) : null,
@@ -100,42 +97,63 @@ export async function ByFieldTab({ sp }: { sp: ByFieldSP }) {
     };
   });
   const catalog: CatalogField[] = rows.map((r) => ({ code: r.code, name: r.name, sensitivity: r.sensitivity, source: r.governedBy?.badge ?? (r.status === "ambiguous" ? "Ambiguous" : "No rule"), systemRegulated: !!r.governedBy?.systemRegulated, sampleValue: r.sampleValue }));
+  const protectedFields = rows.filter((r) => r.status === "resolved").length;
+
+  const tiles: { n: number; label: string; href?: string; warn?: boolean }[] = [
+    { n: coverage.total, label: "Total rules", href: qs({ status: "all", governedBy: undefined, sensitivity: undefined, family: undefined, channel: undefined, role: undefined, owner: undefined, q: undefined, page: undefined }) },
+    { n: coverage.baseline, label: "Baseline", href: qs({ governedBy: "baseline", status: "all", page: undefined }) },
+    { n: coverage.regional, label: "Regional", href: qs({ governedBy: "regional", status: "all", page: undefined }) },
+    { n: coverage.tenant, label: "Team-owned", href: qs({ governedBy: "tenant", status: "all", page: undefined }) },
+    { n: coverage.attention, label: "Need attention", href: qs({ status: "attention", page: undefined }), warn: coverage.attention > 0 },
+    { n: coverage.pending, label: "Pending", href: qs({ status: "pending", page: undefined }) },
+    { n: changedThisWeek, label: "Changed this week" },
+  ];
 
   return (
     <>
-      <div className="row" style={{ gap: 8, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
-        <TemplateSwitcher templates={templates} />
-        <CustomTemplateCreator />
+      <RuleTemplates templates={templates} customTemplates={customTemplates} />
+
+      <div className="mask-tiles">
+        {tiles.map((t) => {
+          const inner = <><span className="tile-n">{t.n}</span><span className="tile-label">{t.label}</span></>;
+          return t.href
+            ? <Link key={t.label} href={t.href} className={`mask-tile${t.warn ? " warn" : ""}`}>{inner}</Link>
+            : <div key={t.label} className="mask-tile">{inner}</div>;
+        })}
       </div>
 
-      {/* Compact hairline stat strip — reconciled (b·r·t·attention sums to Fields). */}
-      <div className="mask-statstrip">
-        <Link href={qs({ status: "all", governedBy: undefined, sensitivity: undefined, family: undefined, q: undefined, page: undefined })} className="stat-seg"><b>{coverage.total}</b> Fields</Link>
-        <Link href={qs({ governedBy: "baseline", page: undefined })} className="stat-seg"><b>{coverage.baseline}</b> baseline</Link>
-        <Link href={qs({ governedBy: "regional", page: undefined })} className="stat-seg"><b>{coverage.regional}</b> regional</Link>
-        <Link href={qs({ governedBy: "tenant", page: undefined })} className="stat-seg"><b>{coverage.tenant}</b> tenant</Link>
-        <Link href={qs({ status: "attention", page: undefined })} className={`stat-seg${coverage.attention > 0 ? " warn" : ""}`}><b>{coverage.attention}</b> need attention</Link>
-        <Link href={qs({ status: "pending", page: undefined })} className="stat-seg"><b>{coverage.pending}</b> pending</Link>
-        {attn.diverged > 0 && <Link href={qs({ status: "diverged", page: undefined })} className="stat-seg"><b>{attn.diverged}</b> diverged</Link>}
-      </div>
-
-      <PolicyFilters current={sp as Record<string, string | undefined>} basePath={BASE} customTemplates={customTemplates.map((t) => ({ key: t.key, name: t.name }))} />
-      {activeFilters.length > 0 && (
-        <div className="row" style={{ gap: 6, margin: "10px 0", flexWrap: "wrap", alignItems: "center" }}>
-          {activeFilters.map((f) => <Link key={f.key} href={chipHref(f.key)} className="filter-chip">{f.label} <X size={11} /></Link>)}
-          <Link href={BASE} className="link-btn">Clear all</Link>
+      <section className="rules-card">
+        <div className="rules-card-head">
+          <div className="stack" style={{ gap: 2 }}>
+            <h3 className="rules-card-title">Rules</h3>
+            <span className="cell-sub">{coverage.total} rules across {protectedFields} protected fields</span>
+          </div>
+          <NewRuleButton catalog={catalog} />
         </div>
-      )}
 
-      <FieldInventory rows={rowsView} catalog={catalog} channelLabel={sp.channel ? CHANNEL_LABEL[sp.channel] ?? null : null} />
-
-      {totalPages > 1 && (
-        <div className="row" style={{ gap: 8, marginTop: 12, justifyContent: "flex-end", alignItems: "center" }}>
-          {page > 1 && <Link className="btn ghost sm" href={qs({ page: String(page - 1) })}>Previous</Link>}
-          <span className="cell-sub">Page {page} of {totalPages}</span>
-          {page < totalPages && <Link className="btn ghost sm" href={qs({ page: String(page + 1) })}>Next</Link>}
+        <div className="rules-card-filters">
+          <PolicyFilters current={sp as Record<string, string | undefined>} basePath={BASE} customTemplates={customTemplates.map((t) => ({ key: t.key, name: t.name }))} resultCount={`${filtered.length} of ${coverage.total} rules`} />
+          {activeFilters.length > 0 && (
+            <div className="row" style={{ gap: 6, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
+              {activeFilters.map((f) => <Link key={f.key} href={chipHref(f.key)} className="filter-chip">{f.label} <X size={11} /></Link>)}
+              <Link href={BASE} className="link-btn">Clear all</Link>
+            </div>
+          )}
         </div>
-      )}
+
+        <FieldInventory rows={rowsView} catalog={catalog} />
+
+        <div className="rules-card-foot">
+          <span className="cell-sub">Showing {filtered.length === 0 ? 0 : start + 1}–{Math.min(start + PER_PAGE, filtered.length)} of {filtered.length}</span>
+          {totalPages > 1 && (
+            <div className="row" style={{ gap: 6, alignItems: "center" }}>
+              {page > 1 ? <Link className="btn ghost sm" href={qs({ page: String(page - 1) })}>‹</Link> : <span className="btn ghost sm disabled">‹</span>}
+              <span className="page-num">{page}</span>
+              {page < totalPages ? <Link className="btn ghost sm" href={qs({ page: String(page + 1) })}>›</Link> : <span className="btn ghost sm disabled">›</span>}
+            </div>
+          )}
+        </div>
+      </section>
     </>
   );
 }
