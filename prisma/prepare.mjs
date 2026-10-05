@@ -121,4 +121,7 @@ if (!POOLED) {
   run("Seeding rule templates", "npx tsx prisma/patch-rule-templates.ts", POOLED);
   // Idempotent: seeds the Dynamic Data Masking demo (templates, fields, resolution + lock states).
   run("Seeding masking demo", "npx tsx prisma/patch-masking.ts", POOLED);
+
+  // Idempotent: seeds the Masking Policy (DDM Console) demo — versions, audiences, grants.
+  run("Seeding masking policy demo", "npx tsx prisma/patch-maskingpolicy.ts", POOLED);
 }

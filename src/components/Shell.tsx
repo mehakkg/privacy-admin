@@ -75,6 +75,7 @@ function navGroups(counts: NavCounts, role: ActorRole): NavEntry[] {
       // approval badge (DPO only) sits on this page.
       children: [
         { href: "/data-flow/protection-rules", label: "Protection rules", ready: true, badge: role === "dpo" ? counts.maskingPending : undefined },
+        { href: "/data-flow/masking-policy", label: "Masking policy", ready: true },
       ],
     },
     {

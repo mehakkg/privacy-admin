@@ -3207,3 +3207,126 @@ model IdentityResolutionRun {
 
   @@index([status])
 }
+
+// ============================================================================
+// MASKING POLICY (DDM Console) — versioned, audience-additive visibility model.
+// Separate from the Protection Rules models above. A PolicyVersion is a full
+// snapshot: its field decisions (baseline), audiences, channels and grants.
+// ============================================================================
+
+/// What the data IS (never who added it). Shared category grouping.
+model MPCategory {
+  id         String  @id
+  name       String
+  definition String
+  sortOrder  Int     @default(0)
+  fields     MPField[]
+}
+
+/// Catalog field — global reference. Masking decisions live per-version below.
+model MPField {
+  code             String  @id
+  displayName      String
+  categoryId       String
+  category         MPCategory @relation(fields: [categoryId], references: [id])
+  /// platform | your_organization
+  origin           String  @default("platform")
+  regulated        Boolean @default(false)
+  /// Masking the regulated field may never go weaker than (JSON {function,params}).
+  legalMinimumJson String?
+  sampleValue      String  @default("")
+  usedByApps       Boolean @default(true)
+  announcedByJson  String  @default("[]")
+  firstSeen        DateTime @default(now())
+  decisions        MPFieldDecision[]
+  grants           MPGrant[]
+}
+
+/// A policy version: draft | active | archived. One draft at a time.
+model MPPolicyVersion {
+  id            String  @id @default(cuid())
+  number        Int     @unique
+  /// draft | active | archived
+  state         String
+  basedOn       Int?
+  activatedBy   String?
+  activatedAt   DateTime?
+  whyNote       String?
+  impactSummary String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  decisions     MPFieldDecision[]
+  audiences     MPAudience[]
+  channels      MPChannel[]
+  grants        MPGrant[]
+}
+
+/// The baseline ("everyone sees") decision for a field in a version.
+model MPFieldDecision {
+  id         String  @id @default(cuid())
+  versionId  String
+  version    MPPolicyVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  fieldCode  String
+  field      MPField @relation(fields: [fieldCode], references: [code], onDelete: Cascade)
+  /// null = hidden completely; else {function, params}.
+  maskingJson String?
+  /// ready | needs_decision | not_used
+  status     String  @default("needs_decision")
+  reviewed   Boolean @default(false)
+  @@unique([versionId, fieldCode])
+  @@index([versionId])
+}
+
+/// A business role the policy can reveal more to. Typed in, not discovered.
+model MPAudience {
+  id         String  @id @default(cuid())
+  versionId  String
+  version    MPPolicyVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  label      String
+  identifier String
+  sortOrder  Int     @default(0)
+  grants     MPGrant[]
+  @@index([versionId])
+}
+
+/// An optional channel an audience rule can be scoped to. Created inline.
+model MPChannel {
+  id         String  @id @default(cuid())
+  versionId  String
+  version    MPPolicyVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  label      String
+  identifier String
+  @@index([versionId])
+}
+
+/// An audience rule that ADDS visibility over the baseline for a field.
+model MPGrant {
+  id               String  @id @default(cuid())
+  versionId        String
+  version          MPPolicyVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  audienceId       String
+  audience         MPAudience @relation(fields: [audienceId], references: [id], onDelete: Cascade)
+  fieldCode        String
+  field            MPField @relation(fields: [fieldCode], references: [code], onDelete: Cascade)
+  /// "ANY" or a JSON array of channel ids.
+  channelScopeJson String  @default("\"ANY\"")
+  /// more | full_raw
+  visibility       String
+  /// For "more": the masking choice (JSON {function,params}).
+  maskingJson      String?
+  /// Required for full_raw.
+  reason           String?
+  @@unique([versionId, audienceId, fieldCode])
+  @@index([versionId])
+}
+
+/// A seeded "needs attention" item on Home (some are also derivable live).
+model MPNeedsAttention {
+  id        String  @id @default(cuid())
+  /// new_app_field | catalog_update | fallback_events | stale_draft
+  type      String
+  label     String
+  count     Int     @default(0)
+  link      String?
+  createdAt DateTime @default(now())
+}

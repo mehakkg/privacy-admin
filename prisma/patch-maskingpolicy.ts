@@ -1,0 +1,156 @@
+/**
+ * Masking Policy (DDM Console) demo — Meridian Financial Services. Seeds the
+ * category catalog, fields (ready / needs-decision / not-used / regulated /
+ * custom), and three versions: v1 archived, v2 active, v3 draft (based on v2)
+ * with a mix of looser/tighter/neutral changes, four audiences, two channels and
+ * mixed grants (same / more / full raw / channel-scoped), plus needs-attention.
+ *
+ * Idempotent: seeds once when no MPPolicyVersion exists.
+ */
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
+const J = (o: unknown) => JSON.stringify(o ?? null);
+
+// masking presets (all made-up sample values; never real customer data)
+const hidden = null;
+const last = (n: number) => ({ family: "partial", params: { showFirst: 0, showLast: n, maskChar: "*" } });
+const firstlast = (a: number, b: number) => ({ family: "partial", params: { showFirst: a, showLast: b, maskChar: "*" } });
+const email = (a: number, b: number) => ({ family: "email", params: { localVisibleChars: a, localVisibleLastChars: b, domainMode: "PRESERVE" } });
+const pattern = (t: string) => ({ family: "pattern", params: { template: t } });
+
+const CATEGORIES = [
+  { id: "personal", name: "Personal Information", definition: "Details that identify a person on their own, like a name or date of birth.", sortOrder: 0 },
+  { id: "contact", name: "Contact & Digital Identifiers", definition: "Ways to reach or recognise someone, like an email address or mobile number.", sortOrder: 1 },
+  { id: "govid", name: "Government Identity Documents", definition: "Numbers issued by the government to identify a person. Some are protected by law and can never be shown in full.", sortOrder: 2 },
+  { id: "finance", name: "Financial & Banking Data", definition: "Account, card, and payment identifiers.", sortOrder: 3 },
+  { id: "other", name: "Other Personal Data", definition: "Personal data that doesn't fit the groups above.", sortOrder: 4 },
+];
+
+type FieldSeed = { code: string; displayName: string; categoryId: string; origin?: string; regulated?: boolean; legalMinimum?: unknown; sampleValue: string; usedByApps?: boolean; announcedBy?: string[] };
+const FIELDS: FieldSeed[] = [
+  // 11 "ready" (carried by the active version)
+  { code: "FULL_NAME", displayName: "Full name", categoryId: "personal", sampleValue: "Rajesh Kumar" },
+  { code: "DATE_OF_BIRTH", displayName: "Date of birth", categoryId: "personal", sampleValue: "1990-05-15" },
+  { code: "EMAIL", displayName: "Email address", categoryId: "contact", sampleValue: "rajesh.kumar@example.com" },
+  { code: "MOBILE", displayName: "Mobile number", categoryId: "contact", sampleValue: "9876543210" },
+  { code: "AADHAAR", displayName: "Aadhaar number", categoryId: "govid", regulated: true, legalMinimum: pattern("xxxx-xxxx-####"), sampleValue: "123456789012" },
+  { code: "PAN", displayName: "PAN", categoryId: "govid", regulated: true, legalMinimum: firstlast(3, 1), sampleValue: "ABCDE1234F" },
+  { code: "PASSPORT", displayName: "Passport number", categoryId: "govid", sampleValue: "M1234567" },
+  { code: "ACCOUNT_NUMBER", displayName: "Account number", categoryId: "finance", sampleValue: "1234567890123456" },
+  { code: "CARD_NUMBER", displayName: "Card number", categoryId: "finance", sampleValue: "4111111111111111" },
+  { code: "CUSTOMER_NOTE", displayName: "Customer note", categoryId: "other", sampleValue: "prefers email contact" },
+  { code: "LOYALTY_TIER", displayName: "Loyalty tier", categoryId: "other", origin: "your_organization", sampleValue: "GOLD" },
+  // 3 "need you" — newly announced by apps, in neither the catalog match nor the active version
+  { code: "DEVICE_ID", displayName: "Device identifier", categoryId: "contact", sampleValue: "dev_8842Abf1", announcedBy: ["Mobile app"] },
+  { code: "GEO_CITY", displayName: "City", categoryId: "other", sampleValue: "Bengaluru", announcedBy: ["Web app"] },
+  { code: "IP_ADDRESS", displayName: "IP address", categoryId: "contact", sampleValue: "10.24.9.7", announcedBy: ["Mobile app", "Web app"] },
+  // not used
+  { code: "MIDDLE_NAME", displayName: "Middle name", categoryId: "personal", sampleValue: "Mohan", usedByApps: false },
+];
+
+// Baselines shared by v1/v2/v3 for the ready fields.
+const BASE: Record<string, unknown> = {
+  FULL_NAME: firstlast(2, 2), DATE_OF_BIRTH: pattern("0000-00-00"), EMAIL: email(2, 0), MOBILE: last(2),
+  AADHAAR: pattern("xxxx-xxxx-####"), PAN: firstlast(3, 1), PASSPORT: last(4),
+  ACCOUNT_NUMBER: last(4), CARD_NUMBER: pattern("****-****-****-####"), CUSTOMER_NOTE: hidden, LOYALTY_TIER: last(4),
+};
+
+interface VSpec {
+  number: number; state: string; basedOn: number | null; activatedBy?: string; activatedAt?: Date; whyNote?: string; impactSummary?: string;
+  decisions: { code: string; masking: unknown; status: string }[];
+  audiences: { key: string; label: string; identifier: string }[];
+  channels: { key: string; label: string; identifier: string }[];
+  grants: { aud: string; code: string; visibility: string; masking?: unknown; scope?: string[] | "ANY"; reason?: string }[];
+}
+
+async function makeVersion(s: VSpec) {
+  const v = await prisma.mPPolicyVersion.create({ data: { number: s.number, state: s.state, basedOn: s.basedOn, activatedBy: s.activatedBy ?? null, activatedAt: s.activatedAt ?? null, whyNote: s.whyNote ?? null, impactSummary: s.impactSummary ?? null } });
+  for (const d of s.decisions) await prisma.mPFieldDecision.create({ data: { versionId: v.id, fieldCode: d.code, maskingJson: d.masking == null ? null : J(d.masking), status: d.status, reviewed: d.status !== "needs_decision" } });
+  const audIds: Record<string, string> = {};
+  for (const [i, a] of s.audiences.entries()) { const row = await prisma.mPAudience.create({ data: { versionId: v.id, label: a.label, identifier: a.identifier, sortOrder: i } }); audIds[a.key] = row.id; }
+  const chIds: Record<string, string> = {};
+  for (const c of s.channels) { const row = await prisma.mPChannel.create({ data: { versionId: v.id, label: c.label, identifier: c.identifier } }); chIds[c.key] = row.id; }
+  for (const g of s.grants) {
+    const scope = g.scope && g.scope !== "ANY" ? g.scope.map((k) => chIds[k]) : "ANY";
+    await prisma.mPGrant.create({ data: { versionId: v.id, audienceId: audIds[g.aud], fieldCode: g.code, channelScopeJson: J(scope), visibility: g.visibility, maskingJson: g.masking ? J(g.masking) : null, reason: g.reason ?? null } });
+  }
+  return v;
+}
+
+const readyDecisions = () => Object.entries(BASE).map(([code, masking]) => ({ code, masking, status: "ready" }));
+
+async function main() {
+  if (!process.env.DATABASE_URL) { console.log("patch-maskingpolicy: no DATABASE_URL, skipping."); return; }
+  await prisma.mPCategory.createMany({ data: CATEGORIES, skipDuplicates: true });
+  await prisma.mPField.createMany({
+    data: FIELDS.map((f) => ({ code: f.code, displayName: f.displayName, categoryId: f.categoryId, origin: f.origin ?? "platform", regulated: f.regulated ?? false, legalMinimumJson: f.legalMinimum ? J(f.legalMinimum) : null, sampleValue: f.sampleValue, usedByApps: f.usedByApps ?? true, announcedByJson: J(f.announcedBy ?? []) })),
+    skipDuplicates: true,
+  });
+
+  if (await prisma.mPPolicyVersion.findFirst()) { console.log("patch-maskingpolicy: versions present; ensured categories + fields."); return; }
+
+  const audiences = [
+    { key: "teller", label: "Teller", identifier: "role:teller" },
+    { key: "manager", label: "Manager", identifier: "role:manager" },
+    { key: "support", label: "Support", identifier: "role:support" },
+    { key: "auditor", label: "Auditor", identifier: "role:auditor" },
+  ];
+  const channels = [{ key: "mobile", label: "Mobile app", identifier: "app:mobile" }, { key: "web", label: "Web app", identifier: "app:web" }];
+  const notUsed = { code: "MIDDLE_NAME", masking: hidden, status: "not_used" };
+
+  // v1 archived
+  await makeVersion({
+    number: 1, state: "archived", basedOn: null, activatedBy: "A. Rao", activatedAt: new Date("2026-06-02T09:00:00Z"),
+    whyNote: "Initial rollout — everyone sees masked values only.", impactSummary: "No audience sees more than everyone else.",
+    decisions: [...readyDecisions(), notUsed], audiences, channels, grants: [],
+  });
+
+  // v2 active — two audiences see more; Manager sees one full raw value.
+  await makeVersion({
+    number: 2, state: "active", basedOn: 1, activatedBy: "R. Iyer", activatedAt: new Date("2026-09-14T06:30:00Z"),
+    whyNote: "Let Tellers verify the mobile number and give Managers the email for escalations.",
+    impactSummary: "3 audiences see more than everyone else · 1 sees full raw values.",
+    decisions: [...readyDecisions(), notUsed], audiences, channels,
+    grants: [
+      { aud: "teller", code: "MOBILE", visibility: "more", masking: last(4) },
+      { aud: "manager", code: "EMAIL", visibility: "full_raw", reason: "Managers handle escalations that need the full email." },
+      { aud: "support", code: "MOBILE", visibility: "more", masking: last(6), scope: ["mobile"] },
+      { aud: "auditor", code: "ACCOUNT_NUMBER", visibility: "more", masking: last(6) },
+    ],
+  });
+
+  // v3 draft (based on v2) — a mix of looser / tighter / neutral + the 3 new fields.
+  await makeVersion({
+    number: 3, state: "draft", basedOn: 2,
+    decisions: [
+      ...readyDecisions().map((d) => d.code === "EMAIL" ? { ...d, masking: email(2, 3) } /* looser: everyone sees more of the email */
+        : d.code === "FULL_NAME" ? { ...d, masking: firstlast(1, 3) } /* neutral: same reveal count, different shape */
+        : d),
+      notUsed,
+      // 3 new fields need a decision
+      { code: "DEVICE_ID", masking: hidden, status: "needs_decision" },
+      { code: "GEO_CITY", masking: hidden, status: "needs_decision" },
+      { code: "IP_ADDRESS", masking: hidden, status: "needs_decision" },
+    ],
+    audiences, channels,
+    grants: [
+      { aud: "teller", code: "MOBILE", visibility: "more", masking: last(6) },      // looser (was last 4)
+      { aud: "manager", code: "EMAIL", visibility: "more", masking: email(2, 3) },  // tighter (was full raw)
+      { aud: "support", code: "MOBILE", visibility: "more", masking: last(4), scope: ["mobile"] }, // tighter (was last 6)
+      { aud: "auditor", code: "ACCOUNT_NUMBER", visibility: "more", masking: last(4) }, // tighter (was last 6)
+    ],
+  });
+
+  await prisma.mPNeedsAttention.createMany({
+    data: [
+      { type: "new_app_field", label: "3 new fields seen in your applications", count: 3, link: "decisions" },
+      { type: "catalog_update", label: "Catalog update affects Aadhaar", count: 1, link: "field:AADHAAR" },
+      { type: "fallback_events", label: "12 fields were hidden by the fail-safe in the last 24 hours", count: 12, link: "/audit?module=masking_policy" },
+    ],
+  });
+
+  console.log(`patch-maskingpolicy: seeded ${CATEGORIES.length} categories, ${FIELDS.length} fields, 3 versions (v2 active, v3 draft), 4 audiences, needs-attention.`);
+}
+
+main().catch((e) => console.error("patch-maskingpolicy failed (continuing):", e)).finally(async () => { await prisma.$disconnect(); });
