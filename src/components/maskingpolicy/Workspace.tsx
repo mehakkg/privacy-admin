@@ -52,7 +52,7 @@ export async function Workspace({ focus }: { focus?: string }) {
         <div className="stack" style={{ gap: 2 }}>
           <div className="row" style={{ gap: 8, alignItems: "baseline" }}><strong style={{ fontSize: 18 }}>Draft {draft.number}</strong><span className="cell-sub">{draft.basedOn != null ? `based on version ${draft.basedOn} · ` : ""}saved {new Date(draft.updatedAt).toISOString().slice(11, 16)}</span></div>
         </div>
-        <WorkspaceMenu draftId={draft.id} />
+        <WorkspaceMenu draftId={draft.id} checks={checks} />
       </div>
 
       <div className="mp-ws">

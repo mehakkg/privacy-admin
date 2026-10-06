@@ -16,7 +16,8 @@ export function PreviewPanel({ draft, live, startVersion = draft ? "draft" : "li
 
   const view = version === "draft" ? draft : live;
   const audiences = ["Everyone", ...((view?.audiences ?? []).map((a) => a.label))];
-  const channels = ["Any", ...((view?.channels ?? []).map((c) => c.label))];
+  const NOT_SPECIFIED = "Channel not specified";
+  const channels = [NOT_SPECIFIED, ...((view?.channels ?? []).map((c) => c.label))];
 
   const valueFor = (v: GridView | null, code: string, audLabel: string, chan: string): string => {
     if (!v) return "No policy · fully hidden";
@@ -25,9 +26,10 @@ export function PreviewPanel({ draft, live, startVersion = draft ? "draft" : "li
     if (audLabel === "Everyone") return row.baseline.example;
     const aud = v.audiences.find((a) => a.label === audLabel);
     const cell = aud ? row.audiences.find((x) => x.audienceId === aud.id) : null;
-    if (!cell || cell.kind === "same" || cell.kind === "not_used") return row.baseline.example;
-    if (cell.channelLabel && chan !== "Any" && !cell.channelLabel.split(", ").includes(chan)) return row.baseline.example;
-    return cell.example;
+    if (!cell || cell.kind === "same" || cell.kind === "not_used" || !cell.grant) return row.baseline.example;
+    const selId = chan === NOT_SPECIFIED ? null : v.channels.find((c) => c.label === chan)?.id ?? null;
+    const applies = cell.grant.channelIds.length === 0 || (selId != null && cell.grant.channelIds.includes(selId));
+    return applies ? cell.example : row.baseline.example;
   };
 
   const rows = (view?.rows ?? live?.rows ?? draft?.rows ?? []);

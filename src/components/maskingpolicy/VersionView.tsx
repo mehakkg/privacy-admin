@@ -51,6 +51,17 @@ export async function VersionView({ number }: { number: number }) {
         </div>
         <aside className="mp-workspace-side">
           <div className="mp-card"><h4 className="mp-card-h">View as</h4><PreviewPanel draft={null} live={grid} startVersion="live" /></div>
+          <div className="mp-card" style={{ marginTop: 14 }}>
+            <h4 className="mp-card-h">Channels</h4>
+            {grid.channels.length === 0 ? <p className="cell-sub" style={{ margin: 0 }}>No channels in this version.</p> : (
+              <div className="stack" style={{ gap: 6 }}>
+                {grid.channels.map((c) => {
+                  const used = grid.rows.reduce((n, r) => n + r.audiences.filter((a) => a.grant?.channelIds.includes(c.id)).length, 0);
+                  return <div key={c.id} className="stack" style={{ gap: 1 }}><strong>{c.label}</strong><span className="cell-sub mono">{c.identifier}</span><span className="cell-sub">Used by {used} grant{used === 1 ? "" : "s"}</span></div>;
+                })}
+              </div>
+            )}
+          </div>
         </aside>
       </div>
     </div>

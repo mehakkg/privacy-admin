@@ -3,9 +3,11 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { MoreHorizontal } from "lucide-react";
+import { createPortal } from "react-dom";
+import { X, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { AddAudienceModal } from "@/components/maskingpolicy/AddAudienceModal";
-import { ManageChannelsModal } from "@/components/maskingpolicy/ManageChannelsModal";
 import { discardDraftAction } from "@/app/actions/maskingpolicy";
+import type { PolicyCheck } from "@/lib/maskingpolicy";
 
 const MP = "/data-flow/masking-policy";
 
@@ -21,11 +23,12 @@ export function AddAudienceTrigger({ draftId, className, children }: { draftId: 
   );
 }
 
-/** Workspace overflow: Manage channels + Discard draft. */
-export function WorkspaceMenu({ draftId }: { draftId: string }) {
+/** Workspace overflow: Checks + Discard draft. (Manage channels now lives as a
+ *  quiet link in the audience pane and the see-more popover.) */
+export function WorkspaceMenu({ draftId, checks }: { draftId: string; checks: PolicyCheck[] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [channels, setChannels] = useState(false);
+  const [showChecks, setShowChecks] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [, start] = useTransition();
   const ref = useRef<HTMLDivElement>(null);
@@ -38,12 +41,25 @@ export function WorkspaceMenu({ draftId }: { draftId: string }) {
           {confirm ? (
             <div className="row-menu-confirm">Discard the draft?<div className="row" style={{ gap: 6, marginTop: 6 }}><button className="btn danger sm" onClick={() => start(async () => { await discardDraftAction(); router.push(MP); })}>Discard</button><button className="btn ghost sm" onClick={() => setConfirm(false)}>Keep</button></div></div>
           ) : <>
-            <button className="row-menu-item" onClick={() => { setChannels(true); setOpen(false); }}>Manage channels</button>
+            <button className="row-menu-item" onClick={() => { setShowChecks(true); setOpen(false); }}>Checks</button>
             <button className="row-menu-item danger" onClick={() => setConfirm(true)}>Discard draft</button>
           </>}
         </div>
       )}
-      {channels && <ManageChannelsModal draftId={draftId} onClose={() => setChannels(false)} />}
+      {showChecks && createPortal(
+        <div className="modal-scrim" onClick={() => setShowChecks(false)}>
+          <div className="modal std-modal md" onClick={(e) => e.stopPropagation()}>
+            <div className="std-modal-head"><h3 style={{ margin: 0 }}>Checks</h3><button className="icon-btn" onClick={() => setShowChecks(false)}><X size={16} /></button></div>
+            <div className="std-modal-body"><div className="stack" style={{ gap: 8 }}>
+              {checks.map((c, i) => (
+                <div key={i} className="row" style={{ gap: 8, alignItems: "flex-start" }}>
+                  {c.level === "blocking" && !c.ok ? <AlertTriangle size={15} style={{ color: "var(--red)", flexShrink: 0 }} /> : c.level === "warning" ? <AlertTriangle size={15} style={{ color: "var(--yellow-700, #b45309)", flexShrink: 0 }} /> : <CheckCircle2 size={15} style={{ color: "var(--green)", flexShrink: 0 }} />}
+                  <span>{c.message}</span>
+                </div>
+              ))}
+            </div></div>
+          </div>
+        </div>, document.body)}
     </div>
   );
 }

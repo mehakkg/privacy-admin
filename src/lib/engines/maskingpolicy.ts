@@ -76,20 +76,22 @@ function resolveGrid(v: FullVersion, fields: { code: string; displayName: string
     const baseExample = renderValue(baseMask, f.sampleValue, false);
 
     const audiences: AudienceVisibility[] = v.audiences.map((a) => {
-      if (notUsed) return { audienceId: a.id, kind: "not_used", example: "—", choiceLabel: "Not used", channelLabel: null, reason: null };
-      if (f.regulated) return { audienceId: a.id, kind: "locked", example: baseExample, choiceLabel: choiceLabel(baseMask, false), channelLabel: null, reason: null };
+      if (notUsed) return { audienceId: a.id, kind: "not_used", example: "—", choiceLabel: "Not used", channelLabel: null, reason: null, grant: null };
+      if (f.regulated) return { audienceId: a.id, kind: "locked", example: baseExample, choiceLabel: choiceLabel(baseMask, false), channelLabel: null, reason: null, grant: null };
       const g = v.grants.find((gr) => gr.audienceId === a.id && gr.fieldCode === f.code);
-      if (!g) return { audienceId: a.id, kind: "same", example: baseExample, choiceLabel: "Same", channelLabel: null, reason: null };
+      if (!g) return { audienceId: a.id, kind: "same", example: baseExample, choiceLabel: "Same", channelLabel: null, reason: null, grant: null };
       const fullRaw = g.visibility === "full_raw";
       const gMask = parseMask(g.maskingJson);
       const gStrength = strengthOf(gMask, f.sampleValue, fullRaw);
-      if (gStrength <= baseStrength) return { audienceId: a.id, kind: "same", example: baseExample, choiceLabel: "Same", channelLabel: null, reason: null };
+      if (gStrength <= baseStrength) return { audienceId: a.id, kind: "same", example: baseExample, choiceLabel: "Same", channelLabel: null, reason: null, grant: null };
       const scope = decodeObject<string[] | string>(g.channelScopeJson);
-      const channelLabel = Array.isArray(scope) ? scope.map((id) => chanLabel.get(id) ?? id).join(", ") : null;
+      const channelIds = Array.isArray(scope) ? scope : [];
+      const channelLabel = channelIds.length ? channelIds.map((id) => chanLabel.get(id) ?? id).join(", ") : null;
       return {
         audienceId: a.id, kind: fullRaw ? "full_raw" : "more",
         example: renderValue(gMask, f.sampleValue, fullRaw),
         choiceLabel: choiceLabel(gMask, fullRaw), channelLabel, reason: g.reason ?? null,
+        grant: { fullRaw, family: gMask?.family ?? "partial", params: gMask?.params ?? {}, channelIds, reason: g.reason ?? null },
       };
     });
 

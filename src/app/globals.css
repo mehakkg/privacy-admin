@@ -4110,3 +4110,15 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 .mp-audit-group { border: 1px solid var(--border-soft); border-radius: 10px; padding: 12px 14px; }
 .mp-audit-grouphead { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 .mp-audit-event { padding: 2px 0; }
+
+/* --- Masking Policy channel amendment --------------------------------------- */
+.mp-group-h { font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text); opacity: 0.55; }
+.mp-seesmore-row { width: 100%; background: none; border: 0; border-bottom: 1px solid var(--border-soft); font: inherit; cursor: pointer; text-align: left; }
+.mp-seesmore-row:hover { background: var(--bg-subtle, #f7f8fa); }
+.mp-result { padding: 8px 10px; border-radius: 8px; background: var(--bg-subtle, #f4f5f7); font-size: 13.5px; }
+.mp-pop-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 12px; border-top: 1px solid var(--border-soft); }
+.mp-segment { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 8px; overflow: hidden; margin-bottom: 6px; }
+.mp-segment button { background: none; border: 0; padding: 6px 14px; font: inherit; font-size: 13px; cursor: pointer; color: var(--text); }
+.mp-segment button.on { background: var(--blue); color: #fff; }
+.mp-fieldpick-item.on { background: var(--bg-selected); }
+.mp-fieldpick-item.locked { display: flex; align-items: center; gap: 6px; opacity: 0.6; cursor: default; }

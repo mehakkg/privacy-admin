@@ -95,6 +95,8 @@ export interface AudienceVisibility {
   choiceLabel: string;
   channelLabel: string | null;
   reason: string | null;
+  /** Present on more/full_raw cells — the grant's level + scope, for editing + per-channel resolution. */
+  grant: { fullRaw: boolean; family: string; params: Record<string, unknown>; channelIds: string[]; reason: string | null } | null;
 }
 
 export interface GridFieldRow {
