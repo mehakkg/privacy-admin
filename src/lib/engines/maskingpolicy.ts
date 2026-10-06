@@ -173,11 +173,29 @@ export async function getChecks(versionId: string): Promise<PolicyCheck[]> {
 
 export interface ImpactSummary { items: ImpactItem[]; counts: { changes: number; looser: number; tighter: number; neutral: number; fullRaw: number }; hiddenFields: string[] }
 
+const emptyImpact: ImpactSummary = { items: [], counts: { changes: 0, looser: 0, tighter: 0, neutral: 0, fullRaw: 0 }, hiddenFields: [] };
+
 export async function getImpact(draftId: string): Promise<ImpactSummary> {
   const draft = await loadFull(draftId);
-  if (!draft) return { items: [], counts: { changes: 0, looser: 0, tighter: 0, neutral: 0, fullRaw: 0 }, hiddenFields: [] };
+  if (!draft) return emptyImpact;
   const active = draft.basedOn != null ? await getVersionByNumber(draft.basedOn) : await getActiveVersion();
   const prior = active ? await loadFull(active.id) : null;
+  return compareVersions(draft, prior);
+}
+
+/** Impact of an activated version vs the one before it (for the Live screen). */
+export async function getVersionImpact(number: number): Promise<ImpactSummary> {
+  const v = await getVersionByNumber(number);
+  if (!v) return emptyImpact;
+  const target = await loadFull(v.id);
+  if (!target) return emptyImpact;
+  const prev = await getVersionByNumber(number - 1);
+  const prior = prev ? await loadFull(prev.id) : null;
+  return compareVersions(target, prior);
+}
+
+async function compareVersions(target: FullVersion, prior: FullVersion | null): Promise<ImpactSummary> {
+  const draft = target;
   const fields = await db.mPField.findMany();
   const byCode = new Map(fields.map((f) => [f.code, f]));
 
@@ -203,14 +221,14 @@ export async function getImpact(draftId: string): Promise<ImpactSummary> {
     // Everyone
     const nowBase = strengthOf(row.baseline.masking, f.sampleValue);
     const wasBase = priorCell(null, f.code);
-    if (nowBase !== wasBase.strength) items.push({ audienceId: null, audienceLabel: "Everyone", fieldCode: f.code, fieldName: f.displayName, channelLabel: null, before: wasBase.example, after: row.baseline.example, direction: directionOf(wasBase.strength, nowBase), fullRaw: false, reason: null });
+    if (nowBase !== wasBase.strength) items.push({ audienceId: null, audienceLabel: "Everyone", fieldCode: f.code, fieldName: f.displayName, channelLabel: null, before: wasBase.example, after: row.baseline.example, afterLabel: row.baseline.choiceLabel, direction: directionOf(wasBase.strength, nowBase), fullRaw: false, reason: null });
     // Audiences
     for (const a of draft.audiences) {
       const cell = row.audiences.find((x) => x.audienceId === a.id)!;
       if (cell.kind === "not_used" || cell.kind === "locked") continue;
       const nowStrength = cell.kind === "same" ? nowBase : strengthOf(cell.kind === "full_raw" ? null : parseMask(draft.grants.find((g) => g.audienceId === a.id && g.fieldCode === f.code)?.maskingJson ?? null), f.sampleValue, cell.kind === "full_raw");
       const was = priorCell(a.id, f.code);
-      if (nowStrength !== was.strength) items.push({ audienceId: a.id, audienceLabel: a.label, fieldCode: f.code, fieldName: f.displayName, channelLabel: cell.channelLabel, before: was.example, after: cell.example, direction: directionOf(was.strength, nowStrength), fullRaw: cell.kind === "full_raw", reason: cell.reason });
+      if (nowStrength !== was.strength) items.push({ audienceId: a.id, audienceLabel: a.label, fieldCode: f.code, fieldName: f.displayName, channelLabel: cell.channelLabel, before: was.example, after: cell.example, afterLabel: cell.choiceLabel, direction: directionOf(was.strength, nowStrength), fullRaw: cell.kind === "full_raw", reason: cell.reason });
     }
   }
   const counts = {
@@ -233,26 +251,130 @@ function impactSentence(s: ImpactSummary): string {
   return parts.join(" · ") + ".";
 }
 
+// --- Review -----------------------------------------------------------------
+
+export interface ReviewRisk { type: "full_raw" | "sensitive_loosened_for_everyone"; audience: string | null; field: string; reason: string | null }
+export interface ReviewChangeField {
+  fieldCode: string; fieldName: string; direction: "more" | "less" | "neutral"; who: string; inheritedNote: boolean;
+  everyone: { before: string; after: string; descriptor: string } | null;
+  audiences: { label: string; before: string; after: string; descriptor: string; channelLabel: string | null; fullRaw: boolean; reason: string | null; direction: string }[];
+}
+export interface ReviewData {
+  draftId: string; number: number;
+  verdict: "ready" | "blocked" | "nothing_to_activate";
+  issues: { message: string; target: string }[];
+  summary: string;
+  risks: ReviewRisk[];
+  changes: ReviewChangeField[];
+  undecided: string[];
+}
+
+export async function getReview(draftId: string): Promise<ReviewData | null> {
+  const draft = await db.mPPolicyVersion.findUnique({ where: { id: draftId } });
+  if (!draft || draft.state !== "draft") return null;
+  const [impact, checks, full, fields] = await Promise.all([getImpact(draftId), getChecks(draftId), loadFull(draftId), db.mPField.findMany()]);
+  const byCode = new Map(fields.map((f) => [f.code, f]));
+  const blocking = checks.filter((c) => c.level === "blocking" && !c.ok);
+  const verdict: ReviewData["verdict"] = blocking.length ? "blocked" : impact.counts.changes === 0 ? "nothing_to_activate" : "ready";
+  const issues = blocking.map((c) => ({ message: c.message, target: `${MP}?view=workspace&focus=${c.anchor?.fieldCode ? `field:${c.anchor.fieldCode}` : "everyone"}` }));
+
+  // Summary sentence, built from the data.
+  const everyoneMore = impact.items.filter((i) => i.audienceId === null && i.direction === "Looser").length;
+  const perAud = new Map<string, number>();
+  impact.items.filter((i) => i.audienceId && i.direction === "Looser").forEach((i) => perAud.set(i.audienceLabel, (perAud.get(i.audienceLabel) ?? 0) + 1));
+  const anyLess = impact.items.some((i) => i.direction === "Tighter");
+  const parts = [`${impact.counts.changes} change${impact.counts.changes === 1 ? "" : "s"}.`];
+  if (everyoneMore) parts.push(`Everyone sees more of ${everyoneMore} field${everyoneMore === 1 ? "" : "s"}.`);
+  if (perAud.size) {
+    const counts = [...perAud.values()];
+    const allSame = counts.every((n) => n === counts[0]);
+    if (allSame) parts.push(`${[...perAud.keys()].join(" and ")} see more of ${counts[0]} each.`);
+    else parts.push([...perAud.entries()].map(([l, n]) => `${l} sees more of ${n}`).join(", ") + ".");
+  }
+  if (anyLess) parts.push("Some changes show less.");
+  const summary = parts.join(" ");
+
+  // Risks.
+  const risks: ReviewRisk[] = [];
+  for (const g of (full?.grants ?? [])) if (g.visibility === "full_raw") { const a = full!.audiences.find((x) => x.id === g.audienceId); risks.push({ type: "full_raw", audience: a?.label ?? null, field: byCode.get(g.fieldCode)?.displayName ?? g.fieldCode, reason: g.reason }); }
+  for (const it of impact.items) if (it.audienceId === null && it.direction === "Looser" && byCode.get(it.fieldCode)?.regulated) risks.push({ type: "sensitive_loosened_for_everyone", audience: null, field: it.fieldName, reason: null });
+
+  // Changes grouped by field.
+  const codes = [...new Set(impact.items.map((i) => i.fieldCode))];
+  const dirMap: Record<string, "more" | "less" | "neutral"> = { Looser: "more", Tighter: "less", Neutral: "neutral" };
+  const changes: ReviewChangeField[] = codes.map((code) => {
+    const its = impact.items.filter((i) => i.fieldCode === code);
+    const ev = its.find((i) => i.audienceId === null) ?? null;
+    const auds = its.filter((i) => i.audienceId !== null);
+    const primary = ev ?? auds[0];
+    return {
+      fieldCode: code, fieldName: primary.fieldName, direction: dirMap[primary.direction],
+      who: ev ? "Everyone, so all audiences" : auds.map((a) => a.audienceLabel).join(", "),
+      inheritedNote: !!ev && (full?.audiences.length ?? 0) > 0,
+      everyone: ev ? { before: ev.before, after: ev.after, descriptor: ev.afterLabel } : null,
+      audiences: auds.map((a) => ({ label: a.audienceLabel, before: a.before, after: a.after, descriptor: a.afterLabel, channelLabel: a.channelLabel, fullRaw: a.fullRaw, reason: a.reason, direction: dirMap[a.direction] })),
+    };
+  });
+
+  const undecided = fields.filter((f) => !f.usedByApps || full?.decisions.find((d) => d.fieldCode === f.code && d.status === "needs_decision")).map((f) => f.displayName);
+  return { draftId, number: draft.number, verdict, issues, summary, risks, changes, undecided };
+}
+
+// --- Live -------------------------------------------------------------------
+
+export interface LiveData { number: number; reason: string | null; topAudience: string; prev: number | null }
+export async function getLive(number: number): Promise<LiveData | null> {
+  const v = await getVersionByNumber(number);
+  if (!v) return null;
+  const impact = await getVersionImpact(number);
+  const perAud = new Map<string, number>();
+  impact.items.filter((i) => i.audienceId).forEach((i) => perAud.set(i.audienceLabel, (perAud.get(i.audienceLabel) ?? 0) + 1));
+  const top = [...perAud.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "Everyone";
+  return { number, reason: v.whyNote, topAudience: top, prev: number - 1 >= 1 ? number - 1 : null };
+}
+
 // --- Home -------------------------------------------------------------------
 
+export interface AttentionItem { id: string; severity: "check" | "decide" | "heads_up"; title: string; consequence: string; verb: string; target: string }
 export interface HomeData {
   active: { number: number; activatedBy: string | null; activatedAt: string | null; whyNote: string | null; impact: string | null } | null;
-  draft: { id: string; number: number; basedOn: number | null; changes: number } | null;
-  needsAttention: { id: string; type: string; label: string; count: number; link: string | null }[];
-  timeline: { number: number; state: string; who: string | null; when: string | null; why: string | null; impact: string | null }[];
+  draft: { id: string; number: number; basedOn: number | null; changes: number; savedAt: string } | null;
+  decisionsOpen: number;
+  attention: AttentionItem[];
+  prevVersion: { number: number; when: string | null; who: string | null } | null;
+  versionCount: number;
+}
+
+const MP = "/data-flow/masking-policy";
+const SEV_ORDER: Record<string, number> = { check: 0, decide: 1, heads_up: 2 };
+
+function attentionFrom(a: { id: string; type: string; label: string; link: string | null }): AttentionItem {
+  if (a.type === "fallback_events") return { id: a.id, severity: "check", title: a.label, consequence: "People saw blanks instead of values.", verb: "View access log", target: a.link ?? "/audit?module=masking_policy" };
+  if (a.type === "catalog_update") return { id: a.id, severity: "heads_up", title: a.label, consequence: "Check the legal minimum still fits.", verb: "Open", target: `${MP}?view=workspace&focus=${a.link?.startsWith("field:") ? a.link : "everyone"}` };
+  return { id: a.id, severity: "decide", title: a.label, consequence: "Until you decide, they stay fully hidden.", verb: "Review", target: `${MP}?view=workspace&focus=decisions` };
 }
 
 export async function getHome(): Promise<HomeData> {
   const [active, draft, attn, versions] = await Promise.all([
-    getActiveVersion(), getDraft(), db.mPNeedsAttention.findMany({ orderBy: { createdAt: "asc" } }), listVersions(),
+    getActiveVersion(), getDraft(), db.mPNeedsAttention.findMany(), listVersions(),
   ]);
-  let draftChanges = 0;
-  if (draft) draftChanges = (await getImpact(draft.id)).counts.changes;
+  let draftChanges = 0, decisionsOpen = 0;
+  if (draft) {
+    draftChanges = (await getImpact(draft.id)).counts.changes;
+    decisionsOpen = await db.mPFieldDecision.count({ where: { versionId: draft.id, status: "needs_decision" } });
+  } else {
+    // decisions pending with no draft: fields announced by apps with no catalog/active decision
+    decisionsOpen = attn.filter((a) => a.type === "new_app_field").reduce((n, a) => n + a.count, 0);
+  }
+  const archived = versions.filter((v) => v.state === "archived");
+  const prev = archived[0] ?? null;
   return {
-    active: active ? { number: active.number, activatedBy: active.activatedBy, activatedAt: active.activatedAt?.toISOString().slice(0, 16).replace("T", " ") ?? null, whyNote: active.whyNote, impact: active.impactSummary } : null,
-    draft: draft ? { id: draft.id, number: draft.number, basedOn: draft.basedOn, changes: draftChanges } : null,
-    needsAttention: attn.map((a) => ({ id: a.id, type: a.type, label: a.label, count: a.count, link: a.link })),
-    timeline: versions.filter((v) => v.state !== "draft").map((v) => ({ number: v.number, state: v.state, who: v.activatedBy, when: v.activatedAt?.toISOString().slice(0, 10) ?? null, why: v.whyNote, impact: v.impactSummary })),
+    active: active ? { number: active.number, activatedBy: active.activatedBy, activatedAt: active.activatedAt?.toISOString().slice(0, 10) ?? null, whyNote: active.whyNote, impact: active.impactSummary } : null,
+    draft: draft ? { id: draft.id, number: draft.number, basedOn: draft.basedOn, changes: draftChanges, savedAt: new Date(draft.updatedAt).toISOString().slice(11, 16) } : null,
+    decisionsOpen,
+    attention: attn.map(attentionFrom).sort((a, b) => SEV_ORDER[a.severity] - SEV_ORDER[b.severity]),
+    prevVersion: prev ? { number: prev.number, when: prev.activatedAt?.toISOString().slice(0, 10) ?? null, who: prev.activatedBy } : null,
+    versionCount: versions.filter((v) => v.state !== "draft").length,
   };
 }
 

@@ -1,72 +1,103 @@
 import Link from "next/link";
-import { AlertTriangle } from "lucide-react";
-import { getDraft, getChecks, getImpact } from "@/lib/engines/maskingpolicy";
+import { CheckCircle2, AlertTriangle } from "lucide-react";
+import { getDraft, getReview } from "@/lib/engines/maskingpolicy";
 import { ActivateForm } from "@/components/maskingpolicy/ActivateForm";
-import type { ImpactItem } from "@/lib/maskingpolicy";
+import type { ReviewChangeField } from "@/lib/engines/maskingpolicy";
 
-const BASE = "/data-flow/masking-policy";
+const MP = "/data-flow/masking-policy";
 
-function Group({ title, items, defaultOpen }: { title: string; items: ImpactItem[]; defaultOpen?: boolean }) {
-  if (items.length === 0) return null;
+function ChangeRow({ c }: { c: ReviewChangeField }) {
   return (
-    <details open={defaultOpen} className="mp-impact-group">
-      <summary><strong>{title}</strong> <span className="cell-sub">{items.length}</span></summary>
-      <div className="stack" style={{ gap: 6, marginTop: 8 }}>
-        {items.map((it, i) => (
-          <div key={i} className="mp-impact-row">
-            <span>{it.audienceLabel}{it.channelLabel ? `, on ${it.channelLabel}` : ""}, sees {it.fieldName} as <span className="mono">{it.after}</span> <span className="cell-sub">(was <span className="mono">{it.before}</span>)</span>. <span className={`mp-dir ${it.direction.toLowerCase()}`}>{it.direction}</span>{it.fullRaw && <span className="mp-tag new">full raw</span>}</span>
-            {it.reason && <div className="cell-sub">Reason: {it.reason}</div>}
-          </div>
-        ))}
-      </div>
+    <details className="mp-change">
+      <summary>
+        <span className="mp-change-main">
+          <span className="cell-primary">{c.fieldName}</span>
+          {c.everyone && <span className="mono cell-sub"> {c.everyone.before} → {c.everyone.after}</span>}
+          <span className="cell-sub"> · {c.everyone ? c.everyone.descriptor : c.audiences[0]?.descriptor}</span>
+        </span>
+        <span className="cell-sub">{c.who}{c.inheritedNote ? " (including all audiences that follow it)" : ""}</span>
+      </summary>
+      {c.audiences.length > 0 && (
+        <div className="stack" style={{ gap: 4, marginTop: 6, paddingLeft: 10 }}>
+          {c.audiences.map((a, i) => <div key={i} className="cell-sub">{a.label}: <span className="mono">{a.before} → {a.after}</span>{a.channelLabel ? ` · only on ${a.channelLabel}` : ""}{a.fullRaw ? " · full raw" : ""}</div>)}
+        </div>
+      )}
     </details>
   );
 }
 
+/** SCREEN 4 — Review and activate. Verdict first, one risk callout, changes by field. */
 export async function Review() {
   const draft = await getDraft();
-  if (!draft) return <div className="mp-card"><p>No draft to review. <Link href={BASE} className="row-link">Back to Masking Policy</Link></p></div>;
-  const [checks, impact] = await Promise.all([getChecks(draft.id), getImpact(draft.id)]);
-  const blocking = checks.filter((c) => c.level === "blocking" && !c.ok);
-  const everyone = impact.items.filter((i) => i.audienceId === null);
-  const looser = impact.items.filter((i) => i.audienceId && i.direction === "Looser");
-  const tighter = impact.items.filter((i) => i.audienceId && i.direction === "Tighter");
-  const neutral = impact.items.filter((i) => i.audienceId && i.direction === "Neutral");
+  if (!draft) return <div className="mp-card"><p>No draft to review. <Link href={MP} className="row-link">Back to Masking policy</Link></p></div>;
+  const review = await getReview(draft.id);
+  if (!review) return null;
+
+  const more = review.changes.filter((c) => c.direction === "more");
+  const less = review.changes.filter((c) => c.direction === "less");
+  const neutral = review.changes.filter((c) => c.direction === "neutral");
+  const bothDirections = more.length > 0 && less.length > 0;
 
   return (
-    <div className="stack" style={{ gap: 16, maxWidth: 820 }}>
-      <div><Link href={`${BASE}?view=workspace`} className="row-link">← Back to draft</Link></div>
-      <h2 style={{ margin: 0 }}>Review and activate · version {draft.number}</h2>
-      <p className="cell-sub" style={{ margin: 0 }}>{impact.counts.changes} changes · {impact.counts.looser} looser · {impact.counts.tighter} tighter · {impact.counts.neutral} neutral · {impact.counts.fullRaw} full raw grant{impact.counts.fullRaw === 1 ? "" : "s"}.</p>
+    <div className="stack" style={{ gap: 18, maxWidth: 820 }}>
+      <div><Link href={`${MP}?view=workspace`} className="row-link">← Back to draft</Link></div>
 
-      <section className="mp-card">
-        <h4 className="mp-card-h">Impact</h4>
-        <Group title="Looser" items={looser} defaultOpen />
-        <Group title="Everyone" items={everyone} defaultOpen />
-        <Group title="Tighter" items={tighter} />
-        <Group title="Neutral" items={neutral} />
-        {impact.items.length === 0 && <p className="cell-sub">No behavioural changes.</p>}
-      </section>
+      {/* Verdict */}
+      <div className="stack" style={{ gap: 6 }}>
+        {review.verdict === "nothing_to_activate" ? (
+          <h2 style={{ margin: 0 }}>Nothing to activate.</h2>
+        ) : review.verdict === "blocked" ? (
+          <div className="row" style={{ gap: 8, alignItems: "center" }}><AlertTriangle size={22} style={{ color: "var(--red)" }} /><h2 style={{ margin: 0 }}>Fix {review.issues.length} issue{review.issues.length === 1 ? "" : "s"} before activating</h2></div>
+        ) : (
+          <div className="row" style={{ gap: 8, alignItems: "center" }}><CheckCircle2 size={22} style={{ color: "var(--green)" }} /><h2 style={{ margin: 0 }}>Ready to activate version {review.number}</h2></div>
+        )}
+        {review.verdict === "nothing_to_activate" ? (
+          <p className="cell-sub" style={{ margin: 0 }}>Display names and sample values save automatically and don&rsquo;t create a version.</p>
+        ) : <p className="cell-sub" style={{ margin: 0 }}>{review.summary}</p>}
+        {review.verdict === "blocked" && (
+          <div className="stack" style={{ gap: 4, marginTop: 4 }}>
+            {review.issues.map((iss, i) => <Link key={i} href={iss.target} className="row" style={{ gap: 6, color: "var(--red)" }}><AlertTriangle size={13} /> {iss.message}</Link>)}
+          </div>
+        )}
+      </div>
 
-      <section className="mp-card">
-        <h4 className="mp-card-h">Fields that stay fully hidden</h4>
-        <p className="cell-sub" style={{ margin: 0 }}>{impact.hiddenFields.length === 0 ? "None." : impact.hiddenFields.join(", ")}.</p>
-      </section>
-
-      {blocking.length > 0 && (
-        <section className="mp-card" style={{ borderColor: "var(--red-border)" }}>
-          <h4 className="mp-card-h" style={{ color: "var(--red)" }}>Resolve before activating</h4>
-          <div className="stack" style={{ gap: 6 }}>
-            {blocking.map((c, i) => (
-              <Link key={i} href={`${BASE}?view=workspace&field=${c.anchor?.fieldCode ?? ""}`} className="row" style={{ gap: 8, color: "var(--red)" }}><AlertTriangle size={14} /> {c.message}</Link>
-            ))}
+      {/* Risk callout — the one raised block */}
+      {review.risks.length > 0 && (
+        <section className="mp-risk">
+          <strong>Look closely at this one</strong>
+          <div className="stack" style={{ gap: 4, marginTop: 6 }}>
+            {review.risks.map((r, i) => <div key={i}>{r.type === "full_raw" ? `${r.audience} will see ${r.field} as the full raw value.${r.reason ? ` Reason given: ${r.reason}.` : ""}` : `Everyone will see more of ${r.field}, which is protected by law — confirm it still meets the legal minimum.`}</div>)}
           </div>
         </section>
       )}
 
-      <section className="mp-card">
-        <ActivateForm vid={draft.id} number={draft.number} blocked={blocking.length > 0} />
-      </section>
+      {/* What changes */}
+      {review.verdict !== "nothing_to_activate" && review.changes.length > 0 && (
+        <section>
+          <h4 className="mp-section-h">What changes</h4>
+          {bothDirections ? (
+            <>
+              <div className="mp-change-group-h">Shows more</div>
+              {more.map((c) => <ChangeRow key={c.fieldCode} c={c} />)}
+              <div className="mp-change-group-h" style={{ marginTop: 10 }}>Shows less</div>
+              {less.map((c) => <ChangeRow key={c.fieldCode} c={c} />)}
+              {neutral.map((c) => <ChangeRow key={c.fieldCode} c={c} />)}
+            </>
+          ) : review.changes.map((c) => <ChangeRow key={c.fieldCode} c={c} />)}
+        </section>
+      )}
+
+      {/* Undecided */}
+      {review.undecided.length > 0 && (
+        <p className="cell-sub" style={{ margin: 0 }}>Stays fully hidden: {review.undecided.join(", ")}. <Link href={`${MP}?view=workspace&focus=decisions`} className="row-link">Decide</Link></p>
+      )}
+
+      {/* Reason + activate */}
+      {review.verdict === "nothing_to_activate" ? (
+        <div><Link href={`${MP}?view=workspace`} className="btn">Back to draft</Link></div>
+      ) : (
+        <ActivateForm vid={draft.id} number={draft.number} blocked={review.verdict === "blocked"} issueCount={review.issues.length} />
+      )}
     </div>
   );
 }

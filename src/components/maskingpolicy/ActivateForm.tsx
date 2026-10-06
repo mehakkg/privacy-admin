@@ -4,41 +4,47 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { activateAction } from "@/app/actions/maskingpolicy";
 
-const BASE = "/data-flow/masking-policy";
+const MP = "/data-flow/masking-policy";
 const CHIPS = ["New field added", "Role needs more access", "Tightening protection"];
 
 /**
- * Required why-note + Activate. Blocking checks disable activation upstream (the
- * button is only shown when none block). The approval notice stays until a real
- * approval step ships.
+ * Reason (required) + Activate, as a sticky bottom bar. When blocked, the primary
+ * reads "Fix N issues" and scrolls to the top where the issues are listed. No
+ * faint disabled primary: the reason is validated on click.
  */
-export function ActivateForm({ vid, number, blocked }: { vid: string; number: number; blocked: boolean }) {
+export function ActivateForm({ vid, number, blocked, issueCount }: { vid: string; number: number; blocked: boolean; issueCount: number }) {
   const router = useRouter();
   const [why, setWhy] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
-  const activate = () => start(async () => {
-    const r = await activateAction(vid, why);
-    if (r.ok) router.push(`${BASE}?activated=${number}`);
-    else setErr(r.error ?? "Failed.");
-  });
+  const onPrimary = () => {
+    if (blocked) { window.scrollTo({ top: 0, behavior: "smooth" }); return; }
+    if (!why.trim()) { setErr("Add a reason. It's recorded in the Audit Trail."); document.getElementById("mp-reason")?.focus(); return; }
+    start(async () => {
+      const r = await activateAction(vid, why);
+      if (r.ok) router.push(`${MP}?view=live&n=${number}`);
+      else setErr(r.error ?? "Couldn't activate.");
+    });
+  };
 
   return (
     <div className="stack" style={{ gap: 12 }}>
-      <label className="fld"><span>Why are you making this change?</span>
-        <textarea className="input" rows={2} value={why} onChange={(e) => setWhy(e.target.value)} placeholder="Recorded permanently in the Audit Trail." />
-      </label>
-      <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-        {CHIPS.map((c) => <button key={c} className="filter-chip" onClick={() => setWhy((w) => (w ? w + " " : "") + c)}>{c}</button>)}
+      <div>
+        <label className="fld" htmlFor="mp-reason"><span>Why are you making this change?</span>
+          <textarea id="mp-reason" className="input" rows={2} value={why} onChange={(e) => { setWhy(e.target.value); setErr(null); }} placeholder="Recorded permanently in the Audit Trail." />
+        </label>
+        {err && <p className="cell-sub" style={{ color: "var(--red)", margin: "4px 0 0" }}>{err}</p>}
+        <div className="row" style={{ gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+          {CHIPS.map((c) => <button key={c} className="mp-filterchip" onClick={() => { setWhy((w) => (w ? w + " " : "") + c); setErr(null); }}>{c}</button>)}
+        </div>
       </div>
-      <div className="notice info" style={{ margin: 0 }}>
-        <div>Activating applies version {number} immediately in all your applications. Version {number - 1} is kept in your history. An approval step will be added with the workflow integration.</div>
-      </div>
-      {err && <div className="notice danger" style={{ margin: 0 }}><div className="notice-title">Can&rsquo;t activate</div><div>{err}</div></div>}
-      <div className="row" style={{ gap: 8, justifyContent: "flex-end" }}>
-        <button className="btn" onClick={() => router.push(`${BASE}?view=workspace`)}>Back to draft</button>
-        <button className="btn primary" disabled={blocked || !why.trim() || pending} onClick={activate}>{pending ? "Activating…" : `Activate version ${number}`}</button>
+      <div className="mp-activate-bar">
+        <span className="cell-sub">Applies in seconds. Version {number - 1} stays in history. Approval comes later.</span>
+        <div className="row" style={{ gap: 8 }}>
+          <button className="btn" onClick={() => router.push(`${MP}?view=workspace`)}>Back to draft</button>
+          <button className="btn primary" disabled={pending} onClick={onPrimary}>{pending ? "Activating…" : blocked ? `Fix ${issueCount} issues` : `Activate version ${number}`}</button>
+        </div>
       </div>
     </div>
   );

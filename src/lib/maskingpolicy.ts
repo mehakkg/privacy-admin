@@ -131,6 +131,7 @@ export interface ImpactItem {
   channelLabel: string | null;
   before: string;
   after: string;
+  afterLabel: string;
   direction: Direction;
   fullRaw: boolean;
   reason: string | null;

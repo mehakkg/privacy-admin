@@ -8,9 +8,9 @@ import type { GridView } from "@/lib/engines/maskingpolicy";
  * and version. In Draft view, values that differ from Live are marked and show
  * what they were. Clicking a value emits onField (the grid highlights it).
  */
-export function PreviewPanel({ draft, live, startVersion = draft ? "draft" : "live", onField }: { draft: GridView | null; live: GridView | null; startVersion?: "draft" | "live"; onField?: (code: string) => void }) {
+export function PreviewPanel({ draft, live, startVersion = draft ? "draft" : "live", startAudience = "Everyone", onField }: { draft: GridView | null; live: GridView | null; startVersion?: "draft" | "live"; startAudience?: string; onField?: (code: string) => void }) {
   const [version, setVersion] = useState<"draft" | "live">(startVersion);
-  const [audience, setAudience] = useState("Everyone");
+  const [audience, setAudience] = useState(startAudience);
   const [channel, setChannel] = useState("Any");
   const [compare, setCompare] = useState<string | null>(null);
 
