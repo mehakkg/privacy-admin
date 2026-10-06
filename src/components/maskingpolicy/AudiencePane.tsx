@@ -7,6 +7,7 @@ import { X, Plus, ChevronDown, ChevronRight, Lock } from "lucide-react";
 import { MaskEditor } from "@/components/maskingpolicy/MaskEditor";
 import { PolicyGrid } from "@/components/maskingpolicy/PolicyGrid";
 import { PreviewDrawer } from "@/components/maskingpolicy/PreviewDrawer";
+import { ManageChannelsModal } from "@/components/maskingpolicy/ManageChannelsModal";
 import { defaultParamsForChoice, MASK_CHOICES, strengthOf, type Masking } from "@/lib/maskingpolicy";
 import type { GridView } from "@/lib/engines/maskingpolicy";
 import { setGrantAction, addChannelAction } from "@/app/actions/maskingpolicy";
@@ -44,7 +45,7 @@ export function AudiencePane({ view, liveView, audienceId, audienceLabel }: { vi
       </div>
 
       {moreRows.length === 0 ? (
-        <p className="cell-sub">Same as everyone. No exceptions yet.</p>
+        <p className="cell-sub">Same as everyone. No exceptions yet. For example: fraud investigators seeing a full mobile number, or branch managers seeing loan account numbers only in the mobile app.</p>
       ) : (
         <div className="mp-seesmore">
           {moreRows.map((r) => { const c = cellOf(r); return (
@@ -86,6 +87,7 @@ function AddMorePopover({ view, vid, audienceId, audienceLabel, onClose, onSaved
   const [scopeIds, setScopeIds] = useState<string[]>([]);
   const [reason, setReason] = useState("");
   const [addCh, setAddCh] = useState(false);
+  const [manageCh, setManageCh] = useState(false);
   const [chName, setChName] = useState(""); const [chId, setChId] = useState("");
   const [, start] = useTransition();
 
@@ -127,7 +129,7 @@ function AddMorePopover({ view, vid, audienceId, audienceLabel, onClose, onSaved
                   {!scopeAny && <div className="stack" style={{ gap: 4, paddingLeft: 18 }}>
                     {view.channels.map((c) => <label key={c.id} className="mp-radio"><input type="checkbox" checked={scopeIds.includes(c.id)} onChange={() => setScopeIds((s) => s.includes(c.id) ? s.filter((x) => x !== c.id) : [...s, c.id])} /> {c.label}</label>)}
                     {addCh ? <div className="row" style={{ gap: 4, flexWrap: "wrap" }}><input className="input sm" placeholder="Channel name" value={chName} onChange={(e) => setChName(e.target.value)} /><input className="input sm" placeholder="Identifier" value={chId} onChange={(e) => setChId(e.target.value)} /><button className="btn sm" disabled={!chName.trim() || !chId.trim()} onClick={() => start(async () => { await addChannelAction(vid, chName, chId); setAddCh(false); setChName(""); setChId(""); onSaved(); })}>Add</button></div>
-                      : <button className="link-btn" onClick={() => setAddCh(true)}><Plus size={12} /> Add channel</button>}
+                      : <div className="row" style={{ gap: 12 }}><button className="link-btn" onClick={() => setAddCh(true)}><Plus size={12} /> Add channel</button><button className="link-btn" onClick={() => setManageCh(true)}>Manage channels</button></div>}
                   </div>}
                 </div>
               </div>
@@ -136,6 +138,7 @@ function AddMorePopover({ view, vid, audienceId, audienceLabel, onClose, onSaved
           )}
         </div>
       </div>
+      {manageCh && <ManageChannelsModal draftId={vid} onClose={() => setManageCh(false)} />}
     </div>,
     document.body,
   );

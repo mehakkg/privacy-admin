@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { getDraft, getActiveVersion, getGrid, getImpact, getChecks, getCategories } from "@/lib/engines/maskingpolicy";
-import { StartDraftButton, DiscardMenu } from "@/components/maskingpolicy/PolicyActions";
+import { getDraft, getActiveVersion, getGrid, getImpact, getChecks, getCategories, listVersions } from "@/lib/engines/maskingpolicy";
+import { StartDraftButton } from "@/components/maskingpolicy/PolicyActions";
+import { WorkspaceMenu, AddAudienceTrigger } from "@/components/maskingpolicy/WorkspaceMenus";
 import { WorkspaceRail, type RailItem } from "@/components/maskingpolicy/WorkspaceRail";
 import { DecisionsInbox } from "@/components/maskingpolicy/DecisionsInbox";
 import { EveryoneFields } from "@/components/maskingpolicy/EveryoneFields";
@@ -12,9 +13,11 @@ export async function Workspace({ focus }: { focus?: string }) {
   const draft = await getDraft();
   if (!draft) return <div className="mp-card"><div className="stack" style={{ gap: 8 }}><h3 style={{ margin: 0 }}>No draft in progress.</h3><p className="cell-sub" style={{ margin: 0 }}>Start a draft to change how your applications mask data.</p><div><StartDraftButton /></div><Link href={MP} className="row-link">Back to Masking policy</Link></div></div>;
 
-  const [grid, impact, checks, categories, active] = await Promise.all([getGrid(draft.id), getImpact(draft.id), getChecks(draft.id), getCategories(), getActiveVersion()]);
+  const [grid, impact, checks, categories, active, versions] = await Promise.all([getGrid(draft.id), getImpact(draft.id), getChecks(draft.id), getCategories(), getActiveVersion(), listVersions()]);
   const liveView = active ? await getGrid(active.id) : null;
   if (!grid) return null;
+  const everActivated = versions.some((v) => v.state === "active" || v.state === "archived");
+  const catViews = categories.map((c) => ({ id: c.id, name: c.name, definition: c.definition }));
 
   const decisionItems = grid.rows.filter((r) => r.status === "needs_decision").map((r) => ({ code: r.code, displayName: r.displayName, sampleValue: r.sampleValue, categoryId: r.categoryId }));
   const blocking = checks.filter((c) => c.level === "blocking" && !c.ok).length;
@@ -29,7 +32,7 @@ export async function Workspace({ focus }: { focus?: string }) {
   // Rail
   const rail: RailItem[] = [
     { kind: "item", key: "everyone", label: "Everyone", focus: "everyone", current: !audienceId, status: decisionItems.length ? `${decisionItems.length} to decide` : "Ready", accent: decisionItems.length > 0 },
-    { kind: "label", key: "lbl", label: "Audiences" },
+    { kind: "label", key: "lbl", label: grid.audiences.length === 0 ? "Audiences (optional)" : "Audiences" },
     ...grid.audiences.map((a): RailItem => ({ kind: "item", key: a.id, label: a.label, focus: `audience:${a.id}`, current: audienceId === a.id, audienceId: a.id, status: changesFor(a.label) ? `${changesFor(a.label)} changes` : "No changes" })),
     { kind: "divider", key: "d1" },
     { kind: "review", key: "review", label: "Review and activate", status: blocking ? `Fix ${blocking} issues` : `${impact.counts.changes} changes`, accent: blocking > 0 },
@@ -47,9 +50,9 @@ export async function Workspace({ focus }: { focus?: string }) {
     <div className="stack" style={{ gap: 12 }}>
       <div className="mp-ws-top">
         <div className="stack" style={{ gap: 2 }}>
-          <div className="row" style={{ gap: 8, alignItems: "baseline" }}><strong style={{ fontSize: 18 }}>Draft {draft.number}</strong><span className="cell-sub">based on version {draft.basedOn} · saved {new Date(draft.updatedAt).toISOString().slice(11, 16)}</span></div>
+          <div className="row" style={{ gap: 8, alignItems: "baseline" }}><strong style={{ fontSize: 18 }}>Draft {draft.number}</strong><span className="cell-sub">{draft.basedOn != null ? `based on version ${draft.basedOn} · ` : ""}saved {new Date(draft.updatedAt).toISOString().slice(11, 16)}</span></div>
         </div>
-        <DiscardMenu />
+        <WorkspaceMenu draftId={draft.id} />
       </div>
 
       <div className="mp-ws">
@@ -60,14 +63,24 @@ export async function Workspace({ focus }: { focus?: string }) {
           ) : (
             <div className="stack" style={{ gap: 14 }}>
               <div className="stack" style={{ gap: 2 }}><h3 style={{ margin: 0 }}>What everyone sees</h3><span className="cell-sub">Start from our recommendation. Change only what doesn&rsquo;t fit.</span></div>
-              {decisionItems.length > 0 && <div id="mp-decisions"><DecisionsInbox vid={draft.id} items={decisionItems} categories={categories.map((c) => ({ id: c.id, name: c.name, definition: c.definition }))} /></div>}
-              <EveryoneFields view={grid} focusField={focusField} />
+              {!everActivated && (
+                <p className="cell-sub" style={{ margin: 0 }}>{decisionItems.length > 0
+                  ? `We prepared this from what your applications use. ${grid.rows.filter((r) => r.status === "ready").length} fields are ready. ${decisionItems.length} need a decision.`
+                  : `We prepared this from what your applications use. ${grid.rows.filter((r) => r.status === "ready").length} fields are ready with recommended masking. Check what you need to, then continue.`}</p>
+              )}
+              {decisionItems.length > 0 && <div id="mp-decisions"><DecisionsInbox vid={draft.id} items={decisionItems} categories={catViews} /></div>}
+              <EveryoneFields view={grid} categories={catViews} focusField={focusField} />
             </div>
           )}
 
           <div className="mp-ws-bottom">
             {prev ? <Link href={`${MP}?view=workspace&focus=${prev}`} className="btn ghost">Back</Link> : <span />}
-            <Link href={nextHref} className="btn primary">Next: {nextLabel}</Link>
+            {!curAudience && grid.audiences.length === 0 ? (
+              <div className="row" style={{ gap: 12, alignItems: "center" }}>
+                <AddAudienceTrigger draftId={draft.id} className="link-btn">Let someone see more first</AddAudienceTrigger>
+                <Link href={`${MP}?view=review`} className="btn primary">Review and activate</Link>
+              </div>
+            ) : <Link href={nextHref} className="btn primary">Next: {nextLabel}</Link>}
           </div>
         </div>
       </div>

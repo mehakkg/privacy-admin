@@ -5,6 +5,8 @@ import { getSession } from "@/lib/session";
 import {
   startDraft, discardDraft, setBaseline, setFieldCategory, markReady, addAudience, renameAudience, removeAudience,
   addChannel, setGrant, bulkBaseline, activate, restoreAsDraft,
+  checkFieldCode, addCustomField, removeCustomField, channelUsage, renameChannel, changeChannelIdentifier, removeChannel, changeAudienceIdentifier,
+  type AddFieldInput, type ChannelUsage,
 } from "@/lib/engines/maskingpolicy";
 import type { Masking, FieldStatus } from "@/lib/maskingpolicy";
 
@@ -54,4 +56,29 @@ export async function activateAction(versionId: string, whyNote: string): Promis
 export async function restoreAsDraftAction(number: number): Promise<MPResult & { id?: string }> {
   const { actor } = await getSession();
   try { const id = await restoreAsDraft(number, actor); touch(); return { ok: true, id }; } catch (e) { return fail(e); }
+}
+
+export async function checkFieldCodeAction(code: string): Promise<{ taken: "none" | "custom" | "platform"; categoryName?: string }> {
+  return checkFieldCode(code);
+}
+export async function addFieldAction(draftId: string, input: AddFieldInput): Promise<MPResult & { code?: string }> {
+  try { const r = await addCustomField(draftId, input); touch(); return { ok: true, code: r.code }; } catch (e) { return fail(e); }
+}
+export async function removeFieldAction(code: string): Promise<MPResult> {
+  try { await removeCustomField(code); touch(); return { ok: true }; } catch (e) { return fail(e); }
+}
+export async function channelUsageAction(draftId: string): Promise<{ channels: ChannelUsage[] }> {
+  return { channels: await channelUsage(draftId) };
+}
+export async function renameChannelAction(id: string, label: string): Promise<MPResult> {
+  try { await renameChannel(id, label); touch(); return { ok: true }; } catch (e) { return fail(e); }
+}
+export async function changeChannelIdentifierAction(id: string, identifier: string): Promise<MPResult> {
+  try { await changeChannelIdentifier(id, identifier); touch(); return { ok: true }; } catch (e) { return fail(e); }
+}
+export async function removeChannelAction(id: string): Promise<MPResult> {
+  try { await removeChannel(id); touch(); return { ok: true }; } catch (e) { return fail(e); }
+}
+export async function changeAudienceIdentifierAction(id: string, identifier: string): Promise<MPResult> {
+  try { await changeAudienceIdentifier(id, identifier); touch(); return { ok: true }; } catch (e) { return fail(e); }
 }

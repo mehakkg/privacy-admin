@@ -63,7 +63,7 @@ async function loadFull(versionId: string): Promise<FullVersion | null> {
 
 interface ResolvedField extends GridFieldRow {}
 
-function resolveGrid(v: FullVersion, fields: { code: string; displayName: string; categoryId: string; origin: string; regulated: boolean; legalMinimumJson: string | null; sampleValue: string; usedByApps: boolean; firstSeen: Date }[], activeFieldCodes?: Set<string>): ResolvedField[] {
+function resolveGrid(v: FullVersion, fields: { code: string; displayName: string; categoryId: string; origin: string; regulated: boolean; legalMinimumJson: string | null; sampleValue: string; usedByApps: boolean; announcedByJson?: string; firstSeen: Date }[], activeFieldCodes?: Set<string>): ResolvedField[] {
   const decByCode = new Map(v.decisions.map((d) => [d.fieldCode, d]));
   const chanLabel = new Map(v.channels.map((c) => [c.id, c.label]));
   return fields.map((f) => {
@@ -97,6 +97,7 @@ function resolveGrid(v: FullVersion, fields: { code: string; displayName: string
       code: f.code, displayName: f.displayName, categoryId: f.categoryId, origin: f.origin,
       regulated: f.regulated, status,
       isNew: !!activeFieldCodes && !activeFieldCodes.has(f.code),
+      announced: ((decodeObject<string[]>(f.announcedByJson ?? "[]") ?? []).length > 0),
       sampleValue: f.sampleValue,
       legalMinimum: parseMask(f.legalMinimumJson),
       baseline: { example: baseExample, choiceLabel: choiceLabel(baseMask, false), masking: baseMask, hidden: baseHidden },
@@ -259,6 +260,7 @@ export interface ReviewChangeField {
   everyone: { before: string; after: string; descriptor: string } | null;
   audiences: { label: string; before: string; after: string; descriptor: string; channelLabel: string | null; fullRaw: boolean; reason: string | null; direction: string }[];
 }
+export interface FirstActivationData { willShow: number; hidden: string[]; audiencesMore: number; categories: { name: string; fields: { name: string; example: string; label: string }[] }[] }
 export interface ReviewData {
   draftId: string; number: number;
   verdict: "ready" | "blocked" | "nothing_to_activate";
@@ -267,6 +269,8 @@ export interface ReviewData {
   risks: ReviewRisk[];
   changes: ReviewChangeField[];
   undecided: string[];
+  firstActivation: boolean;
+  firstActivationData: FirstActivationData | null;
 }
 
 export async function getReview(draftId: string): Promise<ReviewData | null> {
@@ -317,7 +321,22 @@ export async function getReview(draftId: string): Promise<ReviewData | null> {
   });
 
   const undecided = fields.filter((f) => !f.usedByApps || full?.decisions.find((d) => d.fieldCode === f.code && d.status === "needs_decision")).map((f) => f.displayName);
-  return { draftId, number: draft.number, verdict, issues, summary, risks, changes, undecided };
+
+  // First activation (no previous active version): review as "fully hidden → this policy".
+  const active = await getActiveVersion();
+  const firstActivation = !active;
+  let firstActivationData: FirstActivationData | null = null;
+  if (firstActivation) {
+    const grid = await getGrid(draftId);
+    if (grid) {
+      const shown = grid.rows.filter((r) => r.status !== "not_used" && !r.baseline.hidden);
+      const hidden = grid.rows.filter((r) => r.status === "not_used" || r.baseline.hidden).map((r) => r.displayName);
+      const categories = grid.categories.map((c) => ({ name: c.name, fields: grid.rows.filter((r) => r.categoryId === c.id && r.status !== "not_used" && !r.baseline.hidden).map((r) => ({ name: r.displayName, example: r.baseline.example, label: r.baseline.choiceLabel })) })).filter((c) => c.fields.length > 0);
+      firstActivationData = { willShow: shown.length, hidden, audiencesMore: grid.exposure.more, categories };
+    }
+  }
+
+  return { draftId, number: draft.number, verdict, issues, summary, risks, changes, undecided, firstActivation, firstActivationData };
 }
 
 // --- Live -------------------------------------------------------------------
@@ -432,6 +451,82 @@ async function requireDraft(versionId: string) {
 
 export async function setFieldCategory(code: string, categoryId: string) {
   await db.mPField.update({ where: { code }, data: { categoryId } });
+}
+
+// --- Add a field / custom field management ----------------------------------
+
+/** Live check for the Add-a-field modal. */
+export async function checkFieldCode(rawCode: string): Promise<{ taken: "none" | "custom" | "platform"; categoryName?: string }> {
+  const code = rawCode.trim().toUpperCase();
+  if (!code) return { taken: "none" };
+  const f = await db.mPField.findUnique({ where: { code }, include: { category: true } });
+  if (!f) return { taken: "none" };
+  return { taken: f.origin === "platform" ? "platform" : "custom", categoryName: f.category?.name };
+}
+
+export interface AddFieldInput { code: string; displayName: string; categoryId: string; masking: Masking | null; sampleValue: string }
+export async function addCustomField(draftId: string, input: AddFieldInput) {
+  await requireDraft(draftId);
+  const code = input.code.trim().toUpperCase();
+  if (!code) throw err("ValidationError", "Give the field a code.");
+  if (!/^[A-Z0-9_]+$/.test(code)) throw err("ValidationError", "Use capital letters, digits and underscores only.");
+  if (!input.categoryId) throw err("ValidationError", "Choose what kind of data this is.");
+  const existing = await db.mPField.findUnique({ where: { code } });
+  if (existing) {
+    if (existing.origin === "platform") throw err("PlatformField", `${code} is a platform field.`, { code });
+    throw err("DuplicateField", `${code} is already in your policy.`, { code });
+  }
+  await db.mPField.create({ data: { code, displayName: input.displayName.trim() || code.toLowerCase().replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()), categoryId: input.categoryId, origin: "your_organization", regulated: false, sampleValue: input.sampleValue.trim() || "sample-value", usedByApps: true, announcedByJson: "[]" } });
+  await db.mPFieldDecision.create({ data: { versionId: draftId, fieldCode: code, maskingJson: input.masking ? encodeObject(input.masking) : null, status: "ready", reviewed: true } });
+  return { code };
+}
+
+export async function removeCustomField(code: string) {
+  const f = await db.mPField.findUnique({ where: { code } });
+  if (!f) throw err("NotFoundError", "No such field.");
+  if (f.origin !== "your_organization") throw err("ForbiddenError", "Platform fields can't be removed.");
+  await db.mPField.delete({ where: { code } });
+}
+
+// --- Channel & audience management ------------------------------------------
+
+export interface ChannelUsage { id: string; label: string; identifier: string; grants: { audience: string; field: string }[]; onlyHere: number }
+export async function channelUsage(draftId: string): Promise<ChannelUsage[]> {
+  const full = await loadFull(draftId);
+  if (!full) return [];
+  const fields = await db.mPField.findMany({ select: { code: true, displayName: true } });
+  const fname = new Map(fields.map((f) => [f.code, f.displayName]));
+  const aname = new Map(full.audiences.map((a) => [a.id, a.label]));
+  return full.channels.map((c) => {
+    const using = full.grants.filter((g) => { const s = decodeObject<string[] | string>(g.channelScopeJson); return Array.isArray(s) && s.includes(c.id); });
+    const onlyHere = using.filter((g) => { const s = decodeObject<string[] | string>(g.channelScopeJson); return Array.isArray(s) && s.length === 1; }).length;
+    return { id: c.id, label: c.label, identifier: c.identifier, grants: using.map((g) => ({ audience: aname.get(g.audienceId) ?? "—", field: fname.get(g.fieldCode) ?? g.fieldCode })), onlyHere };
+  });
+}
+
+export async function renameChannel(id: string, label: string) {
+  if (!label.trim()) throw err("ValidationError", "Name the channel.");
+  await db.mPChannel.update({ where: { id }, data: { label: label.trim() } });
+}
+export async function changeChannelIdentifier(id: string, identifier: string) {
+  if (!identifier.trim()) throw err("ValidationError", "Give the identifier your app sends.");
+  await db.mPChannel.update({ where: { id }, data: { identifier: identifier.trim() } });
+}
+export async function removeChannel(id: string) {
+  const ch = await db.mPChannel.findUnique({ where: { id } });
+  if (!ch) return;
+  const grants = await db.mPGrant.findMany({ where: { versionId: ch.versionId } });
+  for (const g of grants) {
+    const s = decodeObject<string[] | string>(g.channelScopeJson);
+    if (!Array.isArray(s) || !s.includes(id)) continue;
+    if (s.length === 1) await db.mPGrant.delete({ where: { id: g.id } }); // applied only here → removed
+    else await db.mPGrant.update({ where: { id: g.id }, data: { channelScopeJson: encodeObject(s.filter((x) => x !== id)) } });
+  }
+  await db.mPChannel.delete({ where: { id } });
+}
+export async function changeAudienceIdentifier(id: string, identifier: string) {
+  if (!identifier.trim()) throw err("ValidationError", "Give the identifier your app sends.");
+  await db.mPAudience.update({ where: { id }, data: { identifier: identifier.trim() } });
 }
 
 export async function setBaseline(versionId: string, fieldCode: string, masking: Masking | null, status: FieldStatus) {

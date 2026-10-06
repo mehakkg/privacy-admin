@@ -105,6 +105,7 @@ export interface GridFieldRow {
   regulated: boolean;
   status: FieldStatus;
   isNew: boolean;
+  announced: boolean;
   sampleValue: string;
   legalMinimum: Masking | null;
   baseline: { example: string; choiceLabel: string; masking: Masking | null; hidden: boolean };

@@ -48,11 +48,15 @@ export async function Review() {
           <h2 style={{ margin: 0 }}>Nothing to activate.</h2>
         ) : review.verdict === "blocked" ? (
           <div className="row" style={{ gap: 8, alignItems: "center" }}><AlertTriangle size={22} style={{ color: "var(--red)" }} /><h2 style={{ margin: 0 }}>Fix {review.issues.length} issue{review.issues.length === 1 ? "" : "s"} before activating</h2></div>
+        ) : review.firstActivation ? (
+          <div className="row" style={{ gap: 8, alignItems: "center" }}><CheckCircle2 size={22} style={{ color: "var(--green)" }} /><h2 style={{ margin: 0 }}>Ready to switch your applications from fully hidden to this policy.</h2></div>
         ) : (
           <div className="row" style={{ gap: 8, alignItems: "center" }}><CheckCircle2 size={22} style={{ color: "var(--green)" }} /><h2 style={{ margin: 0 }}>Ready to activate version {review.number}</h2></div>
         )}
         {review.verdict === "nothing_to_activate" ? (
           <p className="cell-sub" style={{ margin: 0 }}>Display names and sample values save automatically and don&rsquo;t create a version.</p>
+        ) : review.firstActivation && review.firstActivationData ? (
+          <p className="cell-sub" style={{ margin: 0 }}>Today every sensitive field is fully hidden. Version {review.number} will show {review.firstActivationData.willShow} of them in masked form.{review.firstActivationData.hidden.length ? ` ${review.firstActivationData.hidden.length} stay fully hidden: ${review.firstActivationData.hidden.join(", ")}.` : ""}{review.firstActivationData.audiencesMore ? ` ${review.firstActivationData.audiencesMore} audience${review.firstActivationData.audiencesMore === 1 ? "" : "s"} will see more than everyone else.` : ""}</p>
         ) : <p className="cell-sub" style={{ margin: 0 }}>{review.summary}</p>}
         {review.verdict === "blocked" && (
           <div className="stack" style={{ gap: 4, marginTop: 4 }}>
@@ -71,8 +75,24 @@ export async function Review() {
         </section>
       )}
 
-      {/* What changes */}
-      {review.verdict !== "nothing_to_activate" && review.changes.length > 0 && (
+      {/* First activation: what applications will show (no diff) */}
+      {review.verdict !== "nothing_to_activate" && review.firstActivation && review.firstActivationData && (
+        <section>
+          <h4 className="mp-section-h">What your applications will show</h4>
+          {review.firstActivationData.categories.map((c) => (
+            <details key={c.name} className="mp-change">
+              <summary><span className="cell-primary">{c.name}</span> <span className="cell-sub">{c.fields.length} fields</span></summary>
+              <div className="stack" style={{ gap: 4, marginTop: 6, paddingLeft: 10 }}>
+                {c.fields.map((f, i) => <div key={i} className="row" style={{ gap: 8, justifyContent: "space-between" }}><span>{f.name}</span><span className="row" style={{ gap: 8 }}><span className="mono cell-sub">{f.example}</span><span className="cell-sub">{f.label}</span></span></div>)}
+              </div>
+            </details>
+          ))}
+          <p className="cell-sub" style={{ marginTop: 8 }}>{review.firstActivationData.audiencesMore === 0 ? "No audience sees more than everyone else." : `${review.firstActivationData.audiencesMore} audience(s) see more than everyone else.`}</p>
+        </section>
+      )}
+
+      {/* What changes (diff) */}
+      {review.verdict !== "nothing_to_activate" && !review.firstActivation && review.changes.length > 0 && (
         <section>
           <h4 className="mp-section-h">What changes</h4>
           {bothDirections ? (
@@ -96,7 +116,7 @@ export async function Review() {
       {review.verdict === "nothing_to_activate" ? (
         <div><Link href={`${MP}?view=workspace`} className="btn">Back to draft</Link></div>
       ) : (
-        <ActivateForm vid={draft.id} number={draft.number} blocked={review.verdict === "blocked"} issueCount={review.issues.length} />
+        <ActivateForm vid={draft.id} number={draft.number} blocked={review.verdict === "blocked"} issueCount={review.issues.length} firstActivation={review.firstActivation} />
       )}
     </div>
   );

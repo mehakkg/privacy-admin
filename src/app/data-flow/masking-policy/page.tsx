@@ -34,7 +34,7 @@ export default async function MaskingPolicyPage({ searchParams }: { searchParams
         <PageHead
           title="Masking policy"
           subtitle="Decide how much each audience sees, and know it's right before it goes live."
-          actions={<Link href="/data-flow/masking-policy/catalog" className="row-link">PII catalog</Link>}
+          actions={<span className="row" style={{ gap: 14 }}><Link href="/data-flow/masking-policy/catalog" className="row-link">PII catalog</Link><Link href="/data-flow/masking-policy/audit" className="row-link">Audit trail</Link></span>}
         />
       )}
       {body}

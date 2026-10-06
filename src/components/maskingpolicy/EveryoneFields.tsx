@@ -5,13 +5,16 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Lock, ChevronDown, ChevronRight, X } from "lucide-react";
 import { MaskEditor } from "@/components/maskingpolicy/MaskEditor";
+import { AddFieldModal } from "@/components/maskingpolicy/AddFieldModal";
 import { defaultParamsForChoice, renderValue, type Masking } from "@/lib/maskingpolicy";
 import type { GridView } from "@/lib/engines/maskingpolicy";
-import { setBaselineAction, bulkBaselineAction } from "@/app/actions/maskingpolicy";
+import { setBaselineAction, bulkBaselineAction, removeFieldAction } from "@/app/actions/maskingpolicy";
+
+interface Cat { id: string; name: string; definition: string }
 
 /** The Everyone pane: category groups of field rows (single column, no audiences).
  *  A row opens the field popover; Select mode reveals checkboxes for bulk. */
-export function EveryoneFields({ view, focusField }: { view: GridView; focusField?: string | null }) {
+export function EveryoneFields({ view, categories, focusField }: { view: GridView; categories: Cat[]; focusField?: string | null }) {
   const router = useRouter();
   const vid = view.version.id;
   const [open, setOpen] = useState<{ code: string; anchor: { top: number; left: number } } | null>(null);
@@ -19,14 +22,18 @@ export function EveryoneFields({ view, focusField }: { view: GridView; focusFiel
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set(view.categories.filter((c) => c.changedCount === 0).map((c) => c.id)));
   const [bulk, setBulk] = useState<{ anchor: { top: number; left: number } } | null>(null);
+  const [addField, setAddField] = useState(false);
+  const [justAdded, setJustAdded] = useState<string | null>(null);
   const [, start] = useTransition();
   const row = (c: string) => view.rows.find((r) => r.code === c)!;
 
   return (
     <div className="stack" style={{ gap: 12 }}>
-      <div className="row" style={{ justifyContent: "flex-end" }}>
+      <div className="row" style={{ justifyContent: "flex-end", gap: 8 }}>
         <button className="btn ghost sm" onClick={() => { setSelectMode((s) => !s); setSel(new Set()); }}>{selectMode ? "Done selecting" : "Select"}</button>
+        <button className="btn sm" onClick={() => setAddField(true)}>+ Add a field</button>
       </div>
+      {justAdded && <div className="notice info" style={{ margin: 0 }}><div className="row" style={{ gap: 8, justifyContent: "space-between", alignItems: "center" }}><span>Ask your developers to mark this data with <span className="mono">{justAdded}</span></span><button className="link-btn" onClick={() => navigator.clipboard?.writeText(justAdded)}>Copy field code</button></div></div>}
       {view.categories.map((cat) => {
         const members = view.rows.filter((r) => r.categoryId === cat.id);
         const isC = collapsed.has(cat.id);
@@ -51,6 +58,7 @@ export function EveryoneFields({ view, focusField }: { view: GridView; focusFiel
                         {r.regulated && <span className="mp-tag lock"><Lock size={9} /> Regulated</span>}
                         {r.origin === "your_organization" && <span className="mp-tag">Added by your organization</span>}
                         {r.isNew && <span className="mp-tag new">New from apps</span>}
+                        {r.origin === "your_organization" && !r.announced && <span className="cell-sub">Not seen in your applications yet</span>}
                       </span>
                     </button>
                   </div>
@@ -73,6 +81,7 @@ export function EveryoneFields({ view, focusField }: { view: GridView; focusFiel
 
       {open && <FieldPopover row={row(open.code)} vid={vid} anchor={open.anchor} onClose={() => setOpen(null)} onSaved={() => { setOpen(null); router.refresh(); }} />}
       {bulk && <BulkPopover vid={vid} codes={[...sel]} sample={row([...sel][0]).sampleValue} anchor={bulk.anchor} onClose={() => setBulk(null)} onSaved={() => { setBulk(null); setSel(new Set()); router.refresh(); }} />}
+      {addField && <AddFieldModal draftId={vid} categories={categories} onClose={() => setAddField(false)} onAdded={(code) => { setAddField(false); setJustAdded(code); setTimeout(() => document.getElementById(`mp-field-${code}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 300); }} />}
     </div>
   );
 }
@@ -102,11 +111,24 @@ function FieldPopover({ row, vid, anchor, onClose, onSaved }: { row: GridView["r
     <Shell anchor={anchor} title={row.displayName} onClose={onClose}>
       <MaskEditor value={m} onChange={setMask} sample={row.sampleValue} />
       <label className="mp-radio" style={{ marginTop: 10 }}><input type="checkbox" checked={used} onChange={(e) => setUsed(e.target.checked)} /> Used by your applications <span className="cell-sub">(off = stays hidden if it ever appears)</span></label>
+      {row.origin === "your_organization" && <RemoveFromPolicy code={row.code} onDone={onSaved} />}
       <div className="row" style={{ gap: 8, justifyContent: "space-between", marginTop: 10 }}>
         <button className="btn ghost sm" onClick={() => save(null)}>Hide completely</button>
         <button className="btn primary sm" onClick={() => save(m)}>Done</button>
       </div>
     </Shell>
+  );
+}
+
+function RemoveFromPolicy({ code, onDone }: { code: string; onDone: () => void }) {
+  const [confirm, setConfirm] = useState(false);
+  const [, start] = useTransition();
+  if (!confirm) return <button className="link-btn" style={{ color: "var(--red)", marginTop: 8 }} onClick={() => setConfirm(true)}>Remove from policy</button>;
+  return (
+    <div className="stack" style={{ gap: 6, marginTop: 8 }}>
+      <span className="cell-sub">Applications that send this field will show it fully hidden.</span>
+      <div className="row" style={{ gap: 6 }}><button className="btn danger sm" onClick={() => start(async () => { await removeFieldAction(code); onDone(); })}>Remove</button><button className="btn ghost sm" onClick={() => setConfirm(false)}>Cancel</button></div>
+    </div>
   );
 }
 

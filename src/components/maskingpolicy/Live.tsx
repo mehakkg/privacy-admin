@@ -14,7 +14,11 @@ export async function Live({ number }: { number: number }) {
     <div className="mp-live">
       <CheckCircle2 size={48} style={{ color: "var(--green)" }} />
       <h1 style={{ margin: 0 }}>Version {live.number} is live.</h1>
-      <p className="cell-sub" style={{ margin: 0, maxWidth: 520 }}>Applications pick it up within seconds. Version {live.prev ?? live.number - 1} stays in your history.</p>
+      {live.prev == null ? (
+        <p className="cell-sub" style={{ margin: 0, maxWidth: 560 }}>Your applications now show masked values instead of fully hidden ones. Applications pick it up within seconds.</p>
+      ) : (
+        <p className="cell-sub" style={{ margin: 0, maxWidth: 520 }}>Applications pick it up within seconds. Version {live.prev} stays in your history.</p>
+      )}
       {live.reason && <p style={{ margin: 0 }}>Reason: &ldquo;{live.reason}&rdquo;</p>}
       <div className="row" style={{ gap: 10, marginTop: 8, flexWrap: "wrap", justifyContent: "center" }}>
         <Link href={`${MP}?see=${encodeURIComponent(live.topAudience)}`} className="btn primary">See what {live.topAudience} sees</Link>

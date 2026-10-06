@@ -35,7 +35,7 @@ export async function Home({ see }: { see?: string }) {
             ) : (
               <>
                 <div className="mp-hero-title">Your applications aren&rsquo;t using a masking policy yet.</div>
-                <div className="cell-sub">Every sensitive field is fully hidden. That&rsquo;s safe, but not yet tailored to your business.</div>
+                <div className="cell-sub">Every sensitive field is fully hidden. That&rsquo;s safe, but not yet tailored to your business. Nothing changes in your applications until you activate.</div>
               </>
             )}
           </div>

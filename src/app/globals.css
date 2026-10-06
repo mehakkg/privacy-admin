@@ -4097,3 +4097,16 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 .mp-drawer-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--border-soft); }
 .mp-drawer-body { padding: 16px; overflow: auto; }
 .icon-btn.sm { padding: 2px; }
+
+/* --- Masking Policy supplement ---------------------------------------------- */
+.mp-rail-example { font-size: 11.5px; color: var(--text); opacity: 0.55; padding: 2px 10px 8px; }
+.mp-chrow { padding: 8px 0; border-bottom: 1px solid var(--border-soft); }
+.mp-chrow:last-child { border-bottom: 0; }
+.mp-catalog th { position: sticky; top: 0; background: var(--surface); }
+.mp-audit-tabsrow { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; border-bottom: 1px solid var(--border-soft); padding-bottom: 8px; }
+.mp-tabs { display: flex; gap: 4px; }
+.mp-tab { background: none; border: 0; border-bottom: 2px solid transparent; padding: 6px 10px; font: inherit; font-size: 13.5px; cursor: pointer; color: var(--text); opacity: 0.65; }
+.mp-tab.on { opacity: 1; font-weight: 600; border-bottom-color: var(--blue); color: var(--blue); }
+.mp-audit-group { border: 1px solid var(--border-soft); border-radius: 10px; padding: 12px 14px; }
+.mp-audit-grouphead { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.mp-audit-event { padding: 2px 0; }

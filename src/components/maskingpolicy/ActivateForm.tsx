@@ -12,8 +12,9 @@ const CHIPS = ["New field added", "Role needs more access", "Tightening protecti
  * reads "Fix N issues" and scrolls to the top where the issues are listed. No
  * faint disabled primary: the reason is validated on click.
  */
-export function ActivateForm({ vid, number, blocked, issueCount }: { vid: string; number: number; blocked: boolean; issueCount: number }) {
+export function ActivateForm({ vid, number, blocked, issueCount, firstActivation }: { vid: string; number: number; blocked: boolean; issueCount: number; firstActivation?: boolean }) {
   const router = useRouter();
+  const chips = firstActivation ? [...CHIPS, "First policy for our applications"] : CHIPS;
   const [why, setWhy] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -36,7 +37,7 @@ export function ActivateForm({ vid, number, blocked, issueCount }: { vid: string
         </label>
         {err && <p className="cell-sub" style={{ color: "var(--red)", margin: "4px 0 0" }}>{err}</p>}
         <div className="row" style={{ gap: 6, flexWrap: "wrap", marginTop: 8 }}>
-          {CHIPS.map((c) => <button key={c} className="mp-filterchip" onClick={() => { setWhy((w) => (w ? w + " " : "") + c); setErr(null); }}>{c}</button>)}
+          {chips.map((c) => <button key={c} className="mp-filterchip" onClick={() => { setWhy((w) => (w ? w + " " : "") + c); setErr(null); }}>{c}</button>)}
         </div>
       </div>
       <div className="mp-activate-bar">

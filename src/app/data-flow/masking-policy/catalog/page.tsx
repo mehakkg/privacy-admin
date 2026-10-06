@@ -1,55 +1,55 @@
 import Link from "next/link";
-import { Lock } from "lucide-react";
 import { PageHead } from "@/components/ui";
 import { Shell } from "@/components/Shell";
 import { MaskFunctionsDrawer } from "@/components/maskingpolicy/MaskFunctionsDrawer";
-import { getCategories } from "@/lib/engines/maskingpolicy";
+import { CatalogTable, type CatalogGroup } from "@/components/maskingpolicy/CatalogTable";
+import { getCategories, getActiveVersion, getDraft } from "@/lib/engines/maskingpolicy";
 import { db } from "@/lib/db";
-import { renderValue } from "@/lib/maskingpolicy";
+import { renderValue, choiceLabel, type Masking } from "@/lib/maskingpolicy";
 import { decodeObject } from "@/lib/codec/json";
-import type { Masking } from "@/lib/maskingpolicy";
 
 export const dynamic = "force-dynamic";
 
-/** SCREEN 9 — PII Catalog. Read-only reference, grouped by the shared category
- *  header. Masking functions move into a drawer. No policy actions here. */
+const MP = "/data-flow/masking-policy";
+const parse = (j: string | null): Masking | null => (j ? decodeObject<Masking>(j) : null) ?? null;
+
+/** SCREEN E — PII catalog. Read-only reference + "In your policy". No actions. */
 export default async function CatalogPage() {
-  const [cats, fields] = await Promise.all([getCategories(), db.mPField.findMany({ orderBy: { displayName: "asc" } })]);
+  const [cats, platformFields, active, draft] = await Promise.all([
+    getCategories(),
+    db.mPField.findMany({ where: { origin: "platform" }, orderBy: { displayName: "asc" } }),
+    getActiveVersion(), getDraft(),
+  ]);
+  const policyVersion = draft ?? active;
+  const decisions = policyVersion ? await db.mPFieldDecision.findMany({ where: { versionId: policyVersion.id } }) : [];
+  const decByCode = new Map(decisions.map((d) => [d.fieldCode, d]));
+  const regulatedCount = platformFields.filter((f) => f.regulated).length;
+
+  const groups: CatalogGroup[] = cats.map((c) => {
+    const members = platformFields.filter((f) => f.categoryId === c.id);
+    return {
+      id: c.id, name: c.name, definition: c.definition,
+      rows: members.map((f) => {
+        const rec = f.regulated ? parse(f.legalMinimumJson) : { family: "partial", params: { showFirst: 0, showLast: 4, maskChar: "*" } } as Masking;
+        const dec = decByCode.get(f.code);
+        const inPolicy = !policyVersion ? "No policy yet" : !dec ? "Hidden, not decided" : dec.status === "not_used" ? "Not used" : dec.status === "needs_decision" ? "Hidden, not decided" : "Yes";
+        return { code: f.code, name: f.displayName, example: renderValue(rec, f.sampleValue), recommended: choiceLabel(rec, false), inPolicy, href: policyVersion ? `${MP}?view=${draft ? "workspace&focus=field:" + f.code : "version&version=" + active?.number}` : null, regulated: f.regulated };
+      }),
+    };
+  }).filter((g) => g.rows.length > 0);
 
   return (
     <Shell active="/data-flow/masking-policy" title="PII catalog">
       <PageHead
-        crumbs={[{ label: "Governance" }, { label: "Masking policy", href: "/data-flow/masking-policy" }, { label: "PII catalog" }]}
         title="PII catalog"
-        subtitle="Every sensitive field your applications can produce, grouped by what the data is."
-        actions={<MaskFunctionsDrawer />}
+        subtitle={`${platformFields.length} fields across ${groups.length} categories. ${regulatedCount} are protected by law.`}
+        actions={<span className="row" style={{ gap: 14, alignItems: "center" }}><span className="cell-sub">Catalog version 1 · read only</span><MaskFunctionsDrawer /><Link href={MP} className="row-link">Open masking policy</Link></span>}
       />
-      <div className="stack" style={{ gap: 16, maxWidth: 900 }}>
-        {cats.map((c) => {
-          const members = fields.filter((f) => f.categoryId === c.id);
-          if (members.length === 0) return null;
-          return (
-            <section key={c.id} className="mp-card">
-              <h4 className="mp-card-h">{c.name}</h4>
-              <p className="cell-sub" style={{ margin: "0 0 10px" }}>{c.definition}</p>
-              <div className="table-wrap"><table className="dtable compact">
-                <thead><tr><th>Field</th><th>Code</th><th>Sample (made up)</th><th /></tr></thead>
-                <tbody>
-                  {members.map((f) => (
-                    <tr key={f.code}>
-                      <td>{f.displayName}{f.origin === "your_organization" && <span className="mp-tag" style={{ marginLeft: 6 }}>Added by your organization</span>}</td>
-                      <td className="mono cell-sub">{f.code}</td>
-                      <td className="mono cell-sub">{f.sampleValue}</td>
-                      <td>{f.regulated && <span className="mp-tag lock"><Lock size={9} /> Regulated · {renderValue(decodeObject<Masking>(f.legalMinimumJson ?? "") ?? null, f.sampleValue)} minimum</span>}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table></div>
-            </section>
-          );
-        })}
+      <div className="stack" style={{ gap: 14, maxWidth: 960 }}>
+        <p className="cell-sub" style={{ margin: 0 }}>Protected by law: masked to the legal minimum or hidden completely, never shown in full.</p>
+        <CatalogTable groups={groups} />
+        <p className="cell-sub" style={{ margin: 0 }}>Fields you added appear in your <Link href={MP} className="row-link">Masking policy</Link>.</p>
       </div>
-      <p className="cell-sub" style={{ marginTop: 14 }}><Link href="/data-flow/masking-policy" className="row-link">Back to Masking policy</Link></p>
     </Shell>
   );
 }
