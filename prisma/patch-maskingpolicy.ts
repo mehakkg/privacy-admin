@@ -58,15 +58,19 @@ const BASE: Record<string, unknown> = {
 
 interface VSpec {
   number: number; state: string; basedOn: number | null; activatedBy?: string; activatedAt?: Date; whyNote?: string; impactSummary?: string;
-  decisions: { code: string; masking: unknown; status: string }[];
+  decisions: { code: string; masking: unknown; status: string; mode?: string; overrideReason?: string; heldRank?: number }[];
   audiences: { key: string; label: string; identifier: string }[];
   channels: { key: string; label: string; identifier: string }[];
   grants: { aud: string; code: string; visibility: string; masking?: unknown; scope?: string[] | "ANY"; reason?: string }[];
 }
 
+// Default tier→strength ranks (4 hidden … 0 shown in full).
+const TIER_RANKS: Record<string, number> = { Restricted: 4, Confidential: 3, Internal: 2, Public: 1 };
+
 async function makeVersion(s: VSpec) {
   const v = await prisma.mPPolicyVersion.create({ data: { number: s.number, state: s.state, basedOn: s.basedOn, activatedBy: s.activatedBy ?? null, activatedAt: s.activatedAt ?? null, whyNote: s.whyNote ?? null, impactSummary: s.impactSummary ?? null } });
-  for (const d of s.decisions) await prisma.mPFieldDecision.create({ data: { versionId: v.id, fieldCode: d.code, maskingJson: d.masking == null ? null : J(d.masking), status: d.status, reviewed: d.status !== "needs_decision" } });
+  for (const d of s.decisions) await prisma.mPFieldDecision.create({ data: { versionId: v.id, fieldCode: d.code, maskingJson: d.masking == null ? null : J(d.masking), status: d.status, mode: d.mode ?? "follows", overrideReason: d.overrideReason ?? null, heldRank: d.heldRank ?? null, reviewed: d.status !== "needs_decision" } });
+  for (const [tier, rank] of Object.entries(TIER_RANKS)) await prisma.mPSensitivityRule.create({ data: { versionId: v.id, tier, rank } });
   const audIds: Record<string, string> = {};
   for (const [i, a] of s.audiences.entries()) { const row = await prisma.mPAudience.create({ data: { versionId: v.id, label: a.label, identifier: a.identifier, sortOrder: i } }); audIds[a.key] = row.id; }
   const chIds: Record<string, string> = {};
@@ -78,7 +82,8 @@ async function makeVersion(s: VSpec) {
   return v;
 }
 
-const readyDecisions = () => Object.entries(BASE).map(([code, masking]) => ({ code, masking, status: "ready" }));
+// Ready fields FOLLOW their sensitivity tier (masking derived by the engine, so no stored masking).
+const readyDecisions = () => Object.keys(BASE).map((code) => ({ code, masking: null, status: "ready", mode: "follows" }));
 
 /** Idempotent demo restriction: Support sees Mobile number hidden (direction less),
  *  so the "Sees less than everyone" section is demonstrable. */
@@ -101,8 +106,9 @@ async function main() {
   });
 
   await ensureCatalogFixtures();
+  await ensureSensitivityModel();
   await ensureRestrictionDemo();
-  if (await prisma.mPPolicyVersion.findFirst()) { console.log("patch-maskingpolicy: versions present; ensured categories, fields + catalog fixtures."); return; }
+  if (await prisma.mPPolicyVersion.findFirst()) { console.log("patch-maskingpolicy: versions present; ensured categories, fields, catalog fixtures + sensitivity model."); return; }
 
   const audiences = [
     { key: "teller", label: "Teller", identifier: "role:teller" },
@@ -138,8 +144,9 @@ async function main() {
   await makeVersion({
     number: 3, state: "draft", basedOn: 2,
     decisions: [
-      ...readyDecisions().map((d) => d.code === "EMAIL" ? { ...d, masking: email(2, 3) } /* looser: everyone sees more of the email */
-        : d.code === "FULL_NAME" ? { ...d, masking: firstlast(1, 3) } /* neutral: same reveal count, different shape */
+      ...readyDecisions().map((d) =>
+        d.code === "EMAIL" ? { ...d, mode: "custom", masking: email(6, 0), overrideReason: "Support staff need more of the email to match tickets." } /* custom: looser than its Internal tier, with a reason */
+        : d.code === "CUSTOMER_NOTE" ? { ...d, mode: "held", masking: null, heldRank: 4 } /* held fully hidden pending a decision */
         : d),
       notUsed,
       // 3 new fields need a decision
@@ -174,28 +181,68 @@ async function main() {
  */
 async function ensureCatalogFixtures() {
   const seen = (name = "ddm-sample-fiduciary-app") => J([{ name, firstSeen: "2026-08-12", lastSeen: "2026-10-06" }]);
+  // [sensitivity tier, recommended|null, seen]. Tiers: Restricted | Confidential | Internal | Public | Not classified.
   const spec: Record<string, [string, unknown, boolean]> = {
-    FULL_NAME: ["medium", firstlast(2, 2), true],
-    DATE_OF_BIRTH: ["medium", pattern("0000-00-00"), true],
-    EMAIL: ["medium", email(2, 0), true],
-    MOBILE: ["medium", last(4), true],
-    AADHAAR: ["high", pattern("xxxx-xxxx-####"), true],
-    PAN: ["high", firstlast(3, 1), true],
-    PASSPORT: ["high", last(4), true],
-    ACCOUNT_NUMBER: ["high", last(4), true],
-    CARD_NUMBER: ["high", pattern("****-****-****-####"), true],
-    CUSTOMER_NOTE: ["low", hidden, true],
-    LOYALTY_TIER: ["low", last(4), true],
-    DEVICE_ID: ["medium", last(4), true],
-    GEO_CITY: ["not_classified", null, true],       // demo: Not classified + "Classify"
-    IP_ADDRESS: ["medium", last(4), true],
-    MIDDLE_NAME: ["low", firstlast(1, 1), false],   // demo: platform field not seen yet
+    FULL_NAME: ["Internal", firstlast(2, 2), true],
+    DATE_OF_BIRTH: ["Internal", pattern("0000-00-00"), true],
+    EMAIL: ["Internal", email(2, 0), true],
+    MOBILE: ["Internal", last(4), true],
+    AADHAAR: ["Restricted", pattern("xxxx-xxxx-####"), true],
+    PAN: ["Restricted", firstlast(3, 1), true],
+    PASSPORT: ["Confidential", last(4), true],
+    ACCOUNT_NUMBER: ["Confidential", last(4), true],
+    CARD_NUMBER: ["Confidential", pattern("****-****-****-####"), true],
+    CUSTOMER_NOTE: ["Public", hidden, true],
+    LOYALTY_TIER: ["Public", last(4), true],
+    DEVICE_ID: ["Internal", last(4), true],
+    GEO_CITY: ["Not classified", null, true],       // demo: Not classified + "Classify"
+    IP_ADDRESS: ["Internal", last(4), true],
+    MIDDLE_NAME: ["Public", firstlast(1, 1), false],   // demo: platform field not seen yet
   };
   for (const [code, [sens, rec, isSeen]] of Object.entries(spec)) {
     await prisma.mPField.updateMany({
       where: { code, sensitivity: "not_classified" },
       data: { sensitivity: sens, recommendedJson: rec == null ? null : J(rec), ...(isSeen ? { announcedByJson: seen() } : {}) },
     });
+  }
+}
+
+/**
+ * Sensitivity-model migration (idempotent, every deploy). Remaps the old
+ * high/medium/low vocabulary to the DLP tiers, seeds tier→strength rules for
+ * every existing version, and — one time only — makes existing decisions FOLLOW
+ * their tier (clearing stored masking) while keeping a little demo variety.
+ */
+async function ensureSensitivityModel() {
+  // 1. Remap old vocabulary → tiers (only touches rows that still hold an old value).
+  const remap: Record<string, string> = { high: "Confidential", medium: "Internal", low: "Public", not_classified: "Not classified" };
+  for (const [oldv, tier] of Object.entries(remap)) await prisma.mPField.updateMany({ where: { sensitivity: oldv }, data: { sensitivity: tier } });
+  // The two regulated identity numbers are the most sensitive → Restricted.
+  await prisma.mPField.updateMany({ where: { code: { in: ["AADHAAR", "PAN"] }, sensitivity: "Confidential" }, data: { sensitivity: "Restricted" } });
+
+  // 2. Every version gets a full set of tier→strength rules (defaults when missing).
+  const versions = await prisma.mPPolicyVersion.findMany();
+  for (const v of versions) {
+    for (const [tier, rank] of Object.entries(TIER_RANKS)) {
+      const existing = await prisma.mPSensitivityRule.findUnique({ where: { versionId_tier: { versionId: v.id, tier } } });
+      if (!existing) await prisma.mPSensitivityRule.create({ data: { versionId: v.id, tier, rank } });
+    }
+  }
+
+  // 3. One-time: switch existing decisions to follow their tier. Marker = any custom/held decision.
+  const alreadyMigrated = await prisma.mPFieldDecision.findFirst({ where: { OR: [{ mode: "custom" }, { mode: "held" }] } });
+  if (!alreadyMigrated) {
+    const decs = await prisma.mPFieldDecision.findMany();
+    for (const d of decs) {
+      if (d.status === "needs_decision" || d.status === "not_used") continue;
+      await prisma.mPFieldDecision.update({ where: { id: d.id }, data: { mode: "follows", maskingJson: null } });
+    }
+    // Keep demo variety in the draft: EMAIL custom (looser, with reason), Customer note held.
+    const draft = await prisma.mPPolicyVersion.findFirst({ where: { state: "draft" } });
+    if (draft) {
+      await prisma.mPFieldDecision.updateMany({ where: { versionId: draft.id, fieldCode: "EMAIL" }, data: { mode: "custom", maskingJson: J(email(6, 0)), overrideReason: "Support staff need more of the email to match tickets." } });
+      await prisma.mPFieldDecision.updateMany({ where: { versionId: draft.id, fieldCode: "CUSTOMER_NOTE" }, data: { mode: "held", heldRank: 4, maskingJson: null } });
+    }
   }
 }
 

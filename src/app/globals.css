@@ -4123,6 +4123,26 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 .mp-fieldpick-item.on { background: var(--bg-selected); }
 .mp-fieldpick-item.locked { display: flex; align-items: center; gap: 6px; opacity: 0.6; cursor: default; }
 
+/* --- Sensitivity-driven masking -------------------------------------------- */
+.mp-tier { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; white-space: nowrap; }
+.mp-tier-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
+.mp-sens-legend { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 8px 12px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--bg-subtle, #f7f8fa); }
+.mp-sens-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.mp-status-muted { color: var(--text-4, #94a3b8); }
+.mp-status-accent { color: var(--blue); }
+.mp-status-warn { color: var(--yellow-700, #b45309); }
+.mp-strengthgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.mp-strengthcard, .mp-tiercard { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; text-align: left; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface, #fff); font: inherit; cursor: pointer; }
+.mp-strengthcard:hover:not(.off), .mp-tiercard:hover { border-color: var(--blue); }
+.mp-strengthcard.on { border-color: var(--blue); background: var(--bg-selected, #eef4ff); }
+.mp-strengthcard.off { opacity: 0.45; cursor: not-allowed; }
+.mp-followbtn { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface, #fff); font: inherit; cursor: pointer; }
+.mp-followbtn:hover { border-color: var(--blue); }
+.mp-followbtn.on { border-color: var(--blue); background: var(--bg-selected, #eef4ff); }
+.mp-sensrow { display: flex; align-items: center; gap: 12px; }
+.mp-segment-wrap { flex-wrap: wrap; margin-bottom: 0; }
+.mp-textarea { width: 100%; border: 1px solid var(--border-strong); border-radius: 8px; padding: 7px 9px; font: inherit; font-size: 13px; resize: vertical; }
+
 /* --- Masking Policy Home (final) -------------------------------------------- */
 .mp-home { container-type: inline-size; display: grid; grid-template-columns: minmax(600px, 960px) clamp(320px, 26%, 360px); gap: 32px; align-items: start; }
 @container (max-width: 960px) { .mp-home { grid-template-columns: 1fr; } .mp-home-side { order: 2; } }

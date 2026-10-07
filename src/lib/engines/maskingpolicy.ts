@@ -3,8 +3,10 @@ import { audited, type AuditActor } from "@/lib/engines/audit";
 import { encodeObject, decodeObject } from "@/lib/codec/json";
 import {
   renderValue, choiceLabel, strengthOf, directionOf,
+  TIERS, TIER_DEFAULT_RANK, LEGAL_MIN_RANK, inferDataType, deriveMasking, strengthLabel,
   type Masking, type GridFieldRow, type AudienceVisibility, type CategoryHeader,
   type AudienceInfo, type ChannelInfo, type PolicyCheck, type ImpactItem, type FieldStatus,
+  type Tier,
 } from "@/lib/maskingpolicy";
 
 /**
@@ -44,33 +46,90 @@ export async function listVersions() {
 
 interface FullVersion {
   id: string; number: number; state: string; basedOn: number | null;
-  decisions: { fieldCode: string; maskingJson: string | null; status: string; reviewed: boolean }[];
+  decisions: { fieldCode: string; maskingJson: string | null; status: string; reviewed: boolean; mode: string; overrideReason: string | null; heldRank: number | null }[];
   audiences: { id: string; label: string; identifier: string; sortOrder: number }[];
   channels: { id: string; label: string; identifier: string }[];
   grants: { id: string; audienceId: string; fieldCode: string; channelScopeJson: string; visibility: string; direction: string; maskingJson: string | null; reason: string | null }[];
+  sensitivityRules: { tier: string; rank: number }[];
+}
+
+/** The tier→rank map for a version, falling back to the defaults for any missing tier. */
+function tierRankMap(v: Pick<FullVersion, "sensitivityRules">): Record<string, number> {
+  const m: Record<string, number> = { ...TIER_DEFAULT_RANK };
+  for (const r of v.sensitivityRules) m[r.tier] = r.rank;
+  return m;
 }
 
 async function loadFull(versionId: string): Promise<FullVersion | null> {
   const v = await db.mPPolicyVersion.findUnique({
     where: { id: versionId },
-    include: { decisions: true, audiences: { orderBy: { sortOrder: "asc" } }, channels: true, grants: true },
+    include: { decisions: true, audiences: { orderBy: { sortOrder: "asc" } }, channels: true, grants: true, sensitivityRules: true },
   });
   if (!v) return null;
-  return { id: v.id, number: v.number, state: v.state, basedOn: v.basedOn, decisions: v.decisions, audiences: v.audiences, channels: v.channels, grants: v.grants };
+  return { id: v.id, number: v.number, state: v.state, basedOn: v.basedOn, decisions: v.decisions, audiences: v.audiences, channels: v.channels, grants: v.grants, sensitivityRules: v.sensitivityRules };
 }
 
 // --- Resolution (grid + per-audience effective visibility) ------------------
 
 interface ResolvedField extends GridFieldRow {}
 
-function resolveGrid(v: FullVersion, fields: { code: string; displayName: string; categoryId: string; origin: string; regulated: boolean; legalMinimumJson: string | null; sampleValue: string; usedByApps: boolean; announcedByJson?: string; firstSeen: Date }[], activeFieldCodes?: Set<string>): ResolvedField[] {
+/** Nearest strength rank a stored/custom masking corresponds to, for display. */
+function approxRank(dataType: ReturnType<typeof inferDataType>, masking: Masking | null, sample: string, fullRaw = false): number {
+  if (fullRaw || masking?.family === "reveal") return 0;
+  if (!masking || masking.family === "full") return 4;
+  const target = strengthOf(masking, sample, false);
+  let best = 2, bestDiff = Infinity;
+  for (const r of [3, 2, 1]) {
+    const d = deriveMasking(dataType, r, false).masking;
+    const diff = Math.abs(strengthOf(d, sample, false) - target);
+    if (diff < bestDiff) { bestDiff = diff; best = r; }
+  }
+  return best;
+}
+
+function resolveGrid(v: FullVersion, fields: { code: string; displayName: string; categoryId: string; origin: string; regulated: boolean; legalMinimumJson: string | null; sampleValue: string; usedByApps: boolean; announcedByJson?: string; firstSeen: Date; sensitivity: string }[], activeFieldCodes?: Set<string>): ResolvedField[] {
   const decByCode = new Map(v.decisions.map((d) => [d.fieldCode, d]));
   const chanLabel = new Map(v.channels.map((c) => [c.id, c.label]));
+  const rankMap = tierRankMap(v);
   return fields.map((f) => {
     const dec = decByCode.get(f.code);
     const notUsed = !f.usedByApps;
-    const status: FieldStatus = notUsed ? "not_used" : ((dec?.status as FieldStatus) ?? "needs_decision");
-    const baseMask = notUsed || status === "needs_decision" ? null : parseMask(dec?.maskingJson);
+    const dataType = inferDataType(f.code);
+    const tier = f.sensitivity;
+    const tierDefined = (TIERS as string[]).includes(tier);
+    const mode = (dec?.mode as "follows" | "custom" | "held") ?? "follows";
+    const heldRank = dec?.heldRank ?? null;
+
+    // The strength the field's tier would give (post legal-min cap). 4 when unclassified.
+    const tierDerived = tierDefined ? deriveMasking(dataType, rankMap[tier] ?? TIER_DEFAULT_RANK[tier] ?? 4, f.regulated) : null;
+    const tierRank = tierDerived ? tierDerived.rank : 4;
+
+    // Classification + usage drive status. Marked-not-used → hidden; unclassified → needs a decision.
+    const markedNotUsed = notUsed || dec?.status === "not_used";
+    let status: FieldStatus;
+    let baseMask: Masking | null;
+    let strengthRank: number;
+    let cappedByLaw = false;
+    let effectiveMode: "follows" | "custom" | "held" = mode;
+
+    if (markedNotUsed) {
+      status = "not_used"; baseMask = null; strengthRank = 4; effectiveMode = "follows";
+    } else if (!tierDefined) {
+      // Not classified → stays fully hidden until it is classified.
+      status = "needs_decision"; baseMask = null; strengthRank = 4; effectiveMode = "held";
+    } else if (mode === "custom") {
+      status = "ready";
+      baseMask = parseMask(dec?.maskingJson);
+      strengthRank = approxRank(dataType, baseMask, f.sampleValue);
+    } else if (mode === "held") {
+      status = "ready";
+      const d = deriveMasking(dataType, heldRank ?? tierRank, f.regulated);
+      baseMask = d.masking; strengthRank = d.rank; cappedByLaw = d.cappedByLaw;
+    } else {
+      status = "ready";
+      baseMask = tierDerived!.masking; strengthRank = tierDerived!.rank; cappedByLaw = tierDerived!.cappedByLaw;
+    }
+
     const baseHidden = !baseMask;
     const baseStrength = strengthOf(baseMask, f.sampleValue, false);
     const baseExample = renderValue(baseMask, f.sampleValue, false);
@@ -114,6 +173,14 @@ function resolveGrid(v: FullVersion, fields: { code: string; displayName: string
       announced: ((decodeObject<string[]>(f.announcedByJson ?? "[]") ?? []).length > 0),
       sampleValue: f.sampleValue,
       legalMinimum: parseMask(f.legalMinimumJson),
+      sensitivity: tier,
+      dataType,
+      mode: effectiveMode,
+      tierRank,
+      strengthRank,
+      cappedByLaw,
+      overrideReason: dec?.overrideReason ?? null,
+      heldRank,
       baseline: { example: baseExample, choiceLabel: choiceLabel(baseMask, false), masking: baseMask, hidden: baseHidden },
       audiences,
     };
@@ -214,19 +281,22 @@ async function compareVersions(target: FullVersion, prior: FullVersion | null): 
   const fields = await db.mPField.findMany();
   const byCode = new Map(fields.map((f) => [f.code, f]));
 
-  const priorCell = (audienceId: string | null, code: string): { strength: number; example: string } => {
+  // Resolve the prior version too, so follows-mode baselines compare correctly.
+  const priorGrid = prior ? resolveGrid(prior, fields.map((f) => f)) : [];
+  const priorByCode = new Map(priorGrid.map((r) => [r.code, r]));
+
+  const priorCell = (audienceLabel: string | null, code: string): { strength: number; example: string } => {
     const f = byCode.get(code)!;
-    if (!prior) return { strength: 0, example: renderValue(null, f.sampleValue) };
-    const dec = prior.decisions.find((d) => d.fieldCode === code);
-    const base = dec && dec.status !== "needs_decision" ? parseMask(dec.maskingJson) : null;
-    if (audienceId === null || f.regulated) return { strength: strengthOf(base, f.sampleValue), example: renderValue(base, f.sampleValue) };
-    // match audience by label against draft's audience (snapshots have different ids)
-    const dAud = draft.audiences.find((a) => a.id === audienceId);
-    const pAud = dAud ? prior.audiences.find((a) => a.label === dAud.label) : null;
-    const g = pAud ? prior.grants.find((gr) => gr.audienceId === pAud.id && gr.fieldCode === code) : null;
-    if (!g) return { strength: strengthOf(base, f.sampleValue), example: renderValue(base, f.sampleValue) };
-    const fr = g.visibility === "full_raw"; const gm = parseMask(g.maskingJson);
-    return { strength: strengthOf(gm, f.sampleValue, fr), example: renderValue(gm, f.sampleValue, fr) };
+    const pr = priorByCode.get(code);
+    if (!prior || !pr) return { strength: 0, example: renderValue(null, f.sampleValue) };
+    if (audienceLabel === null || f.regulated) return { strength: strengthOf(pr.baseline.masking, f.sampleValue), example: pr.baseline.example };
+    // match audience by label against the prior snapshot (ids differ across snapshots)
+    const pAud = prior.audiences.find((a) => a.label === audienceLabel);
+    const cell = pAud ? pr.audiences.find((x) => x.audienceId === pAud.id) : null;
+    if (!cell || !cell.grant) return { strength: strengthOf(pr.baseline.masking, f.sampleValue), example: pr.baseline.example };
+    const fr = cell.grant.fullRaw;
+    const gm = fr ? null : ({ family: cell.grant.family, params: cell.grant.params } as Masking);
+    return { strength: strengthOf(gm, f.sampleValue, fr), example: cell.example };
   };
 
   const items: ImpactItem[] = [];
@@ -242,7 +312,7 @@ async function compareVersions(target: FullVersion, prior: FullVersion | null): 
       const cell = row.audiences.find((x) => x.audienceId === a.id)!;
       if (cell.kind === "not_used" || cell.kind === "locked") continue;
       const nowStrength = cell.kind === "same" ? nowBase : strengthOf(cell.kind === "full_raw" ? null : parseMask(draft.grants.find((g) => g.audienceId === a.id && g.fieldCode === f.code)?.maskingJson ?? null), f.sampleValue, cell.kind === "full_raw");
-      const was = priorCell(a.id, f.code);
+      const was = priorCell(a.label, f.code);
       if (nowStrength !== was.strength) items.push({ audienceId: a.id, audienceLabel: a.label, fieldCode: f.code, fieldName: f.displayName, channelLabel: cell.channelLabel, before: was.example, after: cell.example, afterLabel: cell.choiceLabel, direction: directionOf(was.strength, nowStrength), fullRaw: cell.kind === "full_raw", reason: cell.reason });
     }
   }
@@ -471,19 +541,31 @@ export async function startDraft(actor: AuditActor): Promise<string> {
   const draft = await db.mPPolicyVersion.create({ data: { number, state: "draft", basedOn: active?.number ?? null } });
   if (active) await copySnapshot(active.id, draft.id);
   else {
-    // No active version: seed decisions from the catalog (ready = catalog match).
+    // No active version: every field FOLLOWS its sensitivity tier (default rank map).
     const fields = await db.mPField.findMany();
     for (const f of fields) {
-      await db.mPFieldDecision.create({ data: { versionId: draft.id, fieldCode: f.code, maskingJson: f.legalMinimumJson ?? encodeObject({ family: "partial", params: { showFirst: 0, showLast: 4, maskChar: "*" } }), status: f.usedByApps ? "ready" : "not_used", reviewed: false } });
+      await db.mPFieldDecision.create({ data: { versionId: draft.id, fieldCode: f.code, maskingJson: null, status: f.usedByApps ? "ready" : "not_used", mode: "follows", reviewed: false } });
     }
+    await ensureSensitivityRules(draft.id);
   }
   return draft.id;
+}
+
+/** Make sure a version has a tier→rank rule for every tier (defaults when missing). */
+async function ensureSensitivityRules(versionId: string) {
+  const existing = await db.mPSensitivityRule.findMany({ where: { versionId } });
+  const have = new Set(existing.map((r) => r.tier));
+  for (const t of TIERS) {
+    if (!have.has(t)) await db.mPSensitivityRule.create({ data: { versionId, tier: t, rank: TIER_DEFAULT_RANK[t] } });
+  }
 }
 
 async function copySnapshot(fromId: string, toId: string) {
   const src = await loadFull(fromId);
   if (!src) return;
-  for (const d of src.decisions) await db.mPFieldDecision.create({ data: { versionId: toId, fieldCode: d.fieldCode, maskingJson: d.maskingJson, status: d.status, reviewed: d.reviewed } });
+  for (const d of src.decisions) await db.mPFieldDecision.create({ data: { versionId: toId, fieldCode: d.fieldCode, maskingJson: d.maskingJson, status: d.status, mode: d.mode, overrideReason: d.overrideReason, heldRank: d.heldRank, reviewed: d.reviewed } });
+  for (const r of src.sensitivityRules) await db.mPSensitivityRule.create({ data: { versionId: toId, tier: r.tier, rank: r.rank } });
+  await ensureSensitivityRules(toId);
   const idMap = new Map<string, string>();
   for (const a of src.audiences) { const na = await db.mPAudience.create({ data: { versionId: toId, label: a.label, identifier: a.identifier, sortOrder: a.sortOrder } }); idMap.set(a.id, na.id); }
   const chMap = new Map<string, string>();
@@ -509,6 +591,12 @@ async function requireDraft(versionId: string) {
 
 export async function setFieldCategory(code: string, categoryId: string) {
   await db.mPField.update({ where: { code }, data: { categoryId } });
+}
+
+/** Classify a field into a sensitivity tier (field-level; drives its default masking). */
+export async function classifyField(code: string, tier: Tier) {
+  if (!(TIERS as string[]).includes(tier)) throw err("ValidationError", "Pick a sensitivity tier.");
+  await db.mPField.update({ where: { code }, data: { sensitivity: tier } });
 }
 
 // --- Data catalog -----------------------------------------------------------
@@ -538,28 +626,30 @@ export async function getDataCatalog(): Promise<DataCatalog> {
     getCategories(), getActiveVersion(), getDraft(),
   ]);
   const catMap = new Map(cats.map((c) => [c.id, c]));
-  const decisions = active ? await db.mPFieldDecision.findMany({ where: { versionId: active.id } }) : [];
-  const decByCode = new Map(decisions.map((d) => [d.fieldCode, d]));
+  // Resolve the active version's effective baseline per field (sensitivity-driven).
+  const activeFull = active ? await loadFull(active.id) : null;
+  const baseByCode = new Map((activeFull ? resolveGrid(activeFull, fields) : []).map((r) => [r.code, r]));
 
   const rows: CatalogRow[] = fields.map((f) => {
     const apps = parseApps(f.announcedByJson);
     const seen = apps.length > 0;
+    const notClassified = !(TIERS as string[]).includes(f.sensitivity);
     // Recommendation
     let rec: CatalogRow["recommendation"];
     const legal = parseMask(f.legalMinimumJson);
     const recMask = parseMask(f.recommendedJson);
     if (f.regulated && legal) rec = { label: choiceLabel(legal, false), example: renderValue(legal, f.sampleValue), basis: "legal_minimum", basisText: "Legal minimum.", params: null };
-    else if (f.sensitivity === "not_classified" || !recMask) rec = { label: "No recommendation yet", example: "—", basis: "none", basisText: "Not classified", params: null };
+    else if (notClassified || !recMask) rec = { label: "No recommendation yet", example: "—", basis: "none", basisText: "Not classified", params: null };
     else if (f.origin === "platform") rec = { label: choiceLabel(recMask, false), example: renderValue(recMask, f.sampleValue), basis: "platform_catalog", basisText: "From platform catalog version 1.", params: null };
     else rec = { label: choiceLabel(recMask, false), example: renderValue(recMask, f.sampleValue), basis: "suggested", basisText: "Suggested from other fields with the same category and sensitivity. Check it before relying on it.", params: null };
 
-    // Policy usage (active version)
-    const dec = decByCode.get(f.code);
+    // Policy usage (active version) — reflects the effective, sensitivity-driven baseline.
+    const row = baseByCode.get(f.code);
     let policy: CatalogRow["policy"];
-    if (!active) policy = { status: "no_policy", words: "No policy yet. Fully hidden.", example: renderValue(null, f.sampleValue), differs: false, version: null, recExample: rec.example };
-    else if (!dec || dec.status === "needs_decision") policy = { status: "not_decided", words: "Needs a decision. Stays fully hidden.", example: renderValue(null, f.sampleValue), differs: false, version: active.number, recExample: rec.example };
-    else if (dec.status === "not_used") policy = { status: "not_used", words: "Marked not used. Stays fully hidden if it appears.", example: renderValue(null, f.sampleValue), differs: false, version: active.number, recExample: rec.example };
-    else { const m = parseMask(dec.maskingJson); const ex = renderValue(m, f.sampleValue); policy = { status: "in_use", words: choiceLabel(m, false), example: ex, differs: rec.basis !== "none" && ex !== rec.example, version: active.number, recExample: rec.example }; }
+    if (!active || !row) policy = { status: "no_policy", words: "No policy yet. Fully hidden.", example: renderValue(null, f.sampleValue), differs: false, version: null, recExample: rec.example };
+    else if (row.status === "needs_decision") policy = { status: "not_decided", words: "Not classified. Stays fully hidden.", example: renderValue(null, f.sampleValue), differs: false, version: active.number, recExample: rec.example };
+    else if (row.status === "not_used") policy = { status: "not_used", words: "Marked not used. Stays fully hidden if it appears.", example: renderValue(null, f.sampleValue), differs: false, version: active.number, recExample: rec.example };
+    else { const ex = row.baseline.example; policy = { status: "in_use", words: row.baseline.choiceLabel, example: ex, differs: rec.basis !== "none" && ex !== rec.example, version: active.number, recExample: rec.example }; }
 
     const actionVerb = !seen ? null : policy.status === "not_decided" ? "Decide" : "View in policy";
     const actionHref = !seen ? null : policy.status === "not_decided" ? `${MP}?view=workspace&focus=decisions` : (draft ? `${MP}?view=workspace&focus=field:${f.code}` : active ? `${MP}?version=${active.number}` : null);
@@ -578,7 +668,7 @@ export async function getDataCatalog(): Promise<DataCatalog> {
     notDecided: seenRows.filter((r) => r.policy.status === "not_decided").length,
     notUsed: seenRows.filter((r) => r.policy.status === "not_used").length,
     regulated: seenRows.filter((r) => r.regulated).length,
-    notClassified: seenRows.filter((r) => r.sensitivity === "not_classified").length,
+    notClassified: seenRows.filter((r) => !(TIERS as string[]).includes(r.sensitivity)).length,
     notSeen: rows.filter((r) => !r.seen).length,
   };
   return { rows, counts, activeNumber: active?.number ?? null, draftNumber: draft?.number ?? null };
@@ -595,7 +685,7 @@ export async function checkFieldCode(rawCode: string): Promise<{ taken: "none" |
   return { taken: f.origin === "platform" ? "platform" : "custom", categoryName: f.category?.name };
 }
 
-export interface AddFieldInput { code: string; displayName: string; categoryId: string; masking: Masking | null; sampleValue: string }
+export interface AddFieldInput { code: string; displayName: string; categoryId: string; masking: Masking | null; sampleValue: string; sensitivity?: Tier }
 export async function addCustomField(draftId: string, input: AddFieldInput) {
   await requireDraft(draftId);
   const code = input.code.trim().toUpperCase();
@@ -607,8 +697,11 @@ export async function addCustomField(draftId: string, input: AddFieldInput) {
     if (existing.origin === "platform") throw err("PlatformField", `${code} is a platform field.`, { code });
     throw err("DuplicateField", `${code} is already in your policy.`, { code });
   }
-  await db.mPField.create({ data: { code, displayName: input.displayName.trim() || code.toLowerCase().replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()), categoryId: input.categoryId, origin: "your_organization", regulated: false, sampleValue: input.sampleValue.trim() || "sample-value", usedByApps: true, announcedByJson: "[]" } });
-  await db.mPFieldDecision.create({ data: { versionId: draftId, fieldCode: code, maskingJson: input.masking ? encodeObject(input.masking) : null, status: "ready", reviewed: true } });
+  // A new field is classified so it resolves under the sensitivity model (Internal by default).
+  const sensitivity: Tier = input.sensitivity && (TIERS as string[]).includes(input.sensitivity) ? input.sensitivity : "Internal";
+  await db.mPField.create({ data: { code, displayName: input.displayName.trim() || code.toLowerCase().replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()), categoryId: input.categoryId, origin: "your_organization", regulated: false, sensitivity, sampleValue: input.sampleValue.trim() || "sample-value", usedByApps: true, announcedByJson: "[]" } });
+  // If a masking was chosen it becomes a custom baseline; otherwise the field follows its tier.
+  await db.mPFieldDecision.create({ data: { versionId: draftId, fieldCode: code, maskingJson: input.masking ? encodeObject(input.masking) : null, status: "ready", mode: input.masking ? "custom" : "follows", reviewed: true } });
   return { code };
 }
 
@@ -617,6 +710,76 @@ export async function removeCustomField(code: string) {
   if (!f) throw err("NotFoundError", "No such field.");
   if (f.origin !== "your_organization") throw err("ForbiddenError", "Platform fields can't be removed.");
   await db.mPField.delete({ where: { code } });
+}
+
+// --- Sensitivity-driven masking --------------------------------------------
+
+export interface SensitivityRuleView { tier: Tier; rank: number; label: string }
+/** The tier→strength rules for a version, defaulting any missing tier. */
+export async function getSensitivityRules(versionId: string): Promise<SensitivityRuleView[]> {
+  const v = await loadFull(versionId);
+  const map = v ? tierRankMap(v) : { ...TIER_DEFAULT_RANK };
+  return TIERS.map((t) => ({ tier: t, rank: map[t], label: strengthLabel(map[t]) }));
+}
+
+/** Set tier→strength rules. Monotonic: a tier never reveals more than a more-sensitive one. */
+export async function setSensitivityRules(versionId: string, rules: { tier: Tier; rank: number }[]) {
+  await requireDraft(versionId);
+  const map: Record<string, number> = { ...TIER_DEFAULT_RANK };
+  for (const r of rules) {
+    if (r.rank < 0 || r.rank > 4) throw err("ValidationError", "Pick a strength between fully hidden and shown in full.");
+    map[r.tier] = r.rank;
+  }
+  // TIERS run most→least sensitive; rank must not increase as sensitivity drops.
+  for (let i = 1; i < TIERS.length; i++) {
+    if (map[TIERS[i]] > map[TIERS[i - 1]]) throw err("ValidationError", `${TIERS[i]} can't be shown more openly than ${TIERS[i - 1]}.`);
+  }
+  await ensureSensitivityRules(versionId);
+  for (const t of TIERS) await db.mPSensitivityRule.updateMany({ where: { versionId, tier: t }, data: { rank: map[t] } });
+}
+
+/** Set one field's baseline strength: follow its tier, hold a rank, or use a custom rank. */
+export async function setFieldStrength(versionId: string, fieldCode: string, input: { mode: "follows" | "custom" | "held"; rank?: number; reason?: string }) {
+  await requireDraft(versionId);
+  const field = await db.mPField.findUnique({ where: { code: fieldCode } });
+  if (!field) throw err("NotFoundError", "No such field.");
+  const dataType = inferDataType(field.code);
+  const v = await loadFull(versionId);
+  const rankMap = v ? tierRankMap(v) : { ...TIER_DEFAULT_RANK };
+  const tier = field.sensitivity;
+  const tierDefined = (TIERS as string[]).includes(tier);
+  const tierRank = tierDefined ? deriveMasking(dataType, rankMap[tier] ?? TIER_DEFAULT_RANK[tier] ?? 4, field.regulated).rank : 4;
+
+  if (input.mode === "follows") {
+    await db.mPFieldDecision.upsert({
+      where: { versionId_fieldCode: { versionId, fieldCode } },
+      update: { mode: "follows", maskingJson: null, overrideReason: null, heldRank: null, status: field.usedByApps ? "ready" : "not_used", reviewed: true },
+      create: { versionId, fieldCode, mode: "follows", maskingJson: null, status: field.usedByApps ? "ready" : "not_used", reviewed: true },
+    });
+    return;
+  }
+
+  const rank = Math.max(0, Math.min(4, input.rank ?? tierRank));
+  if (field.regulated && rank < LEGAL_MIN_RANK) throw err("ForbiddenError", "This field is protected by law and can't be shown that openly.");
+  if (rank === 0 && tier !== "Public") throw err("ForbiddenError", "Only a Public field can be shown in full.");
+  const looserThanTier = rank < tierRank;
+  if (looserThanTier && !(input.reason ?? "").trim()) throw err("ValidationError", "Showing more than this field's sensitivity allows needs a reason.");
+
+  if (input.mode === "held") {
+    await db.mPFieldDecision.upsert({
+      where: { versionId_fieldCode: { versionId, fieldCode } },
+      update: { mode: "held", heldRank: rank, maskingJson: null, overrideReason: null, status: "ready", reviewed: true },
+      create: { versionId, fieldCode, mode: "held", heldRank: rank, status: "ready", reviewed: true },
+    });
+    return;
+  }
+
+  const derived = deriveMasking(dataType, rank, field.regulated);
+  await db.mPFieldDecision.upsert({
+    where: { versionId_fieldCode: { versionId, fieldCode } },
+    update: { mode: "custom", maskingJson: derived.masking ? encodeObject(derived.masking) : null, overrideReason: looserThanTier ? (input.reason ?? "").trim() : null, heldRank: null, status: "ready", reviewed: true },
+    create: { versionId, fieldCode, mode: "custom", maskingJson: derived.masking ? encodeObject(derived.masking) : null, overrideReason: looserThanTier ? (input.reason ?? "").trim() : null, status: "ready", reviewed: true },
+  });
 }
 
 // --- Channel & audience management ------------------------------------------

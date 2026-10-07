@@ -7,11 +7,15 @@ import type { DataCatalog as Data, CatalogRow } from "@/lib/engines/maskingpolic
 
 const INV = "/discovery/inventory";
 const SENS: Record<string, { word: string; dot: string; rank: number }> = {
-  high: { word: "High", dot: "var(--red)", rank: 3 },
-  medium: { word: "Medium", dot: "var(--yellow-700, #b45309)", rank: 2 },
-  low: { word: "Low", dot: "var(--text-4, #94a3b8)", rank: 1 },
-  not_classified: { word: "Not classified", dot: "var(--border-strong, #c7ccd1)", rank: 0 },
+  Restricted: { word: "Restricted", dot: "var(--red)", rank: 4 },
+  Confidential: { word: "Confidential", dot: "var(--yellow-700, #b45309)", rank: 3 },
+  Internal: { word: "Internal", dot: "var(--blue)", rank: 2 },
+  Public: { word: "Public", dot: "var(--text-4, #94a3b8)", rank: 1 },
+  "Not classified": { word: "Not classified", dot: "var(--border-strong, #c7ccd1)", rank: 0 },
 };
+const UNCLASSIFIED = { word: "Not classified", dot: "var(--border-strong, #c7ccd1)", rank: 0 };
+const sensOf = (s: string) => SENS[s] ?? UNCLASSIFIED;
+const SENS_ORDER = ["Restricted", "Confidential", "Internal", "Public", "Not classified"];
 
 export function DataCatalog({ data }: { data: Data }) {
   const [q, setQ] = useState("");
@@ -45,15 +49,15 @@ export function DataCatalog({ data }: { data: Data }) {
     if (sort) {
       const m = sort.dir;
       if (sort.key === "field") return a.displayName.localeCompare(b.displayName) * m;
-      if (sort.key === "sensitivity") return (SENS[a.sensitivity].rank - SENS[b.sensitivity].rank) * m;
+      if (sort.key === "sensitivity") return (sensOf(a.sensitivity).rank - sensOf(b.sensitivity).rank) * m;
       if (sort.key === "policy") return a.policy.status.localeCompare(b.policy.status) * m;
     }
     const un = (r: CatalogRow) => (r.policy.status === "not_decided" ? 0 : 1);
-    return un(a) - un(b) || SENS[b.sensitivity].rank - SENS[a.sensitivity].rank || a.displayName.localeCompare(b.displayName);
+    return un(a) - un(b) || sensOf(b.sensitivity).rank - sensOf(a.sensitivity).rank || a.displayName.localeCompare(b.displayName);
   });
 
   const activeFilters: { label: string; clear: () => void }[] = [];
-  if (sens) activeFilters.push({ label: SENS[sens].word, clear: () => setSens("") });
+  if (sens) activeFilters.push({ label: sensOf(sens).word, clear: () => setSens("") });
   if (cat) activeFilters.push({ label: categories.find((c) => c[0] === cat)?.[1] ?? cat, clear: () => setCat("") });
   if (app) activeFilters.push({ label: app, clear: () => setApp("") });
   if (lawOnly) activeFilters.push({ label: "Protected by law", clear: () => setLawOnly(false) });
@@ -63,7 +67,7 @@ export function DataCatalog({ data }: { data: Data }) {
   const groups = useMemo(() => {
     if (groupBy === "none") return [{ key: "", label: "", def: "", rows }];
     if (groupBy === "category") return categories.map(([id, name]) => ({ key: id, label: name, def: rows.find((r) => r.categoryId === id)?.categoryDef ?? "", rows: rows.filter((r) => r.categoryId === id) })).filter((g) => g.rows.length);
-    return ["high", "medium", "low", "not_classified"].map((s) => ({ key: s, label: SENS[s].word, def: "", rows: rows.filter((r) => r.sensitivity === s) })).filter((g) => g.rows.length);
+    return SENS_ORDER.map((s) => ({ key: s, label: sensOf(s).word, def: "", rows: rows.filter((r) => r.sensitivity === s) })).filter((g) => g.rows.length);
   }, [groupBy, rows, categories]);
 
   const sortBtn = (key: "field" | "sensitivity" | "policy", label: string) => (
@@ -81,7 +85,7 @@ export function DataCatalog({ data }: { data: Data }) {
           <button className={inPolicy === "in_use" ? "on" : ""} onClick={() => setInPolicy("in_use")}>In use {data.counts.inUse}</button>
           <button className={inPolicy === "not_in_use" ? "on" : ""} onClick={() => setInPolicy("not_in_use")}>Not in use {data.counts.notDecided + data.counts.notUsed}</button>
         </div>
-        <select className="input sm" value={sens} onChange={(e) => setSens(e.target.value)}><option value="">Sensitivity</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option><option value="not_classified">Not classified</option></select>
+        <select className="input sm" value={sens} onChange={(e) => setSens(e.target.value)}><option value="">Sensitivity</option>{SENS_ORDER.map((s) => <option key={s} value={s}>{s}</option>)}</select>
         <select className="input sm" value={cat} onChange={(e) => setCat(e.target.value)}><option value="">Category</option>{categories.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select>
         <select className="input sm" value={groupBy} onChange={(e) => setGroupBy(e.target.value as typeof groupBy)}><option value="none">Group by: None</option><option value="category">Group by: Category</option><option value="sensitivity">Group by: Sensitivity</option></select>
         <button className={`btn ghost sm${more ? " on" : ""}`} onClick={() => setMore((m) => !m)}><SlidersHorizontal size={13} /> More filters</button>
@@ -125,13 +129,13 @@ function GroupRows({ g, grouped, onOpen }: { g: { key: string; label: string; de
 }
 
 function Row({ r, onOpen }: { r: CatalogRow; onOpen: (r: CatalogRow) => void }) {
-  const s = SENS[r.sensitivity];
+  const s = sensOf(r.sensitivity);
   return (
     <tr className="rules-row" onClick={(e) => { if ((e.target as HTMLElement).closest("a,button")) return; onOpen(r); }} style={{ cursor: "pointer" }}>
       <td><div className="cell-stack"><span className="cell-primary">{r.displayName}{!r.seen && <span className="mp-tag" style={{ marginLeft: 6 }}>Not seen yet</span>}</span><span className="cell-sub mono">{r.code}</span></div></td>
       <td>
         <div className="cell-stack">
-          <span className="row" style={{ gap: 6, alignItems: "center" }}><span className="sens-dot" style={{ background: s.dot }} />{s.word}{r.sensitivity === "not_classified" && <Link href={`${INV}?field=${r.code}`} className="row-link" onClick={(e) => e.stopPropagation()}>Classify</Link>}</span>
+          <span className="row" style={{ gap: 6, alignItems: "center" }}><span className="sens-dot" style={{ background: s.dot }} />{s.word}{(r.sensitivity === "Not classified" || !SENS[r.sensitivity]) && <Link href={`${INV}?field=${r.code}`} className="row-link" onClick={(e) => e.stopPropagation()}>Classify</Link>}</span>
           {r.regulated && <span className="row cell-sub" style={{ gap: 4 }}><Lock size={10} /> Protected by law</span>}
         </div>
       </td>
@@ -153,7 +157,7 @@ function Row({ r, onOpen }: { r: CatalogRow; onOpen: (r: CatalogRow) => void }) 
 }
 
 function CatalogDrawer({ row, onClose }: { row: CatalogRow; onClose: () => void }) {
-  const s = SENS[row.sensitivity];
+  const s = sensOf(row.sensitivity);
   return (
     <>
       <div className="mp-drawer-scrim" onClick={onClose}>

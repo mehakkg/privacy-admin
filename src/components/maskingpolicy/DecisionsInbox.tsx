@@ -3,9 +3,8 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, RotateCcw } from "lucide-react";
-import { MaskEditor } from "@/components/maskingpolicy/MaskEditor";
-import { defaultParamsForChoice, type Masking } from "@/lib/maskingpolicy";
-import { setBaselineAction, setFieldCategoryAction } from "@/app/actions/maskingpolicy";
+import { deriveMasking, renderValue, strengthLabel, inferDataType, TIERS, TIER_TONE, TIER_DEFAULT_RANK, type Tier } from "@/lib/maskingpolicy";
+import { setBaselineAction, setFieldCategoryAction, classifyFieldAction } from "@/app/actions/maskingpolicy";
 
 export interface DecisionItem { code: string; displayName: string; sampleValue: string; categoryId: string }
 interface Cat { id: string; name: string; definition: string }
@@ -44,15 +43,16 @@ export function DecisionsInbox({ vid, items, categories }: { vid: string; items:
 
 function DecisionCard({ item, categories, vid, onResolve }: { item: DecisionItem; categories: Cat[]; vid: string; onResolve: (label: string) => void }) {
   const [catId, setCatId] = useState(item.categoryId);
-  const [m, setM] = useState<Masking>({ family: "partial", params: defaultParamsForChoice("partial") });
   const [, start] = useTransition();
   const cat = categories.find((c) => c.id === catId);
+  const dataType = inferDataType(item.code);
 
-  const act = (masking: Masking | null, status: "ready" | "not_used", label: string) => start(async () => {
+  const classify = (tier: Tier) => start(async () => {
     if (catId !== item.categoryId) await setFieldCategoryAction(item.code, catId);
-    await setBaselineAction(vid, item.code, masking, status);
-    onResolve(label);
+    await classifyFieldAction(item.code, tier);
+    onResolve(`${tier}`);
   });
+  const markNotUsed = () => start(async () => { await setBaselineAction(vid, item.code, null, "not_used"); onResolve("not used"); });
 
   return (
     <div className="mp-decision-card">
@@ -61,12 +61,23 @@ function DecisionCard({ item, categories, vid, onResolve }: { item: DecisionItem
         <select className="input" value={catId} onChange={(e) => setCatId(e.target.value)}>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
       </label>
       {cat && <p className="cell-sub" style={{ margin: "-2px 0 0" }}>{cat.definition}</p>}
-      <div className="fld"><span>How should it be masked?</span><MaskEditor value={m} onChange={setM} sample={item.sampleValue} /></div>
+      <div className="fld"><span>How sensitive is it? Its masking follows the sensitivity you pick.</span>
+        <div className="mp-strengthgrid">
+          {TIERS.map((t) => {
+            const rank = TIER_DEFAULT_RANK[t];
+            const example = renderValue(deriveMasking(dataType, rank, false).masking, item.sampleValue);
+            return (
+              <button key={t} className="mp-tiercard" onClick={() => classify(t)}>
+                <span className="mp-tier"><span className="mp-tier-dot" style={{ background: (TIER_TONE[t] ?? TIER_TONE["Not classified"]).dot }} />{t}</span>
+                <span className="mono cell-sub">{example} · {strengthLabel(rank)}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
       <p className="cell-sub" style={{ margin: 0 }}>Sample value is made up — never real customer data.</p>
       <div className="row" style={{ gap: 6, flexWrap: "wrap", marginTop: 4 }}>
-        <button className="btn primary sm" onClick={() => act(m, "ready", "added to policy")}>Add to policy</button>
-        <button className="btn sm" onClick={() => act(null, "ready", "kept hidden")}>Keep hidden for now</button>
-        <button className="btn ghost sm" onClick={() => act(null, "not_used", "not used")}>My applications don&rsquo;t use this</button>
+        <button className="btn ghost sm" onClick={markNotUsed}>My applications don&rsquo;t use this</button>
       </div>
     </div>
   );

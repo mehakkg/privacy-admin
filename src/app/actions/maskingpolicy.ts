@@ -6,9 +6,10 @@ import {
   startDraft, discardDraft, setBaseline, setFieldCategory, markReady, addAudience, renameAudience, removeAudience,
   addChannel, setGrant, bulkBaseline, activate, restoreAsDraft,
   checkFieldCode, addCustomField, removeCustomField, channelUsage, renameChannel, changeChannelIdentifier, removeChannel, changeAudienceIdentifier,
+  setFieldStrength, setSensitivityRules, classifyField,
   type AddFieldInput, type ChannelUsage,
 } from "@/lib/engines/maskingpolicy";
-import type { Masking, FieldStatus } from "@/lib/maskingpolicy";
+import type { Masking, FieldStatus, Tier } from "@/lib/maskingpolicy";
 
 /** Masking Policy server actions — thin adapters over the engine. */
 export interface MPResult { ok: boolean; error?: string; errorKind?: string }
@@ -27,6 +28,15 @@ export async function setBaselineAction(versionId: string, fieldCode: string, ma
 }
 export async function setFieldCategoryAction(code: string, categoryId: string): Promise<MPResult> {
   try { await setFieldCategory(code, categoryId); touch(); return { ok: true }; } catch (e) { return fail(e); }
+}
+export async function setFieldStrengthAction(versionId: string, fieldCode: string, input: { mode: "follows" | "custom" | "held"; rank?: number; reason?: string }): Promise<MPResult> {
+  try { await setFieldStrength(versionId, fieldCode, input); touch(); return { ok: true }; } catch (e) { return fail(e); }
+}
+export async function setSensitivityRulesAction(versionId: string, rules: { tier: Tier; rank: number }[]): Promise<MPResult> {
+  try { await setSensitivityRules(versionId, rules); touch(); return { ok: true }; } catch (e) { return fail(e); }
+}
+export async function classifyFieldAction(code: string, tier: Tier): Promise<MPResult> {
+  try { await classifyField(code, tier); touch(); return { ok: true }; } catch (e) { return fail(e); }
 }
 export async function markReadyAction(versionId: string, fieldCodes: string[]): Promise<MPResult> {
   try { await markReady(versionId, fieldCodes); touch(); return { ok: true }; } catch (e) { return fail(e); }

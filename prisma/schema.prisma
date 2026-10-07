@@ -3263,6 +3263,7 @@ model MPPolicyVersion {
   audiences     MPAudience[]
   channels      MPChannel[]
   grants        MPGrant[]
+  sensitivityRules MPSensitivityRule[]
 }
 
 /// The baseline ("everyone sees") decision for a field in a version.
@@ -3272,12 +3273,30 @@ model MPFieldDecision {
   version    MPPolicyVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
   fieldCode  String
   field      MPField @relation(fields: [fieldCode], references: [code], onDelete: Cascade)
-  /// null = hidden completely; else {function, params}.
+  /// null = hidden completely; else {function, params}. Used when mode = custom | held.
   maskingJson String?
   /// ready | needs_decision | not_used
   status     String  @default("needs_decision")
+  /// follows (masking derived from the field's sensitivity tier) | custom | held.
+  mode       String  @default("follows")
+  /// For looser-than-tier custom fields: the required reason.
+  overrideReason String?
+  /// For held fields: the strength rank being kept pending a decision.
+  heldRank   Int?
   reviewed   Boolean @default(false)
   @@unique([versionId, fieldCode])
+  @@index([versionId])
+}
+
+/// Masking-by-sensitivity rules, stored with the version. tier → strength rank (0..4).
+model MPSensitivityRule {
+  id        String @id @default(cuid())
+  versionId String
+  version   MPPolicyVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  /// Restricted | Confidential | Internal | Public
+  tier      String
+  rank      Int
+  @@unique([versionId, tier])
   @@index([versionId])
 }
 

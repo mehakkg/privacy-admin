@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getDraft, getActiveVersion, getGrid, getImpact, getChecks, getCategories, listVersions } from "@/lib/engines/maskingpolicy";
+import { getDraft, getActiveVersion, getGrid, getImpact, getChecks, getCategories, listVersions, getSensitivityRules } from "@/lib/engines/maskingpolicy";
 import { StartDraftButton } from "@/components/maskingpolicy/PolicyActions";
 import { WorkspaceMenu, AddAudienceTrigger } from "@/components/maskingpolicy/WorkspaceMenus";
 import { WorkspaceRail, type RailItem } from "@/components/maskingpolicy/WorkspaceRail";
@@ -13,7 +13,7 @@ export async function Workspace({ focus }: { focus?: string }) {
   const draft = await getDraft();
   if (!draft) return <div className="mp-card"><div className="stack" style={{ gap: 8 }}><h3 style={{ margin: 0 }}>No draft in progress.</h3><p className="cell-sub" style={{ margin: 0 }}>Start a draft to change how your applications mask data.</p><div><StartDraftButton /></div><Link href={MP} className="row-link">Back to Masking policy</Link></div></div>;
 
-  const [grid, impact, checks, categories, active, versions] = await Promise.all([getGrid(draft.id), getImpact(draft.id), getChecks(draft.id), getCategories(), getActiveVersion(), listVersions()]);
+  const [grid, impact, checks, categories, active, versions, sensitivityRules] = await Promise.all([getGrid(draft.id), getImpact(draft.id), getChecks(draft.id), getCategories(), getActiveVersion(), listVersions(), getSensitivityRules(draft.id)]);
   const liveView = active ? await getGrid(active.id) : null;
   if (!grid) return null;
   const everActivated = versions.some((v) => v.state === "active" || v.state === "archived");
@@ -76,7 +76,7 @@ export async function Workspace({ focus }: { focus?: string }) {
                   : `We prepared this from what your applications use. ${grid.rows.filter((r) => r.status === "ready").length} fields are ready with recommended masking. Check what you need to, then continue.`}</p>
               )}
               {decisionItems.length > 0 && <div id="mp-decisions"><DecisionsInbox vid={draft.id} items={decisionItems} categories={catViews} /></div>}
-              <EveryoneFields view={grid} categories={catViews} focusField={focusField} />
+              <EveryoneFields view={grid} categories={catViews} focusField={focusField} rules={sensitivityRules} />
             </div>
           )}
 
