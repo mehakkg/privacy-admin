@@ -89,14 +89,18 @@ export interface CategoryHeader { id: string; name: string; definition: string; 
 
 export interface AudienceVisibility {
   audienceId: string;
-  /** same | more | full_raw | locked | not_used */
-  kind: "same" | "more" | "full_raw" | "locked" | "not_used";
+  /** same | more | full_raw | less | locked | not_used */
+  kind: "same" | "more" | "full_raw" | "less" | "locked" | "not_used";
   example: string;
   choiceLabel: string;
   channelLabel: string | null;
   reason: string | null;
-  /** Present on more/full_raw cells — the grant's level + scope, for editing + per-channel resolution. */
-  grant: { fullRaw: boolean; family: string; params: Record<string, unknown>; channelIds: string[]; reason: string | null } | null;
+  /** True when the field is equal to the baseline despite holding an exception. */
+  noLongerNeeded: boolean;
+  /** Other audiences whose restriction on this field beats this grant (overlap note). */
+  overlaps: string[];
+  /** Present on exception cells — the exception's level + scope + direction, for editing + per-channel resolution. */
+  grant: { direction: "more" | "less"; fullRaw: boolean; family: string; params: Record<string, unknown>; channelIds: string[]; reason: string | null } | null;
 }
 
 export interface GridFieldRow {

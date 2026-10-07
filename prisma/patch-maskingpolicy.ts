@@ -80,6 +80,18 @@ async function makeVersion(s: VSpec) {
 
 const readyDecisions = () => Object.entries(BASE).map(([code, masking]) => ({ code, masking, status: "ready" }));
 
+/** Idempotent demo restriction: Support sees Mobile number hidden (direction less),
+ *  so the "Sees less than everyone" section is demonstrable. */
+async function ensureRestrictionDemo() {
+  const active = await prisma.mPPolicyVersion.findFirst({ where: { state: "active" } });
+  if (!active) return;
+  const support = await prisma.mPAudience.findFirst({ where: { versionId: active.id, label: "Support" } });
+  if (!support) return;
+  const existing = await prisma.mPGrant.findFirst({ where: { versionId: active.id, audienceId: support.id, fieldCode: "MOBILE" } });
+  if (existing) return;
+  await prisma.mPGrant.create({ data: { versionId: active.id, audienceId: support.id, fieldCode: "MOBILE", channelScopeJson: '"ANY"', visibility: "restrict", direction: "less", maskingJson: null, reason: null } });
+}
+
 async function main() {
   if (!process.env.DATABASE_URL) { console.log("patch-maskingpolicy: no DATABASE_URL, skipping."); return; }
   await prisma.mPCategory.createMany({ data: CATEGORIES, skipDuplicates: true });
@@ -89,6 +101,7 @@ async function main() {
   });
 
   await ensureCatalogFixtures();
+  await ensureRestrictionDemo();
   if (await prisma.mPPolicyVersion.findFirst()) { console.log("patch-maskingpolicy: versions present; ensured categories, fields + catalog fixtures."); return; }
 
   const audiences = [

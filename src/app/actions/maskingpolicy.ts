@@ -43,7 +43,7 @@ export async function removeAudienceAction(audienceId: string): Promise<MPResult
 export async function addChannelAction(versionId: string, label: string, identifier: string): Promise<MPResult & { id?: string }> {
   try { const id = await addChannel(versionId, label, identifier); touch(); return { ok: true, id }; } catch (e) { return fail(e); }
 }
-export async function setGrantAction(versionId: string, audienceId: string, fieldCode: string, input: { visibility: "more" | "full_raw"; masking?: Masking | null; channelScope: "ANY" | string[]; reason?: string } | null): Promise<MPResult> {
+export async function setGrantAction(versionId: string, audienceId: string, fieldCode: string, input: { direction?: "more" | "less"; visibility: "more" | "full_raw" | "restrict"; masking?: Masking | null; channelScope: "ANY" | string[]; reason?: string } | null): Promise<MPResult> {
   try { await setGrant(versionId, audienceId, fieldCode, input); touch(); return { ok: true }; } catch (e) { return fail(e); }
 }
 export async function bulkBaselineAction(versionId: string, fieldCodes: string[], masking: Masking | null, status: FieldStatus) {

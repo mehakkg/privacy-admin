@@ -3314,11 +3314,13 @@ model MPGrant {
   field            MPField @relation(fields: [fieldCode], references: [code], onDelete: Cascade)
   /// "ANY" or a JSON array of channel ids.
   channelScopeJson String  @default("\"ANY\"")
-  /// more | full_raw
+  /// more | full_raw (grants) · restrict (restrictions). See `direction`.
   visibility       String
-  /// For "more": the masking choice (JSON {function,params}).
+  /// more = grant (sees more than baseline) · less = restriction (sees less).
+  direction        String  @default("more")
+  /// The masking choice (JSON {function,params}); null = hidden completely.
   maskingJson      String?
-  /// Required for full_raw.
+  /// Required for full_raw grants only.
   reason           String?
   @@unique([versionId, audienceId, fieldCode])
   @@index([versionId])

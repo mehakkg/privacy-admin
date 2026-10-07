@@ -57,7 +57,7 @@ export async function Review() {
           <p className="cell-sub" style={{ margin: 0 }}>Display names and sample values save automatically and don&rsquo;t create a version.</p>
         ) : review.firstActivation && review.firstActivationData ? (
           <p className="cell-sub" style={{ margin: 0 }}>Today every sensitive field is fully hidden. Version {review.number} will show {review.firstActivationData.willShow} of them in masked form.{review.firstActivationData.hidden.length ? ` ${review.firstActivationData.hidden.length} stay fully hidden: ${review.firstActivationData.hidden.join(", ")}.` : ""}{review.firstActivationData.audiencesMore ? ` ${review.firstActivationData.audiencesMore} audience${review.firstActivationData.audiencesMore === 1 ? "" : "s"} will see more than everyone else.` : ""}</p>
-        ) : <p className="cell-sub" style={{ margin: 0 }}>{review.summary}</p>}
+        ) : <p className="cell-sub" style={{ margin: 0 }}>{review.changes.length} change{review.changes.length === 1 ? "" : "s"}. {review.changes.filter((c) => c.direction === "more").length} show more, {review.changes.filter((c) => c.direction === "less").length} show less.</p>}
         {review.verdict === "blocked" && (
           <div className="stack" style={{ gap: 4, marginTop: 4 }}>
             {review.issues.map((iss, i) => <Link key={i} href={iss.target} className="row" style={{ gap: 6, color: "var(--red)" }}><AlertTriangle size={13} /> {iss.message}</Link>)}

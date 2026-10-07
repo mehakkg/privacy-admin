@@ -47,7 +47,7 @@ interface FullVersion {
   decisions: { fieldCode: string; maskingJson: string | null; status: string; reviewed: boolean }[];
   audiences: { id: string; label: string; identifier: string; sortOrder: number }[];
   channels: { id: string; label: string; identifier: string }[];
-  grants: { id: string; audienceId: string; fieldCode: string; channelScopeJson: string; visibility: string; maskingJson: string | null; reason: string | null }[];
+  grants: { id: string; audienceId: string; fieldCode: string; channelScopeJson: string; visibility: string; direction: string; maskingJson: string | null; reason: string | null }[];
 }
 
 async function loadFull(versionId: string): Promise<FullVersion | null> {
@@ -75,23 +75,35 @@ function resolveGrid(v: FullVersion, fields: { code: string; displayName: string
     const baseStrength = strengthOf(baseMask, f.sampleValue, false);
     const baseExample = renderValue(baseMask, f.sampleValue, false);
 
+    // Restrictions on this field held by ANY audience, for overlap notes on grants.
+    const restrictionAudiences = v.audiences.filter((a) => v.grants.some((gr) => gr.audienceId === a.id && gr.fieldCode === f.code && gr.direction === "less"));
     const audiences: AudienceVisibility[] = v.audiences.map((a) => {
-      if (notUsed) return { audienceId: a.id, kind: "not_used", example: "—", choiceLabel: "Not used", channelLabel: null, reason: null, grant: null };
-      if (f.regulated) return { audienceId: a.id, kind: "locked", example: baseExample, choiceLabel: choiceLabel(baseMask, false), channelLabel: null, reason: null, grant: null };
+      const base = { audienceId: a.id, noLongerNeeded: false, overlaps: [] as string[], grant: null } as const;
+      if (notUsed) return { ...base, kind: "not_used", example: "—", choiceLabel: "Not used", channelLabel: null, reason: null };
       const g = v.grants.find((gr) => gr.audienceId === a.id && gr.fieldCode === f.code);
-      if (!g) return { audienceId: a.id, kind: "same", example: baseExample, choiceLabel: "Same", channelLabel: null, reason: null, grant: null };
-      const fullRaw = g.visibility === "full_raw";
+      // Regulated: no grant possible beyond the legal minimum, but a restriction IS allowed.
+      if (f.regulated && (!g || g.direction !== "less")) return { ...base, kind: "locked", example: baseExample, choiceLabel: choiceLabel(baseMask, false), channelLabel: null, reason: null };
+      if (!g) return { ...base, kind: "same", example: baseExample, choiceLabel: "Same", channelLabel: null, reason: null };
       const gMask = parseMask(g.maskingJson);
-      const gStrength = strengthOf(gMask, f.sampleValue, fullRaw);
-      if (gStrength <= baseStrength) return { audienceId: a.id, kind: "same", example: baseExample, choiceLabel: "Same", channelLabel: null, reason: null, grant: null };
       const scope = decodeObject<string[] | string>(g.channelScopeJson);
       const channelIds = Array.isArray(scope) ? scope : [];
       const channelLabel = channelIds.length ? channelIds.map((id) => chanLabel.get(id) ?? id).join(", ") : null;
+
+      if (g.direction === "less") {
+        const rStrength = strengthOf(gMask, f.sampleValue, false);
+        const noLongerNeeded = rStrength >= baseStrength; // restriction no longer reveals less
+        return { ...base, kind: noLongerNeeded ? "same" : "less", noLongerNeeded, example: renderValue(gMask, f.sampleValue), choiceLabel: choiceLabel(gMask, false), channelLabel, reason: null, grant: { direction: "less", fullRaw: false, family: gMask?.family ?? "full", params: gMask?.params ?? {}, channelIds, reason: null } };
+      }
+      // grant (more | full_raw)
+      const fullRaw = g.visibility === "full_raw";
+      const gStrength = strengthOf(gMask, f.sampleValue, fullRaw);
+      const noLongerNeeded = gStrength <= baseStrength;
+      // Overlap: other audiences restrict this field with overlapping scope.
+      const overlaps = restrictionAudiences.filter((ra) => ra.id !== a.id).map((ra) => ra.label);
       return {
-        audienceId: a.id, kind: fullRaw ? "full_raw" : "more",
-        example: renderValue(gMask, f.sampleValue, fullRaw),
-        choiceLabel: choiceLabel(gMask, fullRaw), channelLabel, reason: g.reason ?? null,
-        grant: { fullRaw, family: gMask?.family ?? "partial", params: gMask?.params ?? {}, channelIds, reason: g.reason ?? null },
+        ...base, kind: noLongerNeeded ? "same" : fullRaw ? "full_raw" : "more", noLongerNeeded, overlaps,
+        example: renderValue(gMask, f.sampleValue, fullRaw), choiceLabel: choiceLabel(gMask, fullRaw), channelLabel, reason: g.reason ?? null,
+        grant: { direction: "more", fullRaw, family: gMask?.family ?? "partial", params: gMask?.params ?? {}, channelIds, reason: g.reason ?? null },
       };
     });
 
@@ -479,7 +491,7 @@ async function copySnapshot(fromId: string, toId: string) {
   for (const g of src.grants) {
     const scope = decodeObject<string[] | string>(g.channelScopeJson);
     const newScope = Array.isArray(scope) ? scope.map((id) => chMap.get(id) ?? id) : scope;
-    await db.mPGrant.create({ data: { versionId: toId, audienceId: idMap.get(g.audienceId)!, fieldCode: g.fieldCode, channelScopeJson: encodeObject(newScope), visibility: g.visibility, maskingJson: g.maskingJson, reason: g.reason } });
+    await db.mPGrant.create({ data: { versionId: toId, audienceId: idMap.get(g.audienceId)!, fieldCode: g.fieldCode, channelScopeJson: encodeObject(newScope), visibility: g.visibility, direction: g.direction, maskingJson: g.maskingJson, reason: g.reason } });
   }
 }
 
@@ -685,17 +697,29 @@ export async function addChannel(versionId: string, label: string, identifier: s
 }
 
 /** Set (or clear) an audience grant. visibility null removes it (back to Same). */
-export async function setGrant(versionId: string, audienceId: string, fieldCode: string, input: { visibility: "more" | "full_raw"; masking?: Masking | null; channelScope: "ANY" | string[]; reason?: string } | null) {
+export async function setGrant(versionId: string, audienceId: string, fieldCode: string, input: { direction?: "more" | "less"; visibility: "more" | "full_raw" | "restrict"; masking?: Masking | null; channelScope: "ANY" | string[]; reason?: string } | null) {
   await requireDraft(versionId);
   const field = await db.mPField.findUnique({ where: { code: fieldCode } });
   if (!field) throw err("NotFoundError", "No such field.");
   if (input === null) { await db.mPGrant.deleteMany({ where: { versionId, audienceId, fieldCode } }); return; }
-  if (field.regulated && input.visibility === "full_raw") throw err("ForbiddenError", "A regulated field can never be shown in full.");
-  if (input.visibility === "full_raw" && !(input.reason ?? "").trim()) throw err("ValidationError", "A full raw value needs a reason.");
+  const direction = input.direction ?? (input.visibility === "restrict" ? "less" : "more");
+  // Baseline strength in THIS version, to validate the exception reveals more/less.
+  const dec = await db.mPFieldDecision.findUnique({ where: { versionId_fieldCode: { versionId, fieldCode } } });
+  const baseMask = dec && dec.status !== "needs_decision" ? parseMask(dec.maskingJson) : null;
+  const baseStrength = strengthOf(baseMask, field.sampleValue, false);
+  const exStrength = strengthOf(input.masking ?? null, field.sampleValue, input.visibility === "full_raw");
+
+  if (direction === "more") {
+    if (field.regulated && input.visibility === "full_raw") throw err("ForbiddenError", "A regulated field can never be shown in full.");
+    if (input.visibility === "full_raw" && !(input.reason ?? "").trim()) throw err("ValidationError", "A full raw value needs a reason.");
+    if (input.visibility !== "full_raw" && exStrength <= baseStrength) throw err("ValidationError", "A grant must reveal more than everyone already sees.");
+  } else {
+    if (exStrength >= baseStrength) throw err("ValidationError", "A restriction must reveal less than everyone already sees.");
+  }
   await db.mPGrant.upsert({
     where: { versionId_audienceId_fieldCode: { versionId, audienceId, fieldCode } },
-    update: { visibility: input.visibility, maskingJson: input.masking ? encodeObject(input.masking) : null, channelScopeJson: encodeObject(input.channelScope), reason: input.reason ?? null },
-    create: { versionId, audienceId, fieldCode, visibility: input.visibility, maskingJson: input.masking ? encodeObject(input.masking) : null, channelScopeJson: encodeObject(input.channelScope), reason: input.reason ?? null },
+    update: { visibility: direction === "less" ? "restrict" : input.visibility, direction, maskingJson: input.masking ? encodeObject(input.masking) : null, channelScopeJson: encodeObject(input.channelScope), reason: input.reason ?? null },
+    create: { versionId, audienceId, fieldCode, visibility: direction === "less" ? "restrict" : input.visibility, direction, maskingJson: input.masking ? encodeObject(input.masking) : null, channelScopeJson: encodeObject(input.channelScope), reason: input.reason ?? null },
   });
 }
 

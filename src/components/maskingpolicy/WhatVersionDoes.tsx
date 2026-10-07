@@ -29,11 +29,15 @@ export function WhatVersionDoes({ view, number, startAudience, startChannel }: {
   const summaryFor = (label: string): string => {
     if (label === "Everyone") return `${view.rows.filter((r) => r.status !== "not_used" && !r.baseline.hidden).length} fields masked`;
     const a = view.audiences.find((x) => x.label === label)!;
-    const cells = view.rows.map((r) => r.audiences.find((c) => c.audienceId === a.id)!).filter((c) => c.kind === "more" || c.kind === "full_raw");
-    if (cells.length === 0) return "Same as everyone";
-    const full = cells.filter((c) => c.kind === "full_raw").length;
-    const scoped = cells.filter((c) => (c.grant?.channelIds.length ?? 0) > 0).length;
-    return `Sees more of ${cells.length} field${cells.length === 1 ? "" : "s"}${full ? ` · ${full} full value` : ""}${scoped ? ` · ${scoped} on one channel` : ""}`;
+    const all = view.rows.map((r) => r.audiences.find((c) => c.audienceId === a.id)!);
+    const more = all.filter((c) => c.kind === "more" || c.kind === "full_raw");
+    const less = all.filter((c) => c.kind === "less");
+    if (more.length === 0 && less.length === 0) return "Same as everyone";
+    const full = more.filter((c) => c.kind === "full_raw").length;
+    const parts: string[] = [];
+    if (more.length) parts.push(`Sees more of ${more.length} field${more.length === 1 ? "" : "s"}${full ? ` · ${full} full value` : ""}`);
+    if (less.length) parts.push(`${more.length ? "s" : "S"}ees less of ${less.length} field${less.length === 1 ? "" : "s"}`);
+    return parts.join(" · ");
   };
 
   return (
@@ -102,21 +106,19 @@ function AudienceRecord({ view, audObj, selChanId }: { view: GridView; audObj: {
   const [sameOpen, setSameOpen] = useState(false);
   const cells = view.rows.map((r) => ({ r, c: r.audiences.find((x) => x.audienceId === audObj.id)! }));
   const more = cells.filter(({ c }) => c.kind === "more" || c.kind === "full_raw");
+  const less = cells.filter(({ c }) => c.kind === "less");
   const same = cells.filter(({ c }) => c.kind === "same" || c.kind === "locked");
+  const ExRow = ({ r, c, dir }: { r: typeof cells[number]["r"]; c: typeof cells[number]["c"]; dir: "more" | "less" }) => {
+    const applies = c.grant && (c.grant.channelIds.length === 0 || (selChanId != null && c.grant.channelIds.includes(selChanId)));
+    const base = dir === "more" ? "sees more" : "sees less";
+    const note = c.kind === "full_raw" ? "sees the full value" : applies ? (c.channelLabel ? `${base}, only on ${c.channelLabel}` : base) : `${base} only on ${c.channelLabel}`;
+    return <div className="mp-rec-row"><span style={{ flex: 1 }}>{r.displayName}</span><span className="mono">{applies ? c.example : r.baseline.example}</span><span className={`cell-sub${c.kind === "full_raw" ? " mp-warn" : ""}`}>{note}</span></div>;
+  };
   return (
     <div className="stack" style={{ gap: 8, marginTop: 8 }}>
-      <div className="mp-group-h">Sees more than everyone</div>
-      {more.length === 0 ? <p className="cell-sub">No exceptions.</p> : more.map(({ r, c }) => {
-        const applies = c.grant && (c.grant.channelIds.length === 0 || (selChanId != null && c.grant.channelIds.includes(selChanId)));
-        const note = c.kind === "full_raw" ? "sees the full value" : applies ? (c.channelLabel ? `sees more, only on ${c.channelLabel}` : "sees more") : `sees more only on ${c.channelLabel}`;
-        return (
-          <div key={r.code} className="mp-rec-row">
-            <span style={{ flex: 1 }}>{r.displayName}</span>
-            <span className="mono">{applies ? c.example : r.baseline.example}</span>
-            <span className={`cell-sub${c.kind === "full_raw" ? " mp-warn" : ""}`}>{note}</span>
-          </div>
-        );
-      })}
+      {more.length > 0 && <><div className="mp-group-h">Sees more than everyone</div>{more.map(({ r, c }) => <ExRow key={r.code} r={r} c={c} dir="more" />)}</>}
+      {less.length > 0 && <><div className="mp-group-h">Sees less than everyone</div>{less.map(({ r, c }) => <ExRow key={r.code} r={r} c={c} dir="less" />)}</>}
+      {more.length === 0 && less.length === 0 && <p className="cell-sub">No exceptions.</p>}
       <button className="mp-catgroup-head" onClick={() => setSameOpen((o) => !o)}>{sameOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}<strong>Same as everyone · {same.length} fields</strong></button>
       {sameOpen && same.map(({ r }) => <div key={r.code} className="mp-rec-row"><span style={{ flex: 1 }}>{r.displayName}</span><span className="mono">{r.baseline.example}</span><span /></div>)}
     </div>

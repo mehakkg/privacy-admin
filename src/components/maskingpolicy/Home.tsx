@@ -23,7 +23,7 @@ export async function Home({ see, chan }: { see?: string; chan?: string }) {
   const strip = liveView ? (() => {
     const protectedN = liveView.rows.filter((r) => r.status !== "not_used" && !r.baseline.hidden).length;
     const regulated = liveView.rows.filter((r) => r.regulated).length;
-    const exceptions = liveView.audiences.reduce((n, a) => n + liveView.rows.filter((r) => { const c = r.audiences.find((x) => x.audienceId === a.id); return c && (c.kind === "more" || c.kind === "full_raw"); }).length, 0);
+    const exceptions = liveView.audiences.reduce((n, a) => n + liveView.rows.filter((r) => { const c = r.audiences.find((x) => x.audienceId === a.id); return c && (c.kind === "more" || c.kind === "full_raw" || c.kind === "less"); }).length, 0);
     const audiencesMore = liveView.exposure.more;
     const channels = liveView.channels.length;
     const cells = [

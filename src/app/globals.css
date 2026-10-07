@@ -4157,3 +4157,12 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 
 /* Context bar */
 .mp-ctxbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 14px; margin-bottom: 14px; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg-subtle, #f7f8fa); font-size: 13px; }
+
+/* --- Masking Policy restrictions -------------------------------------------- */
+.mp-exrow-main { display: flex; align-items: center; gap: 10px; flex: 1; background: none; border: 0; font: inherit; cursor: pointer; text-align: left; padding: 0; }
+.mp-exrow-note { flex-basis: 100%; display: flex; align-items: center; gap: 4px; margin-top: 2px; }
+.mp-dirtag { display: inline-flex; align-items: center; gap: 3px; font-size: 11.5px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border-soft); }
+.mp-dirtag.more { color: var(--green, #16a34a); }
+.mp-dirtag.less { color: var(--yellow-700, #b45309); }
+.mp-subhead { padding-left: 2px; }
+.mp-seesmore-row { display: flex; align-items: center; gap: 12px; }

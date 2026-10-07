@@ -21,7 +21,14 @@ export async function Workspace({ focus }: { focus?: string }) {
 
   const decisionItems = grid.rows.filter((r) => r.status === "needs_decision").map((r) => ({ code: r.code, displayName: r.displayName, sampleValue: r.sampleValue, categoryId: r.categoryId }));
   const blocking = checks.filter((c) => c.level === "blocking" && !c.ok).length;
-  const changesFor = (audienceLabel: string) => impact.items.filter((i) => i.audienceLabel === audienceLabel).length;
+  // D: count only the audience's OWN exceptions (never inherited baseline changes).
+  const exceptionStatus = (audienceId: string): string => {
+    const cells = grid.rows.map((r) => r.audiences.find((c) => c.audienceId === audienceId)!);
+    const exceptions = cells.filter((c) => c.kind === "more" || c.kind === "full_raw" || c.kind === "less").length;
+    const toRemove = cells.filter((c) => c.noLongerNeeded).length;
+    if (exceptions === 0 && toRemove === 0) return "No exceptions";
+    return `${exceptions} exception${exceptions === 1 ? "" : "s"}${toRemove ? ` · ${toRemove} to remove` : ""}`;
+  };
 
   // Focus resolution
   const f = focus ?? "everyone";
@@ -33,7 +40,7 @@ export async function Workspace({ focus }: { focus?: string }) {
   const rail: RailItem[] = [
     { kind: "item", key: "everyone", label: "Everyone", focus: "everyone", current: !audienceId, status: decisionItems.length ? `${decisionItems.length} to decide` : "Ready", accent: decisionItems.length > 0 },
     { kind: "label", key: "lbl", label: grid.audiences.length === 0 ? "Audiences (optional)" : "Audiences" },
-    ...grid.audiences.map((a): RailItem => ({ kind: "item", key: a.id, label: a.label, focus: `audience:${a.id}`, current: audienceId === a.id, audienceId: a.id, status: changesFor(a.label) ? `${changesFor(a.label)} changes` : "No changes" })),
+    ...grid.audiences.map((a): RailItem => ({ kind: "item", key: a.id, label: a.label, focus: `audience:${a.id}`, current: audienceId === a.id, audienceId: a.id, status: exceptionStatus(a.id) })),
     { kind: "divider", key: "d1" },
     { kind: "review", key: "review", label: "Review and activate", status: blocking ? `Fix ${blocking} issues` : `${impact.counts.changes} changes`, accent: blocking > 0 },
   ];

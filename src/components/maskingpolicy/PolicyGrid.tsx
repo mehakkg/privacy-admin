@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { Lock, Plus, X, ChevronDown, ChevronRight, Eye } from "lucide-react";
+import { Lock, Plus, X, ChevronDown, ChevronRight, Eye, ArrowUp, ArrowDown } from "lucide-react";
 import { MaskEditor } from "@/components/maskingpolicy/MaskEditor";
 import {
   MASK_CHOICES, defaultParamsForChoice, renderValue, strengthOf, type Masking,
@@ -100,6 +100,7 @@ export function PolicyGrid({ view, highlight }: { view: GridView; highlight?: st
                               <button className={`mp-cell${c.kind === "same" ? " same" : ""}${c.kind === "full_raw" ? " fullraw" : ""}`} onClick={(e) => setOpen({ code: r.code, audienceId: c.audienceId, anchor: anchorOf(e) })} aria-label={`${view.audiences.find((a) => a.id === c.audienceId)?.label}, ${r.displayName}: ${c.kind === "same" ? "same as everyone" : c.choiceLabel}`}>
                                 {c.kind === "same" ? <span className="cell-sub">Same</span> : <>
                                   {c.kind === "full_raw" && <Eye size={12} />}
+                                  {c.kind === "less" ? <ArrowDown size={12} aria-label="Sees less" /> : (c.kind === "more") ? <ArrowUp size={12} aria-label="Sees more" /> : null}
                                   <span className="mono">{c.example}</span>
                                   {c.channelLabel && <span className="mp-chan">{c.channelLabel}</span>}
                                 </>}
