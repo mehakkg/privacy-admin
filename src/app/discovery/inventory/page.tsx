@@ -1,376 +1,40 @@
-import Link from "next/link";
 import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
-import { CompactFilterBar } from "@/components/CompactFilterBar";
-import { TagToPurposeButton } from "@/components/datamap/TagToPurposeButton";
-import { MovedNote } from "@/components/MovedNote";
-import {
-  InfoTip,
-  PageHead,
-  Pill,
-  Stat,
-  formatDate,
-} from "@/components/ui";
-import type { PillTone } from "@/components/ui";
+import { getInventory, type InventoryParams } from "@/lib/engines/inventory";
+import { InventoryView } from "@/components/inventory/InventoryView";
 
 export const dynamic = "force-dynamic";
 
-const PAGE_SIZE = 25;
-
-const SENSITIVITY_TONE: Record<string, PillTone> = {
-  high: "red",
-  medium: "yellow",
-  low: "gray",
-};
-
-const SYNC_TONE: Record<string, PillTone> = {
-  synced: "green",
-  pending: "yellow",
-  failed: "red",
-  not_configured: "gray",
-};
-
-const SYNC_LABEL: Record<string, string> = {
-  synced: "Synced",
-  pending: "Pending",
-  failed: "Failed",
-  not_configured: "Not set up",
-};
-
 /**
- * SCREEN 3 — Data Inventory. The source of truth.
- *
- * Entity is a filter column, not a separate inventory per business unit —
- * splitting it would make an org-wide view impossible, which is the thing an
- * inventory is for.
+ * Data inventory. Top-level page: no breadcrumb. Shows what the DLP found
+ * (read-only) and lets Admin add purpose / data category / subject type.
+ * Discovery, scanning and classification happen in the DLP, never here.
  */
 export default async function InventoryPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    source?: string;
-    category?: string;
-    sensitivity?: string;
-    purpose?: string;
-    subject?: string;
-    entity?: string;
-    q?: string;
-    untagged?: string;
-    datacat?: string;
-    linkage?: string;
-    page?: string;
-    filter?: string;
-    moved?: string;
-  }>;
+  searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  const params = await searchParams;
-  const page = Math.max(1, Number(params.page) || 1);
-
-  // Purpose is multi-select, so it arrives comma-separated.
-  const purposeIds = (params.purpose ?? "").split(",").filter(Boolean);
-  const term = (params.q ?? "").trim();
-
-  const where = {
-    ...(params.source ? { sourceId: params.source } : {}),
-    ...(params.category ? { category: params.category } : {}),
-    ...(params.sensitivity ? { sensitivityTier: params.sensitivity } : {}),
-    ...(purposeIds.length ? { purposeTagId: { in: purposeIds } } : {}),
-    ...(params.subject ? { dataSubjectType: params.subject } : {}),
-    ...(params.entity ? { source: { entityId: params.entity } } : {}),
-    ...(params.datacat ? { dataCategoryId: params.datacat } : {}),
-    // Purpose-link status: Unassigned (no inventory-level purpose) is the field's
-    // most important governance fact, so it is a first-class filter.
-    ...(params.linkage === "unassigned" ? { purposeTagId: null } : {}),
-    ...(params.linkage === "linked" ? { purposeTagId: { not: null } } : {}),
-    // `untagged` wins over a purpose selection: asking for both is
-    // contradictory, and the toggle is the more explicit intent.
-    ...(params.untagged === "1" ? { purposeTagId: null } : {}),
-    // Relocated Review-queue facets land here as filters (full gap-first view is a
-    // separate change): "Not classified" and "Quarantined".
-    ...(params.filter === "not-classified" ? { reviewState: "pending" } : {}),
-    ...(params.filter === "quarantined" ? { quarantined: true } : {}),
-    ...(term
-      ? {
-          OR: [
-            { fieldPath: { contains: term } },
-            { detectedType: { contains: term } },
-            { overriddenType: { contains: term } },
-          ],
-        }
-      : {}),
+  const sp = await searchParams;
+  const params: InventoryParams = {
+    segment: sp.segment === "new" || sp.segment === "all" || sp.segment === "attention" ? sp.segment : undefined,
+    q: sp.q, system: sp.system, sensitivity: sp.sensitivity, status: sp.status,
+    dataType: sp.dataType, dataCategory: sp.dataCategory, purpose: sp.purpose, subject: sp.subject, provenance: sp.provenance,
   };
-
-  const [total, fields, sources, purposes, untaggedCount] = await Promise.all([
-    db.classifiedField.count({ where }),
-    db.classifiedField.findMany({
-      where,
-      include: { source: true, purposeTag: true, dataCategory: true },
-      orderBy: [{ sourceId: "asc" }, { fieldPath: "asc" }],
-      skip: (page - 1) * PAGE_SIZE,
-      take: PAGE_SIZE,
-    }),
-    db.discoverySource.findMany({ orderBy: { name: "asc" } }),
-    db.purposeTag.findMany({ where: { status: "approved" }, orderBy: { name: "asc" } }),
-    db.classifiedField.count({ where: { purposeTagId: null } }),
+  const [view, categories] = await Promise.all([
+    getInventory(params),
+    db.dataCategory.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ]);
-  const processors = await db.dataProcessor.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } });
-  const dataCategories = await db.dataCategory.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } });
-
-  // Purpose-link COUNT per field: the field's own purpose plus every distinct
-  // purpose it serves through a Processing Activity (ActivityPurposeElement →
-  // ActivityPurpose.purposeTagId) — the same linkage Processing Activities reads.
-  const fieldIds = fields.map((f) => f.id);
-  const fieldPaths = fields.map((f) => f.fieldPath);
-  const apElements = await db.activityPurposeElement.findMany({
-    where: { OR: [{ classifiedFieldId: { in: fieldIds } }, { fieldName: { in: fieldPaths } }] },
-    include: { activityPurpose: { select: { purposeTagId: true } } },
-  });
-  const purposesByField = new Map<string, Set<string>>();
-  for (const f of fields) { const set = new Set<string>(); if (f.purposeTagId) set.add(f.purposeTagId); purposesByField.set(f.id, set); }
-  for (const el of apElements) {
-    const pt = el.activityPurpose?.purposeTagId;
-    if (!pt) continue;
-    if (el.classifiedFieldId && purposesByField.has(el.classifiedFieldId)) { purposesByField.get(el.classifiedFieldId)!.add(pt); continue; }
-    const f = fields.find((x) => x.fieldPath === el.fieldName);
-    if (f) purposesByField.get(f.id)!.add(pt);
-  }
-  const linkCount = (id: string) => purposesByField.get(id)?.size ?? 0;
-  const purposeOpts = purposes.map((p) => ({ id: p.id, name: p.name, retention: p.retention, lawfulBasis: p.lawfulBasis }));
-
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const entities = [...new Set(sources.map((s) => s.entityId).filter(Boolean))] as string[];
-
-  const qs = (patch: Record<string, string | undefined>) => {
-    const next = new URLSearchParams();
-    const merged = { ...params, ...patch, page: undefined };
-    for (const [k, v] of Object.entries(merged)) if (v) next.set(k, String(v));
-    return `/discovery/inventory${next.toString() ? `?${next}` : ""}`;
-  };
 
   return (
-    <Shell active="/discovery" title="Discovery / Inventory">
-      <PageHead
-        crumbs={[{ label: "Data Discovery", href: "/discovery" }, { label: "Inventory" }]}
-        title="Data Inventory"
-        titleTip="Every classified field across every connected source. This is the standing record a DPB inquiry would be answered from."
+    <Shell active="/discovery/inventory" title="Data inventory">
+      <InventoryView
+        view={view}
+        params={params}
+        moved={sp.moved}
+        categories={categories.map((c) => ({ id: c.name, name: c.name }))}
+        subjectTypes={["customer", "employee", "vendor", "minor"]}
       />
-
-      <MovedNote moved={params.moved} />
-
-      <div className="stat-row" style={{ marginBottom: 16 }}>
-        <Stat label="Fields in view" value={total} />
-        <Stat label="Sources" value={sources.length} />
-        <Stat
-          label="No purpose tag"
-          value={untaggedCount}
-          tone={untaggedCount ? "yellow" : undefined}
-        />
-      </div>
-
-      {/* Compact banner: the reason an untagged field matters moved to the
-          tooltip on the toggle, so this states the fact and nothing more. */}
-      {untaggedCount > 0 && (
-        <div className="notice warn compact" style={{ marginBottom: 12 }}>
-          <span>
-            <strong>{untaggedCount}</strong> field{untaggedCount === 1 ? "" : "s"} have
-            no purpose tag.
-          </span>
-        </div>
-      )}
-
-      <CompactFilterBar
-        basePath="/discovery/inventory"
-        searchPlaceholder="Search fields…"
-        facets={[
-          { key: "source", label: "Source", options: sources.map((s) => ({ value: s.id, label: s.name })) },
-          {
-            key: "category",
-            label: "Category",
-            options: [
-              "identity", "contact", "kyc", "financial",
-              "transaction", "marketing", "behavioural", "support",
-            ].map((c) => ({ value: c, label: c })),
-          },
-          {
-            key: "sensitivity",
-            label: "Sensitivity",
-            options: ["high", "medium", "low"].map((c) => ({ value: c, label: c })),
-          },
-          {
-            key: "linkage",
-            label: "Purpose link",
-            options: [
-              { value: "linked", label: "Linked" },
-              { value: "unassigned", label: "Unassigned" },
-            ],
-          },
-          ...(dataCategories.length > 0
-            ? [{ key: "datacat", label: "Data category", options: dataCategories.map((c) => ({ value: c.id, label: c.name })) }]
-            : []),
-          {
-            key: "purpose",
-            label: "Purpose",
-            // Multi-select: a field can legitimately serve more than one purpose.
-            multi: true,
-            options: purposes.map((p) => ({ value: p.id, label: p.name })),
-          },
-        ]}
-        moreFacets={[
-          {
-            key: "subject",
-            label: "Data subject",
-            options: ["customer", "employee", "vendor", "minor"].map((c) => ({ value: c, label: c })),
-          },
-          ...(entities.length > 0
-            ? [{ key: "entity", label: "Entity", options: entities.map((e) => ({ value: e, label: e })) }]
-            : []),
-        ]}
-        toggle={{
-          key: "untagged",
-          label: "Untagged only",
-          tip: "An untagged field has no lawful purpose recorded for holding it. Untagged rows are flagged in the table rather than left blank, because a blank cell reads as nothing to do here.",
-        }}
-        actions={
-          <Link
-            href={`/api/discovery/export${params.source ? `?source=${params.source}` : ""}`}
-            className="btn sm"
-          >
-            Export CSV
-          </Link>
-        }
-      />
-
-      <div className="row" style={{ marginBottom: 12 }}>
-        <span className="cell-sub">
-          {total} field{total === 1 ? "" : "s"}
-        </span>
-      </div>
-
-      <div className="table-wrap" style={{ overflowX: "auto" }}>
-          <table className="dtable">
-            <thead>
-              <tr>
-                <th>Field</th>
-                <th>Source</th>
-                <th>Category</th>
-                <th>Sensitivity</th>
-                <th>Purpose</th>
-                <th>Subject</th>
-                <th>Verified</th>
-                <th>Catalog</th>
-              </tr>
-            </thead>
-            <tbody>
-              {fields.map((f) => (
-                <tr key={f.id}>
-                  <td>
-                    <div className="cell-stack">
-                      {f.purposeTag ? (
-                        <span className="mono cell-primary">{f.fieldPath}</span>
-                      ) : (
-                        // Untagged → link straight into the assign-to-Activity flow,
-                        // closing the loop with the Processing Activities register.
-                        <Link
-                          href={`/data-map/processing-activities?assign=${encodeURIComponent(f.fieldPath)}`}
-                          className="mono cell-primary row-link"
-                          title="No purpose yet — assign this field to a Processing Activity"
-                        >
-                          {f.fieldPath} →
-                        </Link>
-                      )}
-                      <span className="cell-sub">
-                        {f.overriddenType ?? f.detectedType}
-                        {f.driftFlag && (
-                          <>
-                            {" "}
-                            <Pill tone="yellow">Drift</Pill>
-                          </>
-                        )}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="cell-sub">{f.source.name}</td>
-                  <td>
-                    <div className="cell-stack">
-                      <span className="cell-sub">{f.category ?? "—"}</span>
-                      {f.dataCategory && <Pill tone="blue" dot={false}>{f.dataCategory.name}</Pill>}
-                    </div>
-                  </td>
-                  <td>
-                    <Pill tone={SENSITIVITY_TONE[f.sensitivityTier] ?? "gray"}>
-                      {f.sensitivityTier}
-                    </Pill>
-                  </td>
-                  <td>
-                    {f.purposeTag ? (
-                      // Consent API availability is COMPUTED from the purpose linkage —
-                      // no separate config. Available the moment it's tagged to an
-                      // approved purpose; otherwise the badge says what's needed.
-                      <span className="cell-stack">
-                        <span className="cell-sub">{f.purposeTag.name}</span>
-                        {(() => { const n = linkCount(f.id); return <Pill tone="green" dot={false}>Linked to {n} purpose{n === 1 ? "" : "s"}</Pill>; })()}
-                        {f.purposeTag.status === "approved" ? (
-                          <Pill tone="green" dot={false}>Consent API: Available</Pill>
-                        ) : (
-                          <Pill tone="yellow" dot={false}>Consent API: purpose awaiting approval</Pill>
-                        )}
-                      </span>
-                    ) : (
-                      // Flagged, never blank.
-                      <span className="row" style={{ gap: 5, alignItems: "center" }}>
-                        <Pill tone="yellow">Unassigned</Pill>
-                        <Pill tone="gray" dot={false}>Consent API: not yet linked to an approved purpose</Pill>
-                        <TagToPurposeButton fieldId={f.id} fieldPath={f.fieldPath} purposes={purposeOpts} processors={processors} />
-                        <InfoTip
-                          align="left"
-                          text="No lawful purpose has been recorded for this field. Tag it to a purpose here, or raise it with the DPO if no approved purpose fits."
-                        />
-                      </span>
-                    )}
-                  </td>
-                  <td className="cell-sub">{f.dataSubjectType ?? "—"}</td>
-                  <td className="cell-sub">{formatDate(f.lastVerified)}</td>
-                  <td>
-                    <Pill tone={SYNC_TONE[f.catalogSyncStatus] ?? "gray"}>
-                      {SYNC_LABEL[f.catalogSyncStatus] ?? f.catalogSyncStatus}
-                    </Pill>
-                  </td>
-                </tr>
-              ))}
-              {fields.length === 0 && (
-                <tr>
-                  <td colSpan={8}>
-                    <div className="empty">
-                      <p style={{ margin: "0 0 10px" }}>No fields match these filters.</p>
-                      <Link href="/discovery/inventory" className="btn sm">
-                        Clear filters
-                      </Link>
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-      {pages > 1 && (
-        <div className="row" style={{ marginTop: 12, gap: 8 }}>
-            <span className="cell-sub">
-              Page {page} of {pages} · {total} fields
-            </span>
-            {page > 1 && (
-              <Link href={`${qs({})}${qs({}).includes("?") ? "&" : "?"}page=${page - 1}`} className="btn sm">
-                Previous
-              </Link>
-            )}
-            {page < pages && (
-              <Link href={`${qs({})}${qs({}).includes("?") ? "&" : "?"}page=${page + 1}`} className="btn sm">
-                Next
-              </Link>
-            )}
-        </div>
-      )}
     </Shell>
   );
 }
-

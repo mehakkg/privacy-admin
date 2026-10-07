@@ -782,6 +782,7 @@ model PurposeTag {
   vendorMappings     VendorPurposeMapping[] @relation("VendorPurpose")
   ropaSuggestions    RopaSuggestion[]
   activityPurposes   ActivityPurpose[] @relation("SegmentPurpose")
+  fieldLinks         InventoryFieldPurpose[]
 }
 
 /// A record of processing activity, entered by hand for data no scanner can
@@ -2032,12 +2033,31 @@ model ClassifiedField {
   duplicatesAsA DuplicatePair[] @relation("DuplicateFieldA")
   duplicatesAsB DuplicatePair[] @relation("DuplicateFieldB")
   shareApprovals ShareApprovalRequest[]
+  /// Data inventory: a field can hold several approved purposes. purposeTagId
+  /// stays as the "primary" purpose for back-compat (ROPA suggestions group by it).
+  purposeLinks  InventoryFieldPurpose[]
 
   @@index([sourceId])
   @@index([confidence])
   @@index([category])
   @@index([purposeTagId])
   @@index([dataCategoryId])
+}
+
+/// A field ↔ approved-purpose link, so an inventory field can carry several
+/// purposes. Assigning adds a link; retention/processor/consent are inherited
+/// from the set of linked purposes. Created/approved purposes live on PurposeTag.
+model InventoryFieldPurpose {
+  id           String   @id @default(cuid())
+  fieldId      String
+  purposeTagId String
+  assignedAt   DateTime @default(now())
+  assignedBy   String?
+  field        ClassifiedField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  purpose      PurposeTag      @relation(fields: [purposeTagId], references: [id], onDelete: Cascade)
+  @@unique([fieldId, purposeTagId])
+  @@index([fieldId])
+  @@index([purposeTagId])
 }
 
 /// Anything awaiting an Admin decision.

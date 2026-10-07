@@ -127,4 +127,7 @@ if (!POOLED) {
 
   // Idempotent: seeds the DLP connection singleton (discovery source health).
   run("Seeding DLP connection demo", "npx tsx prisma/patch-dlp.ts", POOLED);
+
+  // Idempotent: remaps inventory sensitivity to DLP labels + backfills field↔purpose links.
+  run("Migrating Data inventory", "npx tsx prisma/patch-inventory.ts", POOLED);
 }
