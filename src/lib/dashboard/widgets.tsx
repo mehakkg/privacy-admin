@@ -157,7 +157,7 @@ export const WIDGETS: WidgetDef[] = [
       <div>
         <Big value={m.ropaDrift.total} label="fields drift from the register" tone={m.ropaDrift.total ? "var(--yellow)" : "var(--green)"} />
         <div className="stack" style={{ gap: 4, marginTop: 8 }}>
-          <div className="row" style={{ justifyContent: "space-between" }}><span className="cell-sub">Reclassified since last scan</span><span className="cell-primary">{m.ropaDrift.reclassified}</span></div>
+          <div className="row" style={{ justifyContent: "space-between" }}><span className="cell-sub">Reclassified since last DLP sync</span><span className="cell-primary">{m.ropaDrift.reclassified}</span></div>
           <div className="row" style={{ justifyContent: "space-between" }}><span className="cell-sub">Not in any RoPA record</span><span className="cell-primary">{m.ropaDrift.unregistered}</span></div>
         </div>
       </div>
@@ -173,7 +173,7 @@ export const WIDGETS: WidgetDef[] = [
       </div>
     ),
   },
-  { id: "discovery_coverage", name: "Discovery coverage", description: "Share of classified fields reviewed.", category: "Data Map", tier: 2, sizes: ["compact", "full"], render: (m) => <div className="row" style={{ gap: 16, alignItems: "center" }}><Ring pct={m.discoveryCoveragePct} /><span className="cell-sub">of fields reviewed</span></div> },
+  { id: "discovery_coverage", name: "DLP classification coverage", description: "Share of DLP-classified fields reviewed.", category: "Data Map", tier: 2, sizes: ["compact", "full"], render: (m) => <div className="row" style={{ gap: 16, alignItems: "center" }}><Ring pct={m.discoveryCoveragePct} /><span className="cell-sub">of fields reviewed</span></div> },
   { id: "compliance_score", name: "Compliance score", description: "Composite posture score.", category: "Risk & Compliance", tier: 2, sizes: ["compact", "full"], render: (m) => <div className="row" style={{ gap: 16, alignItems: "center" }}><Ring pct={m.complianceScore} tone="var(--green)" /><span className="cell-sub">composite of coverage, linkage &amp; hygiene</span></div> },
   { id: "notices_pending", name: "Notices pending approval", description: "Notices awaiting a DPO decision.", category: "Consent & Notices", tier: 2, sizes: ["compact"], render: (m) => <Big value={m.noticesPendingApproval} label="notices awaiting DPO" tone={m.noticesPendingApproval ? "var(--yellow)" : undefined} /> },
 
@@ -204,8 +204,9 @@ export const WIDGETS: WidgetDef[] = [
   // Data Map
   { id: "ropa_coverage_pct", name: "RoPA coverage %", description: "Share of processing captured in the register.", category: "Data Map", tier: 3, sizes: ["compact", "full"], render: (m) => <div className="row" style={{ gap: 16, alignItems: "center" }}><Ring pct={m.ropaCoveragePct} /><span className="cell-sub">of processing in a RoPA record</span></div> },
   { id: "fiduciary_sdf", name: "Fiduciary SDF breakdown", description: "Fiduciaries by SDF status.", category: "Data Map", tier: 3, sizes: ["compact", "full"], render: (m) => <Bars buckets={m.fiduciarySdf} /> },
-  { id: "dup_rot_counts", name: "Duplicate / ROT counts", description: "Unresolved duplicates and ROT candidates.", category: "Data Map", tier: 3, sizes: ["compact"], render: (m) => <TwoUp a={{ value: m.duplicateCount, label: "duplicates" }} b={{ value: m.rotCount, label: "ROT candidates" }} /> },
-  { id: "classification_backlog", name: "Classification backlog", description: "Fields awaiting review.", category: "Data Map", tier: 3, sizes: ["compact"], render: (m) => <Big value={m.classificationBacklog} label="fields awaiting review" tone={m.classificationBacklog ? "var(--yellow)" : undefined} /> },
+  { id: "dup_rot_counts", name: "Near-duplicate / ROT counts", description: "Unresolved near-duplicates and ROT candidates.", category: "Data Map", tier: 3, sizes: ["compact"], render: (m) => <TwoUp a={{ value: m.duplicateCount, label: "near-duplicates" }} b={{ value: m.rotCount, label: "ROT candidates" }} /> },
+  { id: "classification_backlog", name: "Inventory gaps", description: "Elements with at least one gap (not classified in DLP, or no purpose).", category: "Data Map", tier: 3, sizes: ["compact"], render: (m) => <Big value={m.classificationBacklog} label="inventory gaps" tone={m.classificationBacklog ? "var(--yellow)" : undefined} /> },
+  { id: "dlp_sync", name: "DLP sync", description: "Discovery source connection status and last sync.", category: "Data Map", tier: 2, sizes: ["compact"], render: (m) => <div className="stack" style={{ gap: 6 }}><div className="row" style={{ gap: 8, alignItems: "center" }}><span className="dot" style={{ width: 9, height: 9, borderRadius: "50%", background: m.dlp.state === "connected" ? "var(--green)" : m.dlp.state === "stale" ? "var(--yellow)" : "var(--red)" }} /><span className="cell-primary">{m.dlp.warnText ?? "Connected"}</span></div><span className="cell-sub">{m.dlp.lastSyncAgo ? `Last sync ${m.dlp.lastSyncAgo}` : "Never synced"}</span></div> },
 
   // Consent & Notices
   { id: "notice_status", name: "Notice status breakdown", description: "Notices by lifecycle status.", category: "Consent & Notices", tier: 3, sizes: ["compact", "full"], render: (m) => <Bars buckets={m.noticeStatus} /> },

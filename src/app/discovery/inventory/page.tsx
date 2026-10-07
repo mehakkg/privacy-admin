@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
 import { CompactFilterBar } from "@/components/CompactFilterBar";
 import { TagToPurposeButton } from "@/components/datamap/TagToPurposeButton";
+import { MovedNote } from "@/components/MovedNote";
 import {
   InfoTip,
   PageHead,
@@ -58,6 +59,8 @@ export default async function InventoryPage({
     datacat?: string;
     linkage?: string;
     page?: string;
+    filter?: string;
+    moved?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -82,6 +85,10 @@ export default async function InventoryPage({
     // `untagged` wins over a purpose selection: asking for both is
     // contradictory, and the toggle is the more explicit intent.
     ...(params.untagged === "1" ? { purposeTagId: null } : {}),
+    // Relocated Review-queue facets land here as filters (full gap-first view is a
+    // separate change): "Not classified" and "Quarantined".
+    ...(params.filter === "not-classified" ? { reviewState: "pending" } : {}),
+    ...(params.filter === "quarantined" ? { quarantined: true } : {}),
     ...(term
       ? {
           OR: [
@@ -147,6 +154,8 @@ export default async function InventoryPage({
         title="Data Inventory"
         titleTip="Every classified field across every connected source. This is the standing record a DPB inquiry would be answered from."
       />
+
+      <MovedNote moved={params.moved} />
 
       <div className="stat-row" style={{ marginBottom: 16 }}>
         <Stat label="Fields in view" value={total} />

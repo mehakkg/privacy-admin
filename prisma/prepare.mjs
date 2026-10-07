@@ -124,4 +124,7 @@ if (!POOLED) {
 
   // Idempotent: seeds the Masking Policy (DDM Console) demo — versions, audiences, grants.
   run("Seeding masking policy demo", "npx tsx prisma/patch-maskingpolicy.ts", POOLED);
+
+  // Idempotent: seeds the DLP connection singleton (discovery source health).
+  run("Seeding DLP connection demo", "npx tsx prisma/patch-dlp.ts", POOLED);
 }

@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { decodeList } from "@/lib/codec/json";
+import { getDlpHealth } from "@/lib/engines/dlp";
 
 /**
  * One computation feeding every dashboard widget. The dashboard renders ~40
@@ -75,6 +76,8 @@ export interface DashboardMetrics {
   systemsByStatus: Bucket[];
   processorsByStatus: Bucket[];
   degradedCount: number;
+  // DLP (discovery source) connection health.
+  dlp: { state: string; warnText: string | null; lastSyncAgo: string | null };
 }
 
 function monthKey(d: Date): string {
@@ -98,7 +101,7 @@ export async function computeDashboardMetrics(): Promise<DashboardMetrics> {
   const [
     requests, exceptions, escalations, systems, processors, notices, classifiedFields,
     activities, locations, entities, consent, webhooks, findings, ruleExceptions,
-    duplicates, rots, executions, variants, auditCount,
+    duplicates, rots, executions, variants, auditCount, dlpHealth,
   ] = await Promise.all([
     db.dataPrincipalRequest.findMany(),
     db.retentionException.findMany({ where: { reviewStatus: "unreviewed" } }),
@@ -119,6 +122,7 @@ export async function computeDashboardMetrics(): Promise<DashboardMetrics> {
     db.executionRecord.findMany({ select: { status: true } }),
     db.noticeVariant.findMany({ select: { language: true, content: true } }),
     db.auditLogEntry.count(),
+    getDlpHealth(),
   ]);
 
   const open = requests.filter((r) => !CLOSED.has(r.status));
@@ -262,6 +266,7 @@ export async function computeDashboardMetrics(): Promise<DashboardMetrics> {
   const degradedCount =
     systems.filter((s) => s.connectionStatus !== "healthy").length +
     processors.filter((p) => p.healthStatus !== "responsive").length;
+  const dlp = { state: dlpHealth.state, warnText: dlpHealth.warnText, lastSyncAgo: dlpHealth.lastSyncAgo };
 
   return {
     openRequests: open.length,
@@ -306,5 +311,6 @@ export async function computeDashboardMetrics(): Promise<DashboardMetrics> {
     systemsByStatus,
     processorsByStatus,
     degradedCount,
+    dlp,
   };
 }

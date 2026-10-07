@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
 import { Card, GovernanceBanner, PageHead, Pill, Stat } from "@/components/ui";
 import { ScriptMapper, CookieFindings, BannerConfig } from "@/components/cookieConfig";
+import { MovedNote } from "@/components/MovedNote";
 import { ROLE_LABEL } from "@/lib/domain";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ export const dynamic = "force-dynamic";
 export default async function CookieConsentPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; moved?: string }>;
 }) {
   const params = await searchParams;
   const tab = params.tab === "monitoring" ? "monitoring" : "configuration";
@@ -43,6 +44,8 @@ export default async function CookieConsentPage({
           </Link>
         }
       />
+
+      <MovedNote moved={params.moved} />
 
       <nav className="stepper">
         <Link href="/consent/cookies" className={`step${tab === "configuration" ? " active" : ""}`}>

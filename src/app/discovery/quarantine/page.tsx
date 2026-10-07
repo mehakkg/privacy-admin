@@ -1,31 +1,27 @@
-import { db } from "@/lib/db";
+import { ExternalLink } from "lucide-react";
 import { Shell } from "@/components/Shell";
-import { PageHead } from "@/components/ui";
-import { QuarantineList, type QuarantineRow } from "@/components/discovery/QuarantineList";
-import { getCurrentRole } from "@/lib/session";
+import { PageHead, Notice } from "@/components/ui";
+import { MovedNote } from "@/components/MovedNote";
 
 export const dynamic = "force-dynamic";
 
-/** SCREEN 4 — High-Risk Quarantine & Share-Approval Gate. Quarantined findings
- *  can't be shared directly — only through an approval routed to DPO/CISO. */
-export default async function QuarantinePage() {
-  const [fields, role] = await Promise.all([
-    db.classifiedField.findMany({ where: { quarantined: true }, include: { source: { select: { name: true } }, shareApprovals: { orderBy: { requestedAt: "desc" }, take: 1 } }, orderBy: { fieldPath: "asc" } }),
-    getCurrentRole(),
-  ]);
-
-  const rows: QuarantineRow[] = fields.map((f) => {
-    const req = f.shareApprovals[0];
-    return {
-      id: f.id, fieldPath: f.fieldPath, sourceName: f.source.name, detectedType: f.overriddenType ?? f.detectedType,
-      request: req ? { id: req.id, status: req.status, approverRole: req.approverRole, requestedBy: req.requestedBy, decidedBy: req.decidedBy, decisionNote: req.decisionNote } : null,
-    };
-  });
-
+/**
+ * Quarantine is managed in the DLP now. When the DLP exposes quarantine status,
+ * it would show read-only in Data inventory; our connected DLP does not, so this
+ * is the "Managed in DLP" fallback the spec calls for — never a 404.
+ */
+export default async function QuarantineRedirectPage({ searchParams }: { searchParams: Promise<{ moved?: string }> }) {
+  const { moved } = await searchParams;
   return (
-    <Shell active="/discovery/quarantine" title="Data Map / Quarantine">
-      <PageHead title="Quarantine & share approval" titleTip="High-risk findings are isolated automatically. Sharing or releasing one is gated by an explicit approval routed to the DPO or CISO — quarantine means something operationally, not just visually." />
-      <QuarantineList rows={rows} role={role} />
+    <Shell active="/discovery/inventory" title="Data Map / Quarantine">
+      <PageHead title="Quarantine" titleTip="High-risk findings are isolated and released in the DLP. Privacy Admin shows quarantine read-only in Data inventory only where the DLP exposes it." />
+      <MovedNote moved={moved} />
+      <Notice tone="info" title="Managed in DLP">
+        Quarantine candidates and their release approvals are handled in the DLP. The connected DLP doesn&rsquo;t expose quarantine status, so there is nothing to show here in Privacy Admin.
+        <div style={{ marginTop: 10 }}>
+          <a className="btn sm" href="#" aria-label="Open in DLP (opens the external DLP console)">Open in DLP <ExternalLink size={13} /></a>
+        </div>
+      </Notice>
     </Shell>
   );
 }

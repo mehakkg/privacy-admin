@@ -103,8 +103,8 @@ function childIcon(label: string): LucideIcon {
 }
 
 export type NavChild =
-  | { href: string; label: string; ready: boolean; badge?: number; heading?: never }
-  | { heading: string; href?: never; label?: never; ready?: never; badge?: never };
+  | { href: string; label: string; ready: boolean; badge?: number; badgeLabel?: string; warn?: string | null; heading?: never }
+  | { heading: string; href?: never; label?: never; ready?: never; badge?: never; badgeLabel?: never; warn?: never };
 
 export interface NavGroup {
   key: string;
@@ -112,6 +112,8 @@ export interface NavGroup {
   href: string;
   ready: boolean;
   badge?: number;
+  badgeLabel?: string;
+  warn?: string | null;
   children?: NavChild[];
   /** Pinned to the bottom of the sidebar, below a divider (Settings). */
   footer?: boolean;
@@ -188,18 +190,29 @@ export function SidebarNav({
       return next;
     });
 
-  const renderItem = (href: string, label: string, Icon: LucideIcon, ready: boolean, opts: { badge?: number; locked?: boolean } = {}) =>
-    ready ? (
+  const renderItem = (href: string, label: string, Icon: LucideIcon, ready: boolean, opts: { badge?: number; badgeLabel?: string; warn?: string | null; locked?: boolean } = {}) => {
+    const showBadge = opts.badge !== undefined && opts.badge > 0;
+    const badgeText = showBadge ? (opts.badge! > 99 ? "99+" : String(opts.badge)) : "";
+    const badgeName = opts.badgeLabel ?? (showBadge ? `${opts.badge}` : undefined);
+    // Collapsed tooltip carries the label and, when present, the warning text too.
+    const collapsedTitle = collapsed ? (opts.warn ? `${label} — ${opts.warn}` : label) : undefined;
+    return ready ? (
       <Link
         href={href}
         className={`nav-item${href === activeHref ? " active" : ""}`}
-        title={collapsed ? label : undefined}
+        title={collapsedTitle}
         aria-current={href === activeHref ? "page" : undefined}
       >
         <Icon strokeWidth={1.6} />
         <span className="label">{label}</span>
+        {opts.warn && (
+          <span className="nav-warn" role="img" aria-label={opts.warn}>
+            <AlertTriangle strokeWidth={1.9} />
+            <span className="nav-warn-tip" aria-hidden>{opts.warn}</span>
+          </span>
+        )}
         {opts.locked && <span className="nav-lock" title="Set by DPO/CISO"><Lock strokeWidth={1.7} /></span>}
-        {opts.badge !== undefined && opts.badge > 0 && <span className="count">{opts.badge}</span>}
+        {showBadge && <span className="count" aria-label={badgeName}>{badgeText}</span>}
       </Link>
     ) : (
       <span className="nav-item disabled" title={label}>
@@ -207,12 +220,13 @@ export function SidebarNav({
         <span className="label">{label}</span>
       </span>
     );
+  };
 
   const renderGroup = (group: NavGroup) => {
     const hasChildren = (group.children?.length ?? 0) > 0;
     if (!hasChildren) {
       const Icon = GROUP_ICON[group.key] ?? childIcon(group.label);
-      return <div key={group.key}>{renderItem(group.href, group.label, Icon, group.ready, { badge: group.badge, locked: group.locked })}</div>;
+      return <div key={group.key}>{renderItem(group.href, group.label, Icon, group.ready, { badge: group.badge, badgeLabel: group.badgeLabel, warn: group.warn, locked: group.locked })}</div>;
     }
     // When collapsed, every group renders open (headers are hidden by CSS).
     const isOpen = collapsed ? true : open[group.key] ?? false;
@@ -220,17 +234,20 @@ export function SidebarNav({
     // total lives on the page rows instead.
     const childTotal = (group.children ?? []).reduce((n, c) => n + (c.badge ?? 0), 0);
     const headerBadge = group.badge ?? (childTotal > 0 ? childTotal : undefined);
+    const headerWarn = group.warn ?? (group.children ?? []).find((c) => c.warn)?.warn ?? null;
+    const headerBadgeText = headerBadge !== undefined ? (headerBadge > 99 ? "99+" : String(headerBadge)) : "";
     return (
       <div key={group.key} className={`nav-group${isOpen ? "" : " closed"}`}>
         <button type="button" className="nav-group-header" aria-expanded={isOpen} onClick={() => toggle(group.key)}>
           <span className="label">{group.label}</span>
-          {!isOpen && headerBadge !== undefined && headerBadge > 0 && <span className="count">{headerBadge}</span>}
+          {!isOpen && headerWarn && <span className="nav-warn" role="img" aria-label={headerWarn}><AlertTriangle strokeWidth={1.9} /></span>}
+          {!isOpen && headerBadge !== undefined && headerBadge > 0 && <span className="count" aria-label={`${headerBadge} items need attention`}>{headerBadgeText}</span>}
           <ChevronUp strokeWidth={1.6} />
         </button>
         <div className="nav-group-items">
           {(group.children ?? []).map((child) =>
             child.heading !== undefined ? null : (
-              <div key={child.href}>{renderItem(child.href, child.label, childIcon(child.label), child.ready, { badge: child.badge })}</div>
+              <div key={child.href}>{renderItem(child.href, child.label, childIcon(child.label), child.ready, { badge: child.badge, badgeLabel: child.badgeLabel, warn: child.warn })}</div>
             ),
           )}
         </div>

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/session";
 import { countUnread } from "@/lib/engines/notification";
+import { getDlpHealth } from "@/lib/engines/dlp";
 import { requireOnboardingGate } from "@/lib/guards/onboardingGate";
 import { ShellFrame } from "@/components/ShellFrame";
 import { type NavEntry } from "@/components/SidebarNav";
@@ -24,6 +25,9 @@ interface NavCounts {
   openRequests: number;
   auditOpen: number;
   maskingPending: number;
+  inventoryGaps: number;
+  ropaPending: number;
+  dlpWarn: string | null;
 }
 
 function navGroups(counts: NavCounts, role: ActorRole): NavEntry[] {
@@ -45,17 +49,19 @@ function navGroups(counts: NavCounts, role: ActorRole): NavEntry[] {
     {
       key: "data-map",
       label: "Data Map",
-      href: "/data-map/sources",
+      href: "/discovery/inventory",
       ready: true,
-      // Fiduciaries, scan config, categories, quarantine and identity resolution
-      // are now tabs inside these six pages; their routes stay live for deep links.
+      // Discovery, classification and scanning now live in the DLP; Privacy Admin
+      // only reads from it. Sources and Review queue were removed — the systems
+      // list, unclassified fields and quarantine are now facets of Data inventory,
+      // near-duplicates moved to Rights requests › Identity matching, and scan
+      // config moved to Settings › Integrations › DLP. Pipeline order: what
+      // exists → why → where it moves → the record.
       children: [
-        { href: "/data-map/sources", label: "Sources", ready: true },
+        { href: "/discovery/inventory", label: "Data inventory", ready: true, badge: counts.inventoryGaps || undefined, badgeLabel: `${counts.inventoryGaps} inventory gaps`, warn: counts.dlpWarn },
         { href: "/data-map/processing-activities", label: "Processing activities", ready: true },
-        { href: "/discovery/inventory", label: "Data inventory", ready: true },
-        { href: "/discovery/triage", label: "Review queue", ready: true },
         { href: "/data-flow/map", label: "Data flow", ready: true },
-        { href: "/discovery/ropa", label: "ROPA", ready: true },
+        { href: "/discovery/ropa", label: "ROPA", ready: true, badge: counts.ropaPending || undefined, badgeLabel: `${counts.ropaPending} pending recommendations` },
       ],
     },
     // NEW SECTION — Data Protection groups the Rule 6(1)(a) safeguards (masking,
@@ -89,6 +95,9 @@ function navGroups(counts: NavCounts, role: ActorRole): NavEntry[] {
         { href: "/consent/notices", label: "Notices", ready: true },
         { href: "/consent/platform", label: "Consent collection", ready: true },
         { href: "/consent/records", label: "Consent records", ready: true },
+        // Undisclosed-scripts findings (moved out of the old Review queue) live on
+        // the existing website/cookie scan page. Route stays live.
+        { href: "/consent/cookies", label: "Cookie & website scan", ready: true },
       ],
     },
 
@@ -103,6 +112,9 @@ function navGroups(counts: NavCounts, role: ActorRole): NavEntry[] {
       children: [
         { href: "/requests", label: "Requests", ready: true },
         { href: "/escalations", label: "Escalations", ready: true },
+        // Near-duplicate resolution (identity matching), moved out of the old
+        // Review queue — it belongs with rights-request intake.
+        { href: "/requests/identity-matching", label: "Identity matching", ready: true },
         // The execution leg of a deletion request (s.8(7) erasure, incl. at
         // processors) — moved here from Audit & Escalation. Route unchanged.
         { href: "/audit-trail/deletions", label: "Deletion instructions", ready: true },
@@ -196,8 +208,9 @@ function navGroups(counts: NavCounts, role: ActorRole): NavEntry[] {
         { href: "/settings/organization", label: "Organization", ready: true },
         { href: "/settings/entity-setup", label: "Entity setup", ready: true },
         { href: "/settings/users", label: "Users", ready: true },
-        // Integration setup is now the Setup tab of Integrations; route stays live.
-        { href: "/integrations/connected-systems", label: "Integrations", ready: true },
+        // Integrations opens on DLP (the discovery source) first; connected systems,
+        // health and processors are reachable from there.
+        { href: "/integrations/dlp", label: "Integrations", ready: true },
         { href: "/notifications/channels", label: "Notifications", ready: true },
       ],
     },
@@ -239,7 +252,7 @@ export async function Shell({
   }
 
   const session = await getSession();
-  const [openRequests, unread, auditOpen, maskingPending] = await Promise.all([
+  const [openRequests, unread, auditOpen, maskingPending, inventoryGaps, ropaPending, dlpHealth] = await Promise.all([
     db.dataPrincipalRequest.count({
       where: { status: { notIn: ["closed", "rejected"] } },
     }),
@@ -248,6 +261,13 @@ export async function Shell({
     db.evidenceRequest.count({ where: { status: { notIn: ["fulfilled", "resolved", "closed"] } } }),
     // Masking policy badge (shown to the DPO only): proposals awaiting a decision.
     db.maskingChangeRequest.count({ where: { status: "pending" } }),
+    // Data inventory badge: elements with at least one gap (not yet classified in
+    // DLP, or no purpose assigned). Retention/unknown-to-DLP gaps join these later.
+    db.classifiedField.count({ where: { OR: [{ reviewState: "pending" }, { purposeTagId: null }] } }),
+    // ROPA badge: pending ROPA recommendations awaiting a DPO decision.
+    db.ropaSuggestion.count({ where: { status: "pending" } }),
+    // DLP connection health → the warning on Data inventory.
+    getDlpHealth(),
   ]);
 
   const name = session.actor.label;
@@ -255,7 +275,7 @@ export async function Shell({
 
   return (
     <ShellFrame
-      nav={navGroups({ openRequests, auditOpen, maskingPending }, session.role)}
+      nav={navGroups({ openRequests, auditOpen, maskingPending, inventoryGaps, ropaPending, dlpWarn: dlpHealth.warnText }, session.role)}
       active={active}
       brandName="Privacy Admin"
       brandCaption="PRIVACY CONSOLE"

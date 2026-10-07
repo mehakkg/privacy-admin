@@ -1194,6 +1194,13 @@ model RopaSuggestion {
 model IntegrationConfig {
   id          String  @id @default("singleton")
   tprmEnabled Boolean @default(false)
+  /// DLP (discovery source) connection health. Discovery, classification and
+  /// scanning live in the DLP now; Privacy Admin only reads from it. These drive
+  /// the Data inventory warning in the nav and the Settings › Integrations › DLP page.
+  dlpConnected         Boolean  @default(true)
+  dlpSyncFailed        Boolean  @default(false)
+  dlpLastSyncAt        DateTime?
+  dlpSyncIntervalHours Int      @default(24)
   updatedAt   DateTime @updatedAt
   updatedBy   String?
 }

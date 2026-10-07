@@ -344,8 +344,10 @@ function categoryFor(kind: string): string {
 /** Deep link to the source record for an event, or null. */
 function hrefFor(event: NotificationEvent): string | null {
   switch (event.kind) {
-    case "integration.sync_failed": return `/discovery/sources/${event.sourceId}`;
-    case "discovery.scan_failed": return "/discovery/sources";
+    // Sync/scan failures now refer to the DLP — the discovery source — and link
+    // to Settings › Integrations › DLP where the connection is managed.
+    case "integration.sync_failed": return "/integrations/dlp";
+    case "discovery.scan_failed": return "/integrations/dlp";
     case "breach.detected": return `/breach/incidents/${event.incidentId}`;
     case "dprr.board_escalated": return `/requests/sla/${event.ticketId}`;
     case "conflict.escalation_raised": return `/audit-trail/rulings/${event.escalationId}`;

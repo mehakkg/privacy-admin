@@ -76,7 +76,7 @@ export function OnboardingBanners({ state }: { state: BannerState }) {
             <button className="icon-btn" aria-label="Dismiss" onClick={() => { setGs(false); run(() => dismissGettingStartedAction()); }}><X size={15} /></button>
           </div>
           <div className="stack" style={{ gap: 6, marginTop: 8 }}>
-            <GsItem done={state.items.source} icon={<Database size={14} />} label="Connect a data source" href="/discovery/sources" />
+            <GsItem done={state.items.source} icon={<Database size={14} />} label="Connect the DLP" href="/integrations/dlp" />
             <GsItem done={state.items.teammates} icon={<Users size={14} />} label="Invite teammates" href="/access/assignments" />
             <GsItem done={state.items.anotherEntity} icon={<Building size={14} />} label="Add another entity" href="/get-started" />
           </div>
