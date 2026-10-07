@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { getSession } from "@/lib/session";
 import { countUnread } from "@/lib/engines/notification";
 import { getDlpHealth } from "@/lib/engines/dlp";
+import { getInventoryCounts } from "@/lib/engines/inventory";
 import { requireOnboardingGate } from "@/lib/guards/onboardingGate";
 import { ShellFrame } from "@/components/ShellFrame";
 import { type NavEntry } from "@/components/SidebarNav";
@@ -252,7 +253,7 @@ export async function Shell({
   }
 
   const session = await getSession();
-  const [openRequests, unread, auditOpen, maskingPending, inventoryGaps, ropaPending, dlpHealth] = await Promise.all([
+  const [openRequests, unread, auditOpen, maskingPending, invCounts, ropaPending, dlpHealth] = await Promise.all([
     db.dataPrincipalRequest.count({
       where: { status: { notIn: ["closed", "rejected"] } },
     }),
@@ -261,14 +262,15 @@ export async function Shell({
     db.evidenceRequest.count({ where: { status: { notIn: ["fulfilled", "resolved", "closed"] } } }),
     // Masking policy badge (shown to the DPO only): proposals awaiting a decision.
     db.maskingChangeRequest.count({ where: { status: "pending" } }),
-    // Data inventory badge: elements with at least one gap (not yet classified in
-    // DLP, or no purpose assigned). Retention/unknown-to-DLP gaps join these later.
-    db.classifiedField.count({ where: { OR: [{ reviewState: "pending" }, { purposeTagId: null }] } }),
+    // Data inventory badge = the "Needs attention" count, from the SAME readiness
+    // derivation the inventory page uses (one source of truth).
+    getInventoryCounts(),
     // ROPA badge: pending ROPA recommendations awaiting a DPO decision.
     db.ropaSuggestion.count({ where: { status: "pending" } }),
     // DLP connection health → the warning on Data inventory.
     getDlpHealth(),
   ]);
+  const inventoryGaps = invCounts.attention;
 
   const name = session.actor.label;
   const email = `${name.toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/(^\.|\.$)/g, "")}@privacyconsole.in`;

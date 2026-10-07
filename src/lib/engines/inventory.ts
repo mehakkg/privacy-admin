@@ -2,23 +2,21 @@ import { db } from "@/lib/db";
 import { audited, type AuditActor } from "@/lib/engines/audit";
 import { getDlpHealth } from "@/lib/engines/dlp";
 import {
-  GAP_ORDER, SENS_RANK, topGap, level1Parts,
-  type GapType, type InventoryRow, type InventoryView, type SyncStateView,
-  type PurposeOption, type Segment, type InheritPreview,
+  READINESS_PRIORITY, SENS_RANK, SENSITIVITIES,
+  type Readiness, type InventoryRow, type InventoryView, type SyncStateView,
+  type PurposeOption, type Segment, type Grouping, type GroupView, type ReadinessCounts, type InheritPreview,
 } from "@/lib/inventory";
 
 /**
  * DATA INVENTORY ENGINE (server).
  *
- * Reads what the DLP found (via ClassifiedField + its DiscoverySource) and joins
- * the Privacy-Admin-owned attributes (purposes, data category, subject type).
- * Sensitivity uses the DLP's four labels. Gaps are derived and ordered by
- * severity. Purpose coverage and the Level-1 tally are computed over the whole
- * personal-data set so they stay stable while the Admin filters.
+ * Reads what the DLP found (ClassifiedField + DiscoverySource) and joins the
+ * Privacy-Admin-owned attributes. Every field gets ONE readiness status; the
+ * whole-inventory counts are the single source of truth for the nav badge, the
+ * "Needs attention" segment, the readiness bar and the sentence.
  */
 
 function err(name: string, message: string) { return Object.assign(new Error(message), { name }); }
-
 function agoText(date: Date, now = Date.now()): string {
   const s = Math.max(0, Math.floor((now - date.getTime()) / 1000));
   if (s < 60) return "just now";
@@ -31,26 +29,24 @@ function exactText(date: Date): string {
 }
 
 export interface InventoryParams {
-  segment?: Segment; q?: string; system?: string; sensitivity?: string; status?: string;
+  grouping?: Grouping; segment?: Segment; q?: string; system?: string; sensitivity?: string; status?: string;
   dataType?: string; dataCategory?: string; purpose?: string; subject?: string; provenance?: string;
 }
 
-interface DerivedField extends InventoryRow { gapTally: GapType[] }
+interface Derived { rows: InventoryRow[]; counts: ReadinessCounts; approvedPurposes: PurposeOption[]; systems: string[]; purposeFreqBySystem: Map<string, Map<string, number>>; purposeFreqByType: Map<string, Map<string, number>>; purposeName: Map<string, string>; globalFreq: Map<string, number> }
 
-export async function getInventory(params: InventoryParams = {}): Promise<InventoryView> {
+/** Derive every field once (unfiltered) with its single readiness status + counts. */
+async function deriveAll(): Promise<Derived & { health: Awaited<ReturnType<typeof getDlpHealth>> }> {
   const [health, fields, purposeRows] = await Promise.all([
     getDlpHealth(),
-    db.classifiedField.findMany({
-      include: { source: true, purposeTag: true, dataCategory: true, purposeLinks: { include: { purpose: true } } },
-    }),
+    db.classifiedField.findMany({ include: { source: true, purposeTag: true, dataCategory: true, purposeLinks: { include: { purpose: true } } } }),
     db.purposeTag.findMany({ where: { status: "approved" } }),
   ]);
-
-  // Purpose inheritance maps (retention / processors / consent) for approved purposes.
   const purposeIds = purposeRows.map((p) => p.id);
-  const [aps, consentRows] = await Promise.all([
+  const [aps, consentRows, usedRows] = await Promise.all([
     db.activityPurpose.findMany({ where: { purposeTagId: { in: purposeIds } }, select: { purposeTagId: true, processorId: true } }),
     db.consentRecord.findMany({ where: { purposeTagId: { in: purposeIds } }, select: { purposeTagId: true } }),
+    db.activityPurposeElement.findMany({ select: { classifiedFieldId: true } }).catch(() => [] as { classifiedFieldId: string | null }[]),
   ]);
   const procIds = [...new Set(aps.map((a) => a.processorId).filter(Boolean) as string[])];
   const procRows = procIds.length ? await db.dataProcessor.findMany({ where: { id: { in: procIds } }, select: { id: true, name: true } }) : [];
@@ -59,6 +55,8 @@ export async function getInventory(params: InventoryParams = {}): Promise<Invent
   for (const a of aps) { if (!a.processorId) continue; const n = procName.get(a.processorId); if (!n) continue; (procsByPurpose.get(a.purposeTagId) ?? procsByPurpose.set(a.purposeTagId, new Set()).get(a.purposeTagId)!).add(n); }
   const consentCount = new Map<string, number>();
   for (const c of consentRows) if (c.purposeTagId) consentCount.set(c.purposeTagId, (consentCount.get(c.purposeTagId) ?? 0) + 1);
+  const usedCount = new Map<string, number>();
+  for (const u of usedRows) if (u.classifiedFieldId) usedCount.set(u.classifiedFieldId, (usedCount.get(u.classifiedFieldId) ?? 0) + 1);
 
   const retentionOf = (p: { retention: string | null }) => (p.retention && p.retention.trim() ? p.retention : null);
   const processorsOf = (id: string) => [...(procsByPurpose.get(id) ?? [])];
@@ -68,13 +66,12 @@ export async function getInventory(params: InventoryParams = {}): Promise<Invent
   const approvedPurposes: PurposeOption[] = purposeRows
     .map((p) => ({ id: p.id, name: p.name, retention: retentionOf(p), processors: processorsOf(p.id), consent: consentOf(p) }))
     .sort((a, b) => a.name.localeCompare(b.name));
-  const purposeById = new Map(purposeRows.map((p) => [p.id, p]));
+  const purposeName = new Map(purposeRows.map((p) => [p.id, p.name]));
 
   const intervalMs = health.syncIntervalHours * 3600_000;
   const now = Date.now();
 
-  // --- Derive every field once (unfiltered), then filter/segment/sort in memory.
-  const derived: DerivedField[] = fields.map((f) => {
+  const rows: InventoryRow[] = fields.map((f) => {
     const linked = f.purposeLinks.map((l) => l.purpose).filter((p) => p.status === "approved");
     const ids = new Set(linked.map((p) => p.id));
     if (f.purposeTag && f.purposeTag.status === "approved" && !ids.has(f.purposeTag.id)) { linked.push(f.purposeTag); ids.add(f.purposeTag.id); }
@@ -84,19 +81,18 @@ export async function getInventory(params: InventoryParams = {}): Promise<Invent
     const provenance: InventoryRow["provenance"] = f.source.provenance === "manually_added" ? "declared" : "discovered";
     const lastScan = f.source.lastScanned ?? null;
     const outOfDate = health.state === "out_of_date" || (!!lastScan && now - lastScan.getTime() > intervalMs);
-
     const retention = linked.map((p) => retentionOf(p)).find((r) => r) ?? null;
     const processors = [...new Set(linked.flatMap((p) => processorsOf(p.id)))];
     const consentStates = linked.filter((p) => p.lawfulBasis === "consent").map((p) => consentOf(p));
     const consent: InheritPreview["consent"] = consentStates.length === 0 ? "not_required" : consentStates.every((c) => c === "linked") ? "linked" : "not_linked";
 
-    const gaps: GapType[] = [];
-    if (sensitivity === "Not classified") gaps.push("not_classified");
-    if (purposes.length === 0) gaps.push("no_purpose");
-    if (consentStates.some((c) => c === "not_linked")) gaps.push("purpose_not_linked_to_consent");
-    if (purposes.length > 0 && !retention) gaps.push("no_retention");
-    if (provenance === "declared") gaps.push("unknown_to_dlp");
-    if (outOfDate) gaps.push("out_of_date");
+    // ONE readiness status, by priority.
+    let status: Readiness;
+    if (sensitivity === "Not classified") status = "cls";
+    else if (purposes.length === 0) status = "pur";
+    else if (consentStates.some((c) => c === "not_linked")) status = "link";
+    else if (outOfDate) status = "old";
+    else status = "ready";
 
     const isChanged = f.driftFlag;
     const isNew = !f.lastVerified && !isChanged;
@@ -105,67 +101,98 @@ export async function getInventory(params: InventoryParams = {}): Promise<Invent
     return {
       id: f.id, fieldPath: f.fieldPath, system: f.source.name, dataType: f.overriddenType ?? f.detectedType,
       sensitivity, sensitivityProvenance: f.reviewState === "overridden" ? "override" : "dlp", provenance,
-      purposes, gaps, gapTally: gaps,
-      isNew, isChanged, changeSummary,
-      location: f.fieldPath, firstSeen: null, lastScanned: lastScan ? agoText(lastScan, now) : null,
+      purposes, status, isNew, isChanged, changeSummary,
+      location: f.fieldPath, lastScanned: lastScan ? agoText(lastScan, now) : null,
       dataCategory: f.dataCategory?.name ?? null, subjectType: f.dataSubjectType ?? null,
       retention, processors, consent,
       maskingStatus: sensitivity === "Not classified" ? "Not set" : `Follows ${sensitivity}`,
+      usedInCount: usedCount.get(f.id) ?? 0,
     };
   });
 
-  // Whole-inventory tallies (stable while filtering).
-  const personalTotal = derived.length;
-  const withPurpose = derived.filter((d) => d.purposes.length > 0).length;
-  const coveragePct = personalTotal ? Math.round((withPurpose / personalTotal) * 100) : 100;
-  const tally: Partial<Record<GapType, number>> = {};
-  for (const d of derived) { const g = topGap(d.gaps); if (g) tally[g] = (tally[g] ?? 0) + 1; }
-  const counts = {
-    attention: derived.filter((d) => d.gaps.length > 0).length,
-    new: derived.filter((d) => d.isNew || d.isChanged).length,
-    all: personalTotal,
-  };
-  const everyHasPurpose = withPurpose === personalTotal && personalTotal > 0;
-  const level1 = { total: personalTotal, parts: level1Parts(tally), everyHasPurpose };
+  // Counts (whole inventory) — the single source of truth.
+  const byStatus: Record<Readiness, number> = { cls: 0, pur: 0, link: 0, old: 0, ready: 0 };
+  for (const r of rows) byStatus[r.status]++;
+  const total = rows.length;
+  const counts: ReadinessCounts = { total, ready: byStatus.ready, attention: total - byStatus.ready, byStatus };
 
-  // Filters.
+  // Purpose frequency (for group suggestions) from already-tagged fields.
+  const purposeFreqBySystem = new Map<string, Map<string, number>>();
+  const purposeFreqByType = new Map<string, Map<string, number>>();
+  const globalFreq = new Map<string, number>();
+  const bump = (m: Map<string, Map<string, number>>, key: string, pid: string) => { const inner = m.get(key) ?? m.set(key, new Map()).get(key)!; inner.set(pid, (inner.get(pid) ?? 0) + 1); };
+  for (const r of rows) for (const p of r.purposes) { bump(purposeFreqBySystem, r.system, p.id); bump(purposeFreqByType, r.dataType, p.id); globalFreq.set(p.id, (globalFreq.get(p.id) ?? 0) + 1); }
+
+  const systems = [...new Map(rows.map((r) => [r.system, r.system])).keys()].sort();
+  return { rows, counts, approvedPurposes, systems, purposeFreqBySystem, purposeFreqByType, purposeName, globalFreq, health };
+}
+
+/** Nav badge + anywhere else the attention count is needed — same derivation. */
+export async function getInventoryCounts(): Promise<ReadinessCounts> {
+  return (await deriveAll()).counts;
+}
+
+export async function getInventory(params: InventoryParams = {}): Promise<InventoryView> {
+  const d = await deriveAll();
+  const grouping: Grouping = params.grouping ?? "system";
+  const segment: Segment = params.segment ?? (d.counts.attention > 0 ? "attention" : "all");
+
+  // Filters (work list only; counts stay whole-inventory).
   const term = (params.q ?? "").trim().toLowerCase();
-  let rows = derived.filter((d) => {
-    if (params.system && d.system !== params.system) return false;
-    if (params.sensitivity && d.sensitivity !== params.sensitivity) return false;
-    if (params.dataType && d.dataType !== params.dataType) return false;
-    if (params.dataCategory && d.dataCategory !== params.dataCategory) return false;
-    if (params.subject && d.subjectType !== params.subject) return false;
-    if (params.provenance && d.provenance !== params.provenance) return false;
-    if (params.purpose && !d.purposes.some((p) => p.id === params.purpose)) return false;
-    if (params.status && topGap(d.gaps) !== params.status && !(params.status === "complete" && d.gaps.length === 0)) return false;
-    if (term && !(`${d.fieldPath} ${d.system} ${d.dataType}`.toLowerCase().includes(term))) return false;
+  let rows = d.rows.filter((r) => {
+    if (params.system && r.system !== params.system) return false;
+    if (params.sensitivity && r.sensitivity !== params.sensitivity) return false;
+    if (params.status && r.status !== params.status) return false;
+    if (params.dataType && r.dataType !== params.dataType) return false;
+    if (params.dataCategory && r.dataCategory !== params.dataCategory) return false;
+    if (params.subject && r.subjectType !== params.subject) return false;
+    if (params.provenance && r.provenance !== params.provenance) return false;
+    if (params.purpose && !r.purposes.some((p) => p.id === params.purpose)) return false;
+    if (segment === "attention" && r.status === "ready") return false;
+    if (term && !`${r.fieldPath} ${r.system} ${r.dataType}`.toLowerCase().includes(term)) return false;
     return true;
   });
 
-  const segment: Segment = params.segment ?? (counts.attention > 0 ? "attention" : "all");
-  if (segment === "attention") rows = rows.filter((d) => d.gaps.length > 0);
-  else if (segment === "new") rows = rows.filter((d) => d.isNew || d.isChanged);
+  const rank = (s: Readiness) => READINESS_PRIORITY.indexOf(s);
+  rows.sort((a, b) => rank(a.status) - rank(b.status) || (SENS_RANK[b.sensitivity] ?? 0) - (SENS_RANK[a.sensitivity] ?? 0) || a.fieldPath.localeCompare(b.fieldPath));
 
-  const gapRank = (d: DerivedField) => { const g = topGap(d.gaps); return g ? GAP_ORDER.indexOf(g) : 99; };
-  rows.sort((a, b) => gapRank(a) - gapRank(b) || (SENS_RANK[b.sensitivity] ?? 0) - (SENS_RANK[a.sensitivity] ?? 0) || a.fieldPath.localeCompare(b.fieldPath));
+  // Groups.
+  let groups: GroupView[] | null = null;
+  if (grouping !== "none") {
+    const keyOf = (r: InventoryRow) => grouping === "dataType" ? r.dataType : r.system;
+    const map = new Map<string, InventoryRow[]>();
+    for (const r of rows) (map.get(keyOf(r)) ?? map.set(keyOf(r), []).get(keyOf(r))!).push(r);
+    groups = [...map.entries()].map(([key, rs]) => {
+      const mix = SENSITIVITIES.map((label) => ({ label, count: rs.filter((r) => r.sensitivity === label).length })).filter((m) => m.count > 0);
+      const gaps = (["cls", "pur", "link", "old"] as Readiness[]).map((status) => ({ status, count: rs.filter((r) => r.status === status).length })).filter((g) => g.count > 0);
+      const purFieldIds = rs.filter((r) => r.status === "pur").map((r) => r.id);
+      // Suggestion: most common approved purpose among tagged fields in the group (fallback global).
+      let suggestion: GroupView["suggestion"] = null;
+      if (purFieldIds.length > 0) {
+        const groupFreq = (grouping === "dataType" ? d.purposeFreqByType : d.purposeFreqBySystem).get(key);
+        const src = groupFreq && groupFreq.size > 0 ? groupFreq : d.globalFreq;
+        const pick = [...src.entries()].sort((a, b) => b[1] - a[1])[0];
+        if (pick) suggestion = { purposeId: pick[0], purposeName: d.purposeName.get(pick[0]) ?? "Purpose", confidence: pick[1] >= 2 ? "high" : "low", fieldIds: purFieldIds };
+      }
+      return { key, name: key, fieldCount: rs.length, newCount: rs.filter((r) => r.isNew || r.isChanged).length, mix, gaps, ready: rs.every((r) => r.status === "ready"), suggestion, rowIds: rs.map((r) => r.id) };
+    });
+    groups.sort((a, b) => (b.gaps.reduce((n, g) => n + g.count, 0)) - (a.gaps.reduce((n, g) => n + g.count, 0)) || a.name.localeCompare(b.name));
+  }
 
-  const sources = [...new Map(derived.map((d) => [d.system, d.system])).keys()].sort();
   const sync: SyncStateView = {
-    status: health.state === "connected" ? "idle" : health.state,
-    lastSyncedAgo: health.lastSyncAgo,
-    lastSyncedExact: health.lastSyncAt ? exactText(health.lastSyncAt) : null,
-    systems: sources.length,
-    warnText: health.warnText,
+    status: d.health.state === "connected" ? "idle" : d.health.state,
+    lastSyncedAgo: d.health.lastSyncAgo, lastSyncedExact: d.health.lastSyncAt ? exactText(d.health.lastSyncAt) : null,
+    systems: d.systems.length, warnText: d.health.warnText,
   };
 
   return {
-    rows: rows.map(({ gapTally: _gapTally, ...r }) => r),
-    total: rows.length, personalTotal,
-    level1, coveragePct, counts, sync,
-    systems: sources.map((s) => ({ id: s, name: s })),
-    approvedPurposes,
-    notConnected: health.state === "not_connected",
+    rows, groups, grouping,
+    total: rows.length, personalTotal: d.counts.total,
+    counts: d.counts, sync,
+    systems: d.systems.map((s) => ({ id: s, name: s })),
+    dataTypes: [...new Set(d.rows.map((r) => r.dataType))].sort(),
+    approvedPurposes: d.approvedPurposes,
+    notConnected: d.health.state === "not_connected",
   };
 }
 
@@ -173,14 +200,12 @@ export async function getInventory(params: InventoryParams = {}): Promise<Invent
 
 export interface AssignResult { ok: true; assigned: number; skipped: number }
 
-/** Assign ONE approved purpose to many fields (adds a link; keeps purposeTagId as primary). */
 export async function assignPurposeToFields(fieldIds: string[], purposeTagId: string, actor: AuditActor): Promise<AssignResult> {
   const purpose = await db.purposeTag.findUnique({ where: { id: purposeTagId } });
   if (!purpose) throw err("NotFoundError", "No such purpose.");
   if (purpose.status !== "approved") throw err("ForbiddenError", `${purpose.name} is not an approved purpose.`);
   const fields = await db.classifiedField.findMany({ where: { id: { in: fieldIds } }, include: { purposeLinks: true } });
   if (fields.length !== fieldIds.length) throw err("NotFoundError", "One or more fields no longer exist.");
-
   let assigned = 0, skipped = 0;
   await audited(
     { actor, action: "inventory.purpose_assigned", targetType: "ClassifiedField", targetId: fieldIds.join(","), eventDescription: `Assigned purpose ${purpose.name} to ${fieldIds.length} field(s)`, payload: { purpose: purpose.name, fields: fieldIds.length } },
@@ -196,7 +221,6 @@ export async function assignPurposeToFields(fieldIds: string[], purposeTagId: st
   return { ok: true, assigned, skipped };
 }
 
-/** Remove one purpose link from a field; repoint the primary if needed. */
 export async function removePurposeFromField(fieldId: string, purposeTagId: string, actor: AuditActor): Promise<void> {
   const field = await db.classifiedField.findUnique({ where: { id: fieldId }, include: { purposeLinks: true } });
   if (!field) throw err("NotFoundError", "No such field.");
@@ -216,8 +240,7 @@ export async function setFieldAttribute(fieldId: string, attr: "dataCategoryId" 
   await db.classifiedField.update({ where: { id: fieldId }, data: { [attr]: value } });
 }
 
-/** Suggested approved purposes for a field: those already used by sibling fields in
- *  the same system or data category, most-used first (a light heuristic, no ML). */
+/** Suggested approved purposes for one field (drawer/popover): sibling purposes in the same system/category. */
 export async function suggestPurposes(fieldId: string): Promise<{ id: string; name: string; strong: boolean }[]> {
   const field = await db.classifiedField.findUnique({ where: { id: fieldId }, include: { source: true } });
   if (!field) return [];

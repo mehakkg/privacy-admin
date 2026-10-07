@@ -17,7 +17,8 @@ export default async function InventoryPage({
 }) {
   const sp = await searchParams;
   const params: InventoryParams = {
-    segment: sp.segment === "new" || sp.segment === "all" || sp.segment === "attention" ? sp.segment : undefined,
+    grouping: sp.grouping === "dataType" || sp.grouping === "none" || sp.grouping === "system" ? sp.grouping : undefined,
+    segment: sp.segment === "all" || sp.segment === "attention" ? sp.segment : undefined,
     q: sp.q, system: sp.system, sensitivity: sp.sensitivity, status: sp.status,
     dataType: sp.dataType, dataCategory: sp.dataCategory, purpose: sp.purpose, subject: sp.subject, provenance: sp.provenance,
   };
