@@ -421,6 +421,8 @@ textarea {
 
 .inv-bulkbar { position: sticky; bottom: 0; display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: var(--surface, #fff); border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: 0 -4px 16px rgba(0,0,0,0.08); margin-top: 8px; }
 
+.inv-assign { max-height: calc(100vh - 16px); display: flex; flex-direction: column; }
+.inv-assign .mp-pop-body { overflow-y: auto; }
 .inv-assign .inv-search { min-width: 0; max-width: none; width: 100%; }
 .inv-sugg { margin-bottom: 8px; }
 .inv-sugg-h { text-transform: uppercase; font-size: 10px; letter-spacing: .05em; margin-bottom: 4px; }

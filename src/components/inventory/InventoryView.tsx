@@ -318,15 +318,23 @@ function AssignPopover({ fieldIds, anchor, purposes, onClose, onAssign }: { fiel
   const [q, setQ] = useState("");
   const [sel, setSel] = useState<string | null>(null);
   const [suggested, setSuggested] = useState<{ id: string; name: string; strong: boolean }[]>([]);
+  const [top, setTop] = useState(Math.max(8, anchor.top));
   useEffect(() => { setM(true); const c = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); }; document.addEventListener("mousedown", c); return () => document.removeEventListener("mousedown", c); }, [onClose]);
   useEffect(() => { if (fieldIds.length === 1) suggestPurposesAction(fieldIds[0]).then((r) => { setSuggested(r.suggestions); if (r.suggestions[0]) setSel(r.suggestions[0].id); }); }, [fieldIds]);
+  // Keep the whole popover (incl. the Assign button) on screen — clamp its top to
+  // the measured height, so a row low in the table doesn't push the footer off.
+  useEffect(() => {
+    if (!m || !ref.current) return;
+    const h = ref.current.offsetHeight;
+    setTop(Math.max(8, Math.min(anchor.top, window.innerHeight - h - 8)));
+  }, [m, anchor.top, suggested, sel, q]);
   if (!m) return null;
 
   const filtered = purposes.filter((p) => p.name.toLowerCase().includes(q.toLowerCase()));
   const chosen = sel ? purposes.find((p) => p.id === sel) : null;
 
   return createPortal(
-    <div ref={ref} className="mp-pop inv-assign" style={{ position: "fixed", top: Math.max(8, anchor.top), left: Math.max(8, anchor.left), width: 340 }}>
+    <div ref={ref} className="mp-pop inv-assign" style={{ position: "fixed", top, left: Math.max(8, anchor.left), width: 340 }}>
       <div className="mp-pop-head"><strong>Assign purpose</strong><button className="icon-btn" onClick={onClose}><X size={14} /></button></div>
       <div className="mp-pop-body">
         {purposes.length === 0 ? (
