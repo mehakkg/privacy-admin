@@ -455,6 +455,79 @@ export async function setFieldCategory(code: string, categoryId: string) {
   await db.mPField.update({ where: { code }, data: { categoryId } });
 }
 
+// --- Data catalog -----------------------------------------------------------
+
+export interface CatalogRow {
+  code: string; displayName: string; categoryId: string; categoryName: string; categoryDef: string;
+  sensitivity: string; regulated: boolean; source: string; seen: boolean;
+  applications: { name: string; firstSeen: string; lastSeen: string }[];
+  recommendation: { label: string; example: string; basis: string; basisText: string; params: string | null };
+  policy: { status: "in_use" | "not_decided" | "not_used" | "no_policy"; words: string; example: string; differs: boolean; version: number | null; recExample: string };
+  actionVerb: string | null; actionHref: string | null;
+}
+export interface DataCatalog {
+  rows: CatalogRow[];
+  counts: { found: number; inUse: number; notDecided: number; notUsed: number; regulated: number; notClassified: number; notSeen: number };
+  activeNumber: number | null; draftNumber: number | null;
+}
+
+function parseApps(j: string): { name: string; firstSeen: string; lastSeen: string }[] {
+  const arr = decodeObject<unknown[]>(j) ?? [];
+  return arr.map((a) => typeof a === "string" ? { name: a, firstSeen: "—", lastSeen: "—" } : (a as { name: string; firstSeen: string; lastSeen: string }));
+}
+
+export async function getDataCatalog(): Promise<DataCatalog> {
+  const [fields, cats, active, draft] = await Promise.all([
+    db.mPField.findMany({ orderBy: { displayName: "asc" } }),
+    getCategories(), getActiveVersion(), getDraft(),
+  ]);
+  const catMap = new Map(cats.map((c) => [c.id, c]));
+  const decisions = active ? await db.mPFieldDecision.findMany({ where: { versionId: active.id } }) : [];
+  const decByCode = new Map(decisions.map((d) => [d.fieldCode, d]));
+
+  const rows: CatalogRow[] = fields.map((f) => {
+    const apps = parseApps(f.announcedByJson);
+    const seen = apps.length > 0;
+    // Recommendation
+    let rec: CatalogRow["recommendation"];
+    const legal = parseMask(f.legalMinimumJson);
+    const recMask = parseMask(f.recommendedJson);
+    if (f.regulated && legal) rec = { label: choiceLabel(legal, false), example: renderValue(legal, f.sampleValue), basis: "legal_minimum", basisText: "Legal minimum.", params: null };
+    else if (f.sensitivity === "not_classified" || !recMask) rec = { label: "No recommendation yet", example: "—", basis: "none", basisText: "Not classified", params: null };
+    else if (f.origin === "platform") rec = { label: choiceLabel(recMask, false), example: renderValue(recMask, f.sampleValue), basis: "platform_catalog", basisText: "From platform catalog version 1.", params: null };
+    else rec = { label: choiceLabel(recMask, false), example: renderValue(recMask, f.sampleValue), basis: "suggested", basisText: "Suggested from other fields with the same category and sensitivity. Check it before relying on it.", params: null };
+
+    // Policy usage (active version)
+    const dec = decByCode.get(f.code);
+    let policy: CatalogRow["policy"];
+    if (!active) policy = { status: "no_policy", words: "No policy yet. Fully hidden.", example: renderValue(null, f.sampleValue), differs: false, version: null, recExample: rec.example };
+    else if (!dec || dec.status === "needs_decision") policy = { status: "not_decided", words: "Needs a decision. Stays fully hidden.", example: renderValue(null, f.sampleValue), differs: false, version: active.number, recExample: rec.example };
+    else if (dec.status === "not_used") policy = { status: "not_used", words: "Marked not used. Stays fully hidden if it appears.", example: renderValue(null, f.sampleValue), differs: false, version: active.number, recExample: rec.example };
+    else { const m = parseMask(dec.maskingJson); const ex = renderValue(m, f.sampleValue); policy = { status: "in_use", words: choiceLabel(m, false), example: ex, differs: rec.basis !== "none" && ex !== rec.example, version: active.number, recExample: rec.example }; }
+
+    const actionVerb = !seen ? null : policy.status === "not_decided" ? "Decide" : "View in policy";
+    const actionHref = !seen ? null : policy.status === "not_decided" ? `${MP}?view=workspace&focus=decisions` : (draft ? `${MP}?view=workspace&focus=field:${f.code}` : active ? `${MP}?version=${active.number}` : null);
+
+    return {
+      code: f.code, displayName: f.displayName, categoryId: f.categoryId, categoryName: catMap.get(f.categoryId)?.name ?? "—", categoryDef: catMap.get(f.categoryId)?.definition ?? "",
+      sensitivity: f.sensitivity, regulated: f.regulated, source: f.origin, seen, applications: apps,
+      recommendation: rec, policy, actionVerb, actionHref,
+    };
+  });
+
+  const seenRows = rows.filter((r) => r.seen);
+  const counts = {
+    found: seenRows.length,
+    inUse: seenRows.filter((r) => r.policy.status === "in_use").length,
+    notDecided: seenRows.filter((r) => r.policy.status === "not_decided").length,
+    notUsed: seenRows.filter((r) => r.policy.status === "not_used").length,
+    regulated: seenRows.filter((r) => r.regulated).length,
+    notClassified: seenRows.filter((r) => r.sensitivity === "not_classified").length,
+    notSeen: rows.filter((r) => !r.seen).length,
+  };
+  return { rows, counts, activeNumber: active?.number ?? null, draftNumber: draft?.number ?? null };
+}
+
 // --- Add a field / custom field management ----------------------------------
 
 /** Live check for the Add-a-field modal. */

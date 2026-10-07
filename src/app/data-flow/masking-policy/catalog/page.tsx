@@ -2,53 +2,44 @@ import Link from "next/link";
 import { PageHead } from "@/components/ui";
 import { Shell } from "@/components/Shell";
 import { MaskFunctionsDrawer } from "@/components/maskingpolicy/MaskFunctionsDrawer";
-import { CatalogTable, type CatalogGroup } from "@/components/maskingpolicy/CatalogTable";
-import { getCategories, getActiveVersion, getDraft } from "@/lib/engines/maskingpolicy";
-import { db } from "@/lib/db";
-import { renderValue, choiceLabel, type Masking } from "@/lib/maskingpolicy";
-import { decodeObject } from "@/lib/codec/json";
+import { DataCatalog } from "@/components/maskingpolicy/DataCatalog";
+import { getDataCatalog } from "@/lib/engines/maskingpolicy";
 
 export const dynamic = "force-dynamic";
 
 const MP = "/data-flow/masking-policy";
-const parse = (j: string | null): Masking | null => (j ? decodeObject<Masking>(j) : null) ?? null;
 
-/** SCREEN E — PII catalog. Read-only reference + "In your policy". No actions. */
+/** DATA CATALOG — read-only. What data your applications handle, how sensitive it
+ *  is, and whether the active policy protects it. Reflects the active version only. */
 export default async function CatalogPage() {
-  const [cats, platformFields, active, draft] = await Promise.all([
-    getCategories(),
-    db.mPField.findMany({ where: { origin: "platform" }, orderBy: { displayName: "asc" } }),
-    getActiveVersion(), getDraft(),
-  ]);
-  const policyVersion = draft ?? active;
-  const decisions = policyVersion ? await db.mPFieldDecision.findMany({ where: { versionId: policyVersion.id } }) : [];
-  const decByCode = new Map(decisions.map((d) => [d.fieldCode, d]));
-  const regulatedCount = platformFields.filter((f) => f.regulated).length;
+  const data = await getDataCatalog();
+  const c = data.counts;
+  const notInUse = c.notDecided + c.notUsed;
 
-  const groups: CatalogGroup[] = cats.map((c) => {
-    const members = platformFields.filter((f) => f.categoryId === c.id);
-    return {
-      id: c.id, name: c.name, definition: c.definition,
-      rows: members.map((f) => {
-        const rec = f.regulated ? parse(f.legalMinimumJson) : { family: "partial", params: { showFirst: 0, showLast: 4, maskChar: "*" } } as Masking;
-        const dec = decByCode.get(f.code);
-        const inPolicy = !policyVersion ? "No policy yet" : !dec ? "Hidden, not decided" : dec.status === "not_used" ? "Not used" : dec.status === "needs_decision" ? "Hidden, not decided" : "Yes";
-        return { code: f.code, name: f.displayName, example: renderValue(rec, f.sampleValue), recommended: choiceLabel(rec, false), inPolicy, href: policyVersion ? `${MP}?view=${draft ? "workspace&focus=field:" + f.code : "version&version=" + active?.number}` : null, regulated: f.regulated };
-      }),
-    };
-  }).filter((g) => g.rows.length > 0);
+  // Level 1 sentence, computed.
+  let sentence: React.ReactNode;
+  if (data.activeNumber == null) {
+    sentence = <>{c.found} fields found in your applications. No policy is active yet, so every field is fully hidden. <Link href={MP} className="row-link">Review recommended policy</Link></>;
+  } else if (notInUse === 0) {
+    sentence = <>All {c.found} fields are in use in version {data.activeNumber}.</>;
+  } else {
+    const parts: React.ReactNode[] = [];
+    if (c.notDecided > 0) parts.push(<Link key="d" href={`${MP}?view=workspace&focus=decisions`} className="row-link">{c.notDecided} need a decision</Link>);
+    if (c.notUsed > 0) parts.push(<span key="u">{c.notUsed} marked not used</span>);
+    sentence = <>{c.found} fields found in your applications. {c.inUse} are in use in version {data.activeNumber}. {notInUse} aren&rsquo;t: {parts.map((p, i) => <span key={i}>{i > 0 ? " and " : ""}{p}</span>)}.</>;
+  }
 
   return (
-    <Shell active="/data-flow/masking-policy" title="PII catalog">
+    <Shell active="/data-flow/masking-policy" title="Data catalog">
       <PageHead
-        title="PII catalog"
-        subtitle={`${platformFields.length} fields across ${groups.length} categories. ${regulatedCount} are protected by law.`}
-        actions={<span className="row" style={{ gap: 14, alignItems: "center" }}><span className="cell-sub">Catalog version 1 · read only</span><MaskFunctionsDrawer /><Link href={MP} className="row-link">Open masking policy</Link></span>}
+        title="Data catalog"
+        subtitle={<span>{sentence}</span>}
+        actions={<span className="row" style={{ gap: 14, alignItems: "center" }}><MaskFunctionsDrawer /><Link href={MP} className="row-link">Open masking policy</Link></span>}
       />
-      <div className="stack" style={{ gap: 14, maxWidth: 960 }}>
-        <p className="cell-sub" style={{ margin: 0 }}>Protected by law: masked to the legal minimum or hidden completely, never shown in full.</p>
-        <CatalogTable groups={groups} />
-        <p className="cell-sub" style={{ margin: 0 }}>Fields you added appear in your <Link href={MP} className="row-link">Masking policy</Link>.</p>
+      <div className="stack" style={{ gap: 10, maxWidth: 1040 }}>
+        {c.regulated > 0 && <p className="cell-sub" style={{ margin: 0 }}>{c.regulated} fields are protected by law and can never be shown in full.</p>}
+        {data.draftNumber != null && <p className="cell-sub" style={{ margin: 0 }}>Draft {data.draftNumber} is in progress. This page shows the active version {data.activeNumber}. <Link href={`${MP}?view=workspace`} className="row-link">Open draft</Link></p>}
+        <DataCatalog data={data} />
       </div>
     </Shell>
   );

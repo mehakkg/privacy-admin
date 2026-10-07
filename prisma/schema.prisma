@@ -3234,6 +3234,10 @@ model MPField {
   regulated        Boolean @default(false)
   /// Masking the regulated field may never go weaker than (JSON {function,params}).
   legalMinimumJson String?
+  /// Read from Data inventory (display only, never decides masking): high | medium | low | not_classified.
+  sensitivity      String  @default("not_classified")
+  /// Platform catalog's recommended masking (JSON {function,params}); null = no recommendation.
+  recommendedJson  String?
   sampleValue      String  @default("")
   usedByApps       Boolean @default(true)
   announcedByJson  String  @default("[]")

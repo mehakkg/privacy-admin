@@ -88,7 +88,8 @@ async function main() {
     skipDuplicates: true,
   });
 
-  if (await prisma.mPPolicyVersion.findFirst()) { console.log("patch-maskingpolicy: versions present; ensured categories + fields."); return; }
+  await ensureCatalogFixtures();
+  if (await prisma.mPPolicyVersion.findFirst()) { console.log("patch-maskingpolicy: versions present; ensured categories, fields + catalog fixtures."); return; }
 
   const audiences = [
     { key: "teller", label: "Teller", identifier: "role:teller" },
@@ -151,6 +152,38 @@ async function main() {
   });
 
   console.log(`patch-maskingpolicy: seeded ${CATEGORIES.length} categories, ${FIELDS.length} fields, 3 versions (v2 active, v3 draft), 4 audiences, needs-attention.`);
+}
+
+/**
+ * Data-catalog fixtures (idempotent, every deploy): sensitivity + platform
+ * recommendation + app sightings. Mirrors "read from Data inventory". Sets only
+ * where unset so edits survive. [sensitivity, recommended|null, seen]
+ */
+async function ensureCatalogFixtures() {
+  const seen = (name = "ddm-sample-fiduciary-app") => J([{ name, firstSeen: "2026-08-12", lastSeen: "2026-10-06" }]);
+  const spec: Record<string, [string, unknown, boolean]> = {
+    FULL_NAME: ["medium", firstlast(2, 2), true],
+    DATE_OF_BIRTH: ["medium", pattern("0000-00-00"), true],
+    EMAIL: ["medium", email(2, 0), true],
+    MOBILE: ["medium", last(4), true],
+    AADHAAR: ["high", pattern("xxxx-xxxx-####"), true],
+    PAN: ["high", firstlast(3, 1), true],
+    PASSPORT: ["high", last(4), true],
+    ACCOUNT_NUMBER: ["high", last(4), true],
+    CARD_NUMBER: ["high", pattern("****-****-****-####"), true],
+    CUSTOMER_NOTE: ["low", hidden, true],
+    LOYALTY_TIER: ["low", last(4), true],
+    DEVICE_ID: ["medium", last(4), true],
+    GEO_CITY: ["not_classified", null, true],       // demo: Not classified + "Classify"
+    IP_ADDRESS: ["medium", last(4), true],
+    MIDDLE_NAME: ["low", firstlast(1, 1), false],   // demo: platform field not seen yet
+  };
+  for (const [code, [sens, rec, isSeen]] of Object.entries(spec)) {
+    await prisma.mPField.updateMany({
+      where: { code, sensitivity: "not_classified" },
+      data: { sensitivity: sens, recommendedJson: rec == null ? null : J(rec), ...(isSeen ? { announcedByJson: seen() } : {}) },
+    });
+  }
 }
 
 main().catch((e) => console.error("patch-maskingpolicy failed (continuing):", e)).finally(async () => { await prisma.$disconnect(); });
