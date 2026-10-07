@@ -356,7 +356,7 @@ export async function getLive(number: number): Promise<LiveData | null> {
 
 // --- Home -------------------------------------------------------------------
 
-export interface AttentionItem { id: string; severity: "check" | "decide" | "heads_up"; title: string; consequence: string; verb: string; target: string }
+export interface AttentionItem { id: string; ai: number; severity: "check" | "decide" | "next_step" | "heads_up"; ageText: string; title: string; detail: string; verb: string; destination: string; href: string }
 export interface HomeData {
   active: { number: number; activatedBy: string | null; activatedAt: string | null; whyNote: string | null; impact: string | null } | null;
   draft: { id: string; number: number; basedOn: number | null; changes: number; savedAt: string } | null;
@@ -367,36 +367,80 @@ export interface HomeData {
 }
 
 const MP = "/data-flow/masking-policy";
-const SEV_ORDER: Record<string, number> = { check: 0, decide: 1, heads_up: 2 };
+const SEV_ORDER: Record<string, number> = { check: 0, decide: 1, next_step: 1, heads_up: 2 };
 
-function attentionFrom(a: { id: string; type: string; label: string; link: string | null }): AttentionItem {
-  if (a.type === "fallback_events") return { id: a.id, severity: "check", title: a.label, consequence: "People saw blanks instead of values.", verb: "View access log", target: a.link ?? "/audit?module=masking_policy" };
-  if (a.type === "catalog_update") return { id: a.id, severity: "heads_up", title: a.label, consequence: "Check the legal minimum still fits.", verb: "Open", target: `${MP}?view=workspace&focus=${a.link?.startsWith("field:") ? a.link : "everyone"}` };
-  return { id: a.id, severity: "decide", title: a.label, consequence: "Until you decide, they stay fully hidden.", verb: "Review", target: `${MP}?view=workspace&focus=decisions` };
+/** One date format across the product: "6 Oct 2026, 05:16". */
+export function fmtDate(d: Date | null | undefined, withTime = false): string | null {
+  if (!d) return null;
+  const date = new Date(d);
+  const base = date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  return withTime ? `${base}, ${date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}` : base;
 }
+function ageText(d: Date): string {
+  const s = Math.max(0, Math.floor((Date.now() - new Date(d).getTime()) / 1000));
+  if (s < 3600) return `${Math.max(1, Math.floor(s / 60))} minutes ago`;
+  const h = Math.floor(s / 3600); if (h < 24) return `${h} hour${h === 1 ? "" : "s"} ago`;
+  const dd = Math.floor(h / 24); return `${dd} day${dd === 1 ? "" : "s"} ago`;
+}
+function andList(xs: string[]): string { return xs.length <= 1 ? (xs[0] ?? "") : xs.slice(0, -1).join(", ") + " and " + xs[xs.length - 1]; }
 
 export async function getHome(): Promise<HomeData> {
   const [active, draft, attn, versions] = await Promise.all([
     getActiveVersion(), getDraft(), db.mPNeedsAttention.findMany(), listVersions(),
   ]);
   let draftChanges = 0, decisionsOpen = 0;
+  let undecidedNames: string[] = [];
   if (draft) {
     draftChanges = (await getImpact(draft.id)).counts.changes;
-    decisionsOpen = await db.mPFieldDecision.count({ where: { versionId: draft.id, status: "needs_decision" } });
+    const undecided = await db.mPFieldDecision.findMany({ where: { versionId: draft.id, status: "needs_decision" } });
+    decisionsOpen = undecided.length;
+    if (undecided.length) { const fs = await db.mPField.findMany({ where: { code: { in: undecided.map((d) => d.fieldCode) } }, select: { displayName: true } }); undecidedNames = fs.map((f) => f.displayName); }
   } else {
-    // decisions pending with no draft: fields announced by apps with no catalog/active decision
     decisionsOpen = attn.filter((a) => a.type === "new_app_field").reduce((n, a) => n + a.count, 0);
   }
+  const draftN = draft?.number;
+  const activeN = active?.number;
+
+  const items: AttentionItem[] = attn.map((a) => {
+    if (a.type === "fallback_events") return {
+      id: a.id, ai: 0, severity: "check", ageText: ageText(a.createdAt), title: `${a.count} fields were hidden by the fail-safe in the last 24 hours`,
+      detail: "People saw blanks instead of values. Cause: No policy was active · ddm-sample-fiduciary-app.",
+      verb: `See the ${a.count} fields`, destination: "Opens Audit trail › Fail-safe events, filtered", href: `${MP}/audit?tab=failsafe&from=attention&ai=0`,
+    };
+    if (a.type === "catalog_update") return {
+      id: a.id, ai: 2, severity: "heads_up", ageText: ageText(a.createdAt), title: "Catalog update affects Aadhaar",
+      detail: `Catalog version 2 changed the Aadhaar format. Version ${activeN ?? "?"} meets it.`,
+      verb: "Review Aadhaar", destination: `Opens Draft ${draftN ?? "new"} › Aadhaar`, href: `${MP}?view=workspace&focus=field:AADHAAR&from=attention&ai=2`,
+    };
+    // new_app_field → Decide, or Next step once decided in the draft
+    const n = a.count;
+    if (draft && decisionsOpen === 0) return {
+      id: a.id, ai: 1, severity: "next_step", ageText: ageText(a.createdAt), title: `${n} fields decided in Draft ${draftN}`,
+      detail: "They go live when you activate.", verb: "Review and activate", destination: `Opens Draft ${draftN} › Review`, href: `${MP}?view=review&from=attention&ai=1`,
+    };
+    const names = (undecidedNames.length ? undecidedNames : ["City", "Device identifier", "IP address"]).slice(0, 3);
+    return {
+      id: a.id, ai: 1, severity: "decide", ageText: ageText(a.createdAt), title: `${n} new fields seen in your applications`,
+      detail: `${andList(names)} stay fully hidden until you decide.`, verb: `Decide ${n} fields`, destination: `Opens Draft ${draftN ?? "new"} › Decisions`, href: `${MP}?view=workspace&focus=decisions&from=attention&ai=1`,
+    };
+  }).sort((a, b) => SEV_ORDER[a.severity] - SEV_ORDER[b.severity]);
+
   const archived = versions.filter((v) => v.state === "archived");
   const prev = archived[0] ?? null;
   return {
-    active: active ? { number: active.number, activatedBy: active.activatedBy, activatedAt: active.activatedAt?.toISOString().slice(0, 10) ?? null, whyNote: active.whyNote, impact: active.impactSummary } : null,
+    active: active ? { number: active.number, activatedBy: active.activatedBy, activatedAt: fmtDate(active.activatedAt, true), whyNote: active.whyNote, impact: active.impactSummary } : null,
     draft: draft ? { id: draft.id, number: draft.number, basedOn: draft.basedOn, changes: draftChanges, savedAt: new Date(draft.updatedAt).toISOString().slice(11, 16) } : null,
     decisionsOpen,
-    attention: attn.map(attentionFrom).sort((a, b) => SEV_ORDER[a.severity] - SEV_ORDER[b.severity]),
-    prevVersion: prev ? { number: prev.number, when: prev.activatedAt?.toISOString().slice(0, 10) ?? null, who: prev.activatedBy } : null,
+    attention: items,
+    prevVersion: prev ? { number: prev.number, when: fmtDate(prev.activatedAt), who: prev.activatedBy } : null,
     versionCount: versions.filter((v) => v.state !== "draft").length,
   };
+}
+
+/** Attention sequence for the landing context bar (Back/Next across items). */
+export async function getAttentionSequence(): Promise<{ ai: number; verb: string; href: string }[]> {
+  const home = await getHome();
+  return home.attention.map((i) => ({ ai: i.ai, verb: i.verb, href: i.href }));
 }
 
 // --- Mutations (draft autosave + lifecycle) ---------------------------------

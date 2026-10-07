@@ -7,10 +7,11 @@ import { Review } from "@/components/maskingpolicy/Review";
 import { Live } from "@/components/maskingpolicy/Live";
 import { VersionView } from "@/components/maskingpolicy/VersionView";
 import { Versions } from "@/components/maskingpolicy/Versions";
+import { ContextBar } from "@/components/maskingpolicy/ContextBar";
 
 export const dynamic = "force-dynamic";
 
-type SP = { view?: string; version?: string; versions?: string; focus?: string; n?: string; see?: string };
+type SP = { view?: string; version?: string; versions?: string; focus?: string; n?: string; see?: string; aud?: string; chan?: string; from?: string; ai?: string };
 
 /**
  * MASKING POLICY (DDM Console). View-driven: Home, Draft Workspace, Review,
@@ -25,11 +26,13 @@ export default async function MaskingPolicyPage({ searchParams }: { searchParams
   else if (sp.view === "live" && sp.n) body = <Live number={Number(sp.n)} />;
   else if (sp.view === "review") body = <Review />;
   else if (sp.view === "workspace") body = <Workspace focus={sp.focus} />;
-  else body = <Home see={sp.see} />;
+  else body = <Home see={sp.aud ?? sp.see} chan={sp.chan} />;
 
   const showHead = !(sp.view === "live");
+  const showCtx = sp.from === "attention" && (sp.view === "workspace" || sp.view === "review");
   return (
     <Shell active="/data-flow/masking-policy" title="Masking policy">
+      {showCtx && <ContextBar ai={Number(sp.ai) || 0} />}
       {showHead && (
         <PageHead
           title="Masking policy"

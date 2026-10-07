@@ -2,6 +2,7 @@ import Link from "next/link";
 import { PageHead } from "@/components/ui";
 import { Shell } from "@/components/Shell";
 import { AuditTrailTabs, type PolicyGroup, type FailsafeBurst } from "@/components/maskingpolicy/AuditTrailTabs";
+import { ContextBar } from "@/components/maskingpolicy/ContextBar";
 import { verifyChain, searchAuditLog } from "@/lib/engines/audit";
 import { db } from "@/lib/db";
 
@@ -13,7 +14,7 @@ const REASON: Record<string, string> = { NO_ACTIVE_POLICY: "No policy was active
 /** F — Audit trail. Reuses the product's hash-chained audit log (verifyChain +
  *  searchAuditLog). Two tabs: Policy changes (grouped by version) and Fail-safe
  *  events (bursts collapsed). No second log UI. */
-export default async function AuditPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+export default async function AuditPage({ searchParams }: { searchParams: Promise<{ tab?: string; from?: string; ai?: string }> }) {
   const sp = await searchParams;
   const [chain, entries, attn, fields] = await Promise.all([
     verifyChain(),
@@ -44,6 +45,7 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
 
   return (
     <Shell active="/data-flow/masking-policy" title="Audit trail">
+      {sp.from === "attention" && <ContextBar ai={Number(sp.ai) || 0} />}
       <PageHead
         title="Audit trail"
         subtitle="A tamper-evident record of every policy change and every time the fail-safe hid a field."
