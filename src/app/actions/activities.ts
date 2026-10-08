@@ -32,10 +32,11 @@ export interface AddActivityData {
 }
 export async function getAddActivityDataAction(): Promise<AddActivityData> {
   const { actor } = await getSession();
-  const [sugs, templates, entities] = await Promise.all([
+  const [sugs, templates, entities, cfg] = await Promise.all([
     db.ropaSuggestion.findMany({ where: { status: "pending" }, include: { source: { select: { name: true } }, purposeTag: { select: { id: true, name: true } } } }),
     db.activityTemplate.findMany({ orderBy: { name: "asc" } }),
     db.entity.findMany({ select: { id: true, name: true } }),
+    db.integrationConfig.findUnique({ where: { id: "singleton" }, select: { paMultiEntity: true } }),
   ]);
   return {
     suggestions: sugs.map((s) => {
@@ -44,7 +45,7 @@ export async function getAddActivityDataAction(): Promise<AddActivityData> {
       return { id: s.id, name: `${s.purposeTag?.name ?? "New grouping"} — ${s.source?.name ?? "Unknown source"}`, sub: `${fields} fields · ${s.purposeTag ? `Suggested purpose: ${s.purposeTag.name} · ` : ""}${conf}`, purposeId: s.purposeTagId };
     }),
     templates: templates.map((t) => { const ps = JSON.parse(t.purposeIdsJson || "[]") as string[]; const types = JSON.parse(t.typicalDataTypesJson || "[]") as string[]; return { id: t.id, name: t.name, sub: `${ps.length} typical purpose${ps.length === 1 ? "" : "s"} · ${types.length} typical data types` }; }),
-    entities, multiEntity: entities.length > 1, currentUser: actor.label,
+    entities, multiEntity: cfg?.paMultiEntity ?? false, currentUser: actor.label,
   };
 }
 
@@ -53,8 +54,8 @@ export async function createActivityFromStartAction(input: StartInput): Promise<
   const { actor } = await getSession();
   const n = input.name.trim();
   if (n.length < 3 || n.length > 80) return { ok: false, error: "Use a name of 3 to 80 characters." };
-  const entities = await db.entity.findMany({ select: { id: true } });
-  const multi = entities.length > 1;
+  const cfg = await db.integrationConfig.findUnique({ where: { id: "singleton" }, select: { paMultiEntity: true } });
+  const multi = cfg?.paMultiEntity ?? false;
   if (multi && !input.entityId) return { ok: false, error: "Choose an entity." };
   if (await nameClash(n, input.entityId ?? null)) return { ok: false, error: `An activity named ${n} already exists.` };
 

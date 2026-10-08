@@ -1319,6 +1319,11 @@ model IntegrationConfig {
   dlpSyncFailed        Boolean  @default(false)
   dlpLastSyncAt        DateTime?
   dlpSyncIntervalHours Int      @default(24)
+  /// Processing Activities: multi-entity mode. Off by default (one fiduciary);
+  /// the dev control / Entities setup turns it on. Distinct from how many Entity
+  /// rows exist (other modules seed several), so the activities flow stays single
+  /// entity unless this is set.
+  paMultiEntity Boolean @default(false)
   updatedAt   DateTime @updatedAt
   updatedBy   String?
 }

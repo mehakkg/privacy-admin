@@ -29,6 +29,13 @@ function parseRetention(s: string | null | undefined): { amount: number; unit: "
 
 function basisOf(b: string | null | undefined): LegalBasis { return b === "consent" ? "consent" : "legitimate_use"; }
 
+/** Multi-entity is a flag (off by default), NOT the count of Entity rows — other
+ *  modules seed several entities, but the activities flow stays single-entity. */
+async function isMultiEntity(): Promise<boolean> {
+  const c = await db.integrationConfig.findUnique({ where: { id: "singleton" }, select: { paMultiEntity: true } });
+  return c?.paMultiEntity ?? false;
+}
+
 type TagWithVersions = {
   id: string; name: string; description: string; status: string; retention: string | null; lawfulBasis: string | null;
   approvedBy: string | null; approvedAt: Date | null; proposedBy: string | null; proposedAt: Date | null; rejectionReason: string | null;
@@ -110,7 +117,7 @@ export interface ActivityListView {
 export interface ActivityListParams { segment?: "needs-work" | "under-review" | "all"; q?: string; owner?: string; department?: string; purpose?: string; lifecycle?: string }
 
 async function loadCtxAndActivities() {
-  const [rows, tags, entities, escalations] = await Promise.all([
+  const [rows, tags, entities, escalations, multiEntity] = await Promise.all([
     db.processingActivity.findMany({
       include: { purposeSegments: { include: { elements: true, processorLinks: true } }, reasons: true, entity: { select: { name: true } } },
       orderBy: { activity: "asc" },
@@ -118,10 +125,11 @@ async function loadCtxAndActivities() {
     db.purposeTag.findMany({ include: { purposeVersions: true } }),
     db.entity.findMany({ select: { id: true, name: true } }),
     db.escalation.findMany({ where: { status: "open" }, select: { contextJson: true } }),
+    isMultiEntity(),
   ]);
   const purposes: Record<string, Purpose> = {};
   for (const t of tags) purposes[t.id] = toPurpose(t as unknown as TagWithVersions);
-  const ctx: Ctx = { purposes, multiEntity: entities.length > 1 };
+  const ctx: Ctx = { purposes, multiEntity };
   const activities = rows.map((r) => toActivity(r as never));
   const entityName = new Map(entities.map((e) => [e.id, e.name]));
   const escFor = (a: Activity) => escalations.filter((e) => (e.contextJson ?? "").includes(a.id) || (e.contextJson ?? "").includes(a.name)).length;
@@ -199,15 +207,16 @@ export interface WorkspaceView {
 }
 
 export async function getActivityWorkspace(id: string): Promise<WorkspaceView | null> {
-  const [row, tags, entities] = await Promise.all([
+  const [row, tags, entities, multiEntity] = await Promise.all([
     db.processingActivity.findUnique({ where: { id }, include: { purposeSegments: { include: { elements: true, processorLinks: true } }, reasons: true } }),
     db.purposeTag.findMany({ include: { purposeVersions: true } }),
     db.entity.findMany({ select: { id: true, name: true } }),
+    isMultiEntity(),
   ]);
   if (!row) return null;
   const purposes: Record<string, Purpose> = {};
   for (const t of tags) purposes[t.id] = toPurpose(t as unknown as TagWithVersions);
-  const ctx: Ctx = { purposes, multiEntity: entities.length > 1 };
+  const ctx: Ctx = { purposes, multiEntity };
   const nameById = new Map(tags.map((t) => [t.id, t.name]));
   const a = toActivity(row as never);
   const c = completeness(a, ctx);
