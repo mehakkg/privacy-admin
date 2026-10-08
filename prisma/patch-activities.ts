@@ -7,6 +7,7 @@
  * ProcessingActivity that is not one of these 8 before upserting.
  */
 import { PrismaClient } from "@prisma/client";
+import { buildSnapshot, sha256Hex8, diffSnapshots, type SnapshotInput } from "../src/lib/activities/versions";
 
 const prisma = new PrismaClient();
 const J = (o: unknown) => JSON.stringify(o);
@@ -153,7 +154,42 @@ async function main() {
     });
   }
 
-  console.log(`patch-activities: seeded ${PURPOSES.length} purposes, ${ACTIVITIES.length} activities, ${TEMPLATES.length} templates.`);
+  // --- Signed versions (M1) -------------------------------------------------
+  // Retail Loan Origination is active at version 2 (v1 superseded 12 Aug 2026);
+  // Customer Support is active at version 1. Snapshots are canonical + hashed so
+  // "Verify" matches. Idempotent: cleared and rebuilt each run (hashes are stable).
+  const purposeByKey = Object.fromEntries(PURPOSES.map((p) => [p.key, p]));
+  const vendorByKey = Object.fromEntries(VENDORS.map((v) => [v.key, v]));
+  const snapInput = (a: A): SnapshotInput => ({
+    name: a.name, description: "", owner: a.owner, department: a.department, entity: null,
+    principals: a.principals, reviewPeriodMonths: 12, nextReviewDue: a.nextReviewDue ?? null,
+    purposes: a.segments.map((seg) => {
+      const p = purposeByKey[seg.purpose];
+      return {
+        purposeId: p.name, approvedVersion: p.version.number,
+        legalBasis: p.version.legalBasis === "consent" ? "Consent" : "Legitimate use",
+        retention: `${p.version.amount} ${p.version.unit} ${p.version.trigger}`.trim(),
+        noProcessor: seg.processorMode === "none",
+        data: seg.data.map((path) => ({ fieldId: path, path, dataType: "Unknown", sensitivity: null as string | null })),
+        processors: (seg.processors ?? []).map((k) => ({ vendor: vendorByKey[k].name, country: vendorByKey[k].jurisdiction as string | null })),
+      };
+    }),
+  });
+
+  await prisma.activityVersion.deleteMany({ where: { activityId: { in: ["pa-loan-origination", "pa-support"] } } });
+
+  const loanFull = snapInput(ACTIVITIES.find((a) => a.id === "pa-loan-origination")!);
+  // v1 lacked the date-of-birth field that v2 added.
+  const loanV1Input: SnapshotInput = { ...loanFull, nextReviewDue: "2027-06-01", purposes: loanFull.purposes.map((p, i) => (i === 0 ? { ...p, data: p.data.filter((d) => d.path !== "profiles.dob") } : p)) };
+  const loanV1Snap = buildSnapshot(loanV1Input), loanV1Hash = await sha256Hex8(loanV1Snap);
+  const loanV2Snap = buildSnapshot(loanFull), loanV2Hash = await sha256Hex8(loanV2Snap);
+  await prisma.activityVersion.create({ data: { activityId: "pa-loan-origination", number: 1, state: "superseded", snapshot: loanV1Snap, hash: loanV1Hash, activatedBy: "R. Iyer", activatedAt: d("2026-06-01"), reason: null, attestationsJson: J({ accurate: true, authority: true, reviewBy: "2027-06-01" }), diffJson: null } });
+  await prisma.activityVersion.create({ data: { activityId: "pa-loan-origination", number: 2, state: "active", snapshot: loanV2Snap, hash: loanV2Hash, activatedBy: "R. Iyer", activatedAt: d("2026-08-12"), reason: "Added the applicant date-of-birth field after the Q3 lending-policy update.", attestationsJson: J({ accurate: true, authority: true, reviewBy: "2027-08-12" }), diffJson: J(diffSnapshots(loanV1Snap, loanV2Snap)) } });
+
+  const supportSnap = buildSnapshot(snapInput(ACTIVITIES.find((a) => a.id === "pa-support")!)), supportHash = await sha256Hex8(supportSnap);
+  await prisma.activityVersion.create({ data: { activityId: "pa-support", number: 1, state: "active", snapshot: supportSnap, hash: supportHash, activatedBy: "R. Iyer", activatedAt: d("2026-09-01"), reason: null, attestationsJson: J({ accurate: true, authority: true, reviewBy: "2027-09-01" }), diffJson: null } });
+
+  console.log(`patch-activities: seeded ${PURPOSES.length} purposes, ${ACTIVITIES.length} activities, ${TEMPLATES.length} templates, 3 signed versions.`);
 }
 
 main().catch((e) => console.error("patch-activities failed (continuing):", e)).finally(async () => { await prisma.$disconnect(); });

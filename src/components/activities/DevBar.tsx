@@ -6,6 +6,7 @@ import { FlaskConical } from "lucide-react";
 import { switchRole } from "@/app/actions/session";
 import { setPaConfigAction } from "@/app/actions/paConfig";
 import { simulateReviewEventAction } from "@/app/actions/activityReview";
+import { simulateAnotherEditorAction } from "@/app/actions/activities";
 import type { ActorRole } from "@/lib/domain";
 
 const SIM: { type: "new_field_in_linked_table" | "reclassified_field" | "vendor_changed" | "review_due"; label: string; detail: string }[] = [
@@ -42,6 +43,15 @@ export function DevBar({ role, multiEntity, requireDpoReview, activityId }: { ro
         <label>Simulate event
           <select className="input sm" value="" onChange={(e) => { const s = SIM.find((x) => x.type === e.target.value); if (s) run(() => simulateReviewEventAction(activityId, s.type, s.detail)); }}>
             <option value="">Choose…</option>{SIM.map((s) => <option key={s.type} value={s.type}>{s.label}</option>)}
+          </select>
+        </label>
+      )}
+      {activityId && (
+        <label>Simulate another editor
+          <select className="input sm" value="" onChange={(e) => { if (e.target.value) run(() => simulateAnotherEditorAction(activityId, e.target.value)); }}>
+            <option value="">Choose a field…</option>
+            <option value="ownerName">Owner</option>
+            <option value="department">Department</option>
           </select>
         </label>
       )}

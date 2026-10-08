@@ -872,14 +872,52 @@ model ProcessingActivity {
   /// JSON {requestedAt, requestedBy, note, decision?, decidedBy?, decidedAt?, comment?} | null.
   dpoReviewJson  String?
 
+  /// Conflict model (M1). The `version` field above is the rev counter (bumped on
+  /// every write). This records WHO wrote last on the autosave queue, so a stale
+  /// write from a DIFFERENT session on an OVERLAPPING field becomes a true conflict
+  /// (same-session writes rebase silently). JSON {sessionId, by, at, fields[]} | null.
+  lastWriterJson String?
+
   purposeTag PurposeTag? @relation(fields: [purposeTagId], references: [id])
   entity     Entity?     @relation(fields: [entityId], references: [id])
   elements   ActivityElement[]
   purposeSegments ActivityPurpose[]
   reasons    ReviewReason[]
+  activityVersions ActivityVersion[]
 
   @@index([purposeTagId])
   @@index([entityId])
+}
+
+/// A signed, immutable snapshot of an activity at the moment it was activated (M1).
+/// ROPA reads the ACTIVE version only; activating a draft supersedes the previous
+/// active version. The hash is tamper evidence over the exact `snapshot` bytes —
+/// not a legal signature.
+model ActivityVersion {
+  id          String   @id @default(cuid())
+  activityId  String
+  /// 1, 2, 3 … integer, consistent with Masking policy.
+  number      Int
+  /// active | superseded
+  state       String   @default("active")
+  /// Canonical JSON with sorted keys — the exact string the hash is computed over
+  /// and the string verifyRecord() recomputes from (never from live data).
+  snapshot    String
+  /// First 8 hex characters of SHA-256(snapshot).
+  hash        String
+  activatedBy String
+  activatedAt DateTime @default(now())
+  /// Required from version 2 — why this change was made.
+  reason      String?
+  /// JSON {accurate, authority, reviewBy}.
+  attestationsJson String @default("{}")
+  /// JSON {added[], removed[], changed[]} vs the previous version | null.
+  diffJson    String?
+
+  activity ProcessingActivity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@unique([activityId, number])
+  @@index([activityId])
 }
 
 /// A reason an active activity was flagged for review (Keep it right). One open

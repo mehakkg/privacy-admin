@@ -9,6 +9,7 @@ import {
   basicsRailText, purposeRailText, reviewBlockers, openReasonsCount, blockingChecklist,
   type Completeness, type NextStep, type CheckItem, type RopaPreviewRow,
 } from "@/lib/activities/logic";
+import type { SnapshotInput, SnapshotPurpose } from "@/lib/activities/versions";
 
 /**
  * PROCESSING ACTIVITIES ENGINE (server). Maps Prisma rows into the pure-domain
@@ -316,4 +317,56 @@ export async function getReview(activityId: string): Promise<ReviewView | null> 
 
   const dpoReview = row.dpoReviewJson ? (JSON.parse(row.dpoReviewJson) as { requestedBy: string; requestedAt: string; note: string }) : null;
   return { verdict: blocking.length > 0 ? "blocked" : "ready", blocking, warnings, ropa, requireDpoReview: cfg?.paRequireDpoReview ?? false, lifecycle: a.lifecycle, dpoReview };
+}
+
+// --- Versions: snapshot assembly (M1) ---------------------------------------
+
+/** Assemble the canonical SnapshotInput for an activity from live rows. Called at
+ *  activation to build + hash the signed record. Only confirmed, approved purposes
+ *  and confirmed data/processors enter the record (the record can't be activated
+ *  while blockers remain, so this is the clean state). */
+export async function snapshotInputForActivity(activityId: string): Promise<SnapshotInput | null> {
+  const [row, tags] = await Promise.all([
+    db.processingActivity.findUnique({ where: { id: activityId }, include: { purposeSegments: { include: { elements: true, processorLinks: true } }, entity: { select: { name: true } } } }),
+    db.purposeTag.findMany({ include: { purposeVersions: true } }),
+  ]);
+  if (!row) return null;
+  const purposes: Record<string, Purpose> = {};
+  for (const t of tags) purposes[t.id] = toPurpose(t as unknown as TagWithVersions);
+  const nameById = new Map(tags.map((t) => [t.id, t.name]));
+  const a = toActivity(row as never);
+  const confirmed = a.purposeLinks.filter((p) => p.state === "confirmed");
+
+  const fieldIds = [...new Set(confirmed.flatMap((p) => p.dataLinks.filter((d) => d.state === "confirmed").map((d) => d.fieldId).filter(Boolean) as string[]))];
+  const vendorIds = [...new Set(confirmed.flatMap((p) => p.processorLinks.filter((x) => x.state === "confirmed").map((x) => x.vendorId)))];
+  const [fields, vendors] = await Promise.all([
+    fieldIds.length ? db.classifiedField.findMany({ where: { id: { in: fieldIds } }, select: { id: true, fieldPath: true, detectedType: true, overriddenType: true, sensitivityTier: true } }) : Promise.resolve([] as { id: string; fieldPath: string; detectedType: string | null; overriddenType: string | null; sensitivityTier: string }[]),
+    vendorIds.length ? db.dataProcessor.findMany({ where: { id: { in: vendorIds } }, select: { id: true, name: true, jurisdiction: true } }) : Promise.resolve([] as { id: string; name: string; jurisdiction: string | null }[]),
+  ]);
+  const fById = new Map(fields.map((f) => [f.id, f]));
+  const vById = new Map(vendors.map((v) => [v.id, v]));
+
+  const snapPurposes: SnapshotPurpose[] = confirmed.map((p) => {
+    const ps = purposeState(purposes[p.purposeId]);
+    const inForce = ps.inForce ?? ps.latest!;
+    const data = p.dataLinks.filter((d) => d.state === "confirmed").map((d) => {
+      const f = fById.get(d.fieldId);
+      const tier = f?.sensitivityTier ?? null;
+      return { fieldId: d.fieldId, path: f?.fieldPath ?? d.fieldId, dataType: f?.overriddenType ?? f?.detectedType ?? "Unknown", sensitivity: tier === "Not classified" ? null : tier };
+    });
+    const processors = p.processorLinks.filter((x) => x.state === "confirmed").map((x) => ({ vendor: vById.get(x.vendorId)?.name ?? x.vendorId, country: vById.get(x.vendorId)?.jurisdiction ?? null }));
+    return {
+      purposeId: nameById.get(p.purposeId) ?? p.purposeId,
+      approvedVersion: ps.inForce?.number ?? null,
+      legalBasis: inForce.legalBasis === "consent" ? "Consent" : "Legitimate use",
+      retention: inForce.retention.amount ? `${inForce.retention.amount} ${inForce.retention.unit} ${inForce.retention.trigger}`.trim() : "",
+      data, processors, noProcessor: p.processorMode === "none",
+    };
+  });
+
+  return {
+    name: a.name, description: row.description ?? "", owner: a.ownerId, department: a.department,
+    entity: row.entity?.name ?? null, principals: a.principals, reviewPeriodMonths: 12, nextReviewDue: a.nextReviewDue,
+    purposes: snapPurposes,
+  };
 }

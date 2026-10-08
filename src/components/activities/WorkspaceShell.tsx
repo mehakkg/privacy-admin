@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -13,7 +13,7 @@ import { ReviewChangesPane } from "@/components/activities/ReviewChangesPane";
 import { AddPurposePopover } from "@/components/activities/AddPurposePopover";
 import { PurposeModal, type PurposeModalInitial } from "@/components/activities/PurposeModal";
 import { firstIncompleteIndex } from "@/lib/activities/logic";
-import { setBasicsAction, type BasicsPatch } from "@/app/actions/activities";
+import { setBasicsAction, type BasicsPatch, type SaveResult } from "@/app/actions/activities";
 import { flagForReviewAction, retireActivityAction, reactivateActivityAction } from "@/app/actions/activityReview";
 import type { WorkspaceView } from "@/lib/engines/activities";
 
@@ -27,6 +27,9 @@ export function WorkspaceShell({ view: initial, state, role }: { view: Workspace
   const [view, setView] = useState(initial);
   const [version, setVersion] = useState(initial.version);
   const [save, setSave] = useState<{ status: "idle" | "saving" | "saved" | "error" | "conflict"; at?: string }>({ status: "idle" });
+  // M1 conflict model: a stable per-tab session id, and the count of open field conflicts.
+  const sessionId = useRef<string>(typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)).current;
+  const [conflictCount, setConflictCount] = useState(0);
   const [popover, setPopover] = useState<{ top: number; left: number } | null>(null);
   const [modal, setModal] = useState<{ mode: "create" | "edit"; purposeId?: string; initial?: PurposeModalInitial; editApproved?: boolean; inForceVersion?: number } | null>(null);
   const [menu, setMenu] = useState<{ kind: "flag" | "retire"; text: string } | null>(null);
@@ -45,17 +48,22 @@ export function WorkspaceShell({ view: initial, state, role }: { view: Workspace
     router.push(`${LIST}/${view.id}?${sp}`);
   };
 
-  const doSave = (patch: BasicsPatch) => {
+  const doSave = async (patch: BasicsPatch): Promise<SaveResult> => {
     setSave({ status: "saving" });
-    (async () => {
-      const r = await setBasicsAction(view.id, patch, version);
-      if (r.conflict) { setSave({ status: "conflict" }); return; }
-      if (!r.ok) { setSave({ status: "error" }); return; }
-      setVersion(r.version!);
-      setView((v) => ({ ...v, ...patch, principals: patch.principals ?? v.principals, name: patch.name ?? v.name } as WorkspaceView));
-      setSave({ status: "saved", at: new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) });
-      router.refresh();
-    })();
+    const r = await setBasicsAction(view.id, patch, version, sessionId);
+    if (r.conflictFields && r.conflictFields.length) {
+      // Sync to the server's rev so a "Keep mine" retry applies cleanly. The field
+      // offers Keep mine / Use theirs inline — no reload, no discard (D4).
+      if (r.currentVersion !== undefined) setVersion(r.currentVersion);
+      setSave({ status: "conflict" });
+      return r;
+    }
+    if (!r.ok) { setSave({ status: "error" }); return r; }
+    setVersion(r.version!);
+    setView((v) => ({ ...v, ...patch, principals: patch.principals ?? v.principals, name: patch.name ?? v.name } as WorkspaceView));
+    setSave({ status: "saved", at: new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) });
+    router.refresh();
+    return r;
   };
 
   // Rail + bottom-bar order.
@@ -93,7 +101,8 @@ export function WorkspaceShell({ view: initial, state, role }: { view: Workspace
           <div className="row" style={{ gap: 10, alignItems: "baseline" }}>
             <h1 className="inv-title">{view.name}</h1>
             <span className="cell-sub">{LIFECYCLE_LABEL[view.lifecycle]}</span>
-            {saveText && <span className={`cell-sub${save.status === "error" ? " sev-danger" : ""}`}>· {saveText}</span>}
+            {conflictCount > 0 ? <span className="cell-sub sev-danger">· {conflictCount} conflict{conflictCount === 1 ? "" : "s"}</span>
+              : saveText && <span className={`cell-sub${save.status === "error" ? " sev-danger" : ""}`}>· {saveText}</span>}
           </div>
         </div>
         <div className="row" style={{ gap: 10 }}>
@@ -103,8 +112,8 @@ export function WorkspaceShell({ view: initial, state, role }: { view: Workspace
         </div>
       </div>
 
-      {/* Banners (one at a time, by priority) */}
-      {save.status === "conflict" && <Notice tone="warn" title="This activity changed elsewhere">Reload to see the latest. <button className="link-btn" onClick={() => router.refresh()}>Reload</button></Notice>}
+      {/* Banners (one at a time, by priority). D4: no page-level "changed elsewhere /
+          Reload" banner — conflicts are handled inline at the field (see BasicsPane). */}
       {view.lifecycle === "retired" ? <Notice tone="info" title="This activity is retired">History is kept.</Notice>
         : view.prepared ? <Notice tone="info" title="Prepared from a suggestion">Confirm each suggested item.</Notice>
         : view.lifecycle === "under_review" ? <Notice tone="warn" title={`${view.openReasons} change${view.openReasons === 1 ? "" : "s"} need a decision`}><button className="link-btn" onClick={() => pushPane("review")}>Review</button></Notice>
@@ -123,7 +132,7 @@ export function WorkspaceShell({ view: initial, state, role }: { view: Workspace
 
         <div className="pa-ws-pane">
           {cur.pane === "basics" ? (
-            <BasicsPane view={view} save={doSave} readOnly={readOnly} />
+            <BasicsPane view={view} save={doSave} readOnly={readOnly} onConflictCount={setConflictCount} />
           ) : cur.pane === "purpose" ? (
             state.purpose && view.purposeDetails[state.purpose] ? (
               <PurposePane data={view.purposeDetails[state.purpose]} activityId={view.id} role={role}
