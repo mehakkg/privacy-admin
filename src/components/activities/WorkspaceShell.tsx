@@ -1,15 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { X } from "lucide-react";
 import { Notice } from "@/components/ui";
 import { BasicsPane } from "@/components/activities/BasicsPane";
 import { PurposePane } from "@/components/activities/PurposePane";
 import { ReviewPane } from "@/components/activities/ReviewPane";
+import { ReviewChangesPane } from "@/components/activities/ReviewChangesPane";
 import { AddPurposePopover } from "@/components/activities/AddPurposePopover";
 import { PurposeModal, type PurposeModalInitial } from "@/components/activities/PurposeModal";
 import { setBasicsAction, type BasicsPatch } from "@/app/actions/activities";
+import { flagForReviewAction, retireActivityAction, reactivateActivityAction } from "@/app/actions/activityReview";
 import type { WorkspaceView } from "@/lib/engines/activities";
 
 const LIST = "/data-map/processing-activities";
@@ -24,6 +28,9 @@ export function WorkspaceShell({ view: initial, state, role }: { view: Workspace
   const [save, setSave] = useState<{ status: "idle" | "saving" | "saved" | "error" | "conflict"; at?: string }>({ status: "idle" });
   const [popover, setPopover] = useState<{ top: number; left: number } | null>(null);
   const [modal, setModal] = useState<{ mode: "create" | "edit"; purposeId?: string; initial?: PurposeModalInitial; editApproved?: boolean; inForceVersion?: number } | null>(null);
+  const [menu, setMenu] = useState<{ kind: "flag" | "retire"; text: string } | null>(null);
+  const [menuErr, setMenuErr] = useState<string | null>(null);
+  const [, start] = useTransition();
   const readOnly = view.lifecycle === "retired" || view.lifecycle === "pending_dpo_review";
 
   // Keep local view in sync when the server re-renders (navigation / refresh).
@@ -76,7 +83,7 @@ export function WorkspaceShell({ view: initial, state, role }: { view: Workspace
         </div>
       )}
 
-      <div className="pa-ws-top">
+      <div className="pa-ws-top row" style={{ justifyContent: "space-between", alignItems: "flex-end" }}>
         <div className="stack" style={{ gap: 2 }}>
           <Link href={LIST} className="row-link">← Processing activities</Link>
           <div className="row" style={{ gap: 10, alignItems: "baseline" }}>
@@ -84,6 +91,11 @@ export function WorkspaceShell({ view: initial, state, role }: { view: Workspace
             <span className="cell-sub">{LIFECYCLE_LABEL[view.lifecycle]}</span>
             {saveText && <span className={`cell-sub${save.status === "error" ? " sev-danger" : ""}`}>· {saveText}</span>}
           </div>
+        </div>
+        <div className="row" style={{ gap: 10 }}>
+          {view.lifecycle === "active" && <button className="link-btn" onClick={() => { setMenuErr(null); setMenu({ kind: "flag", text: "" }); }}>Flag for review</button>}
+          {(view.lifecycle === "active" || view.lifecycle === "under_review" || view.lifecycle === "draft") && <button className="link-btn" onClick={() => { setMenuErr(null); setMenu({ kind: "retire", text: "" }); }}>Retire</button>}
+          {view.lifecycle === "retired" && <button className="btn ghost sm" onClick={() => start(async () => { await reactivateActivityAction(view.id); router.refresh(); })}>Reactivate</button>}
         </div>
       </div>
 
@@ -117,7 +129,7 @@ export function WorkspaceShell({ view: initial, state, role }: { view: Workspace
               <div className="stack" style={{ gap: 12, maxWidth: 520 }}><h2 style={{ margin: 0 }}>Purposes</h2><Notice tone="info" title="No purpose selected">Add a purpose to this activity.</Notice><div><button className="btn primary" onClick={() => setPopover({ top: 120, left: 360 })}>Add a purpose</button></div></div>
             )
           ) : cur.pane === "review" ? (
-            <PanePlaceholder title="Review" body="The review of changes (Keep it right) arrives in a later step (M8)." />
+            <ReviewChangesPane activityId={view.id} />
           ) : (
             <ReviewPane activityId={view.id} role={role} go={(t) => pushPane(t.pane, { purpose: t.purpose, section: t.section })} />
           )}
@@ -136,6 +148,22 @@ export function WorkspaceShell({ view: initial, state, role }: { view: Workspace
       {modal && <PurposeModal mode={modal.mode} activityId={view.id} purposeId={modal.purposeId} initial={modal.initial} editApproved={modal.editApproved} inForceVersion={modal.inForceVersion}
         onClose={() => setModal(null)}
         onDone={(id) => { setModal(null); router.push(`${LIST}/${view.id}?pane=purpose&purpose=${id}`); router.refresh(); }} />}
+
+      {menu && createPortal(
+        <div className="modal-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) setMenu(null); }}>
+          <div className="modal std-modal sm" role="dialog" aria-modal="true" aria-label={menu.kind === "flag" ? "Flag for review" : "Retire activity"}>
+            <div className="std-modal-head"><h3 style={{ margin: 0 }}>{menu.kind === "flag" ? "Flag for review" : "Retire activity"}</h3><button className="icon-btn" onClick={() => setMenu(null)}><X size={16} /></button></div>
+            <div className="std-modal-body stack" style={{ gap: 8 }}>
+              <p className="cell-sub" style={{ margin: 0 }}>{menu.kind === "flag" ? "What should be checked?" : "Retiring removes this activity from ROPA from today. Its history stays. Data and processor links remain for the record."}</p>
+              <input className="input" autoFocus value={menu.text} onChange={(e) => { setMenu({ ...menu, text: e.target.value }); setMenuErr(null); }} placeholder={menu.kind === "flag" ? "What should be checked?" : "Reason for retiring"} />
+              {menuErr && <div className="notice warn" style={{ margin: 0 }}>{menuErr}</div>}
+            </div>
+            <div className="std-modal-foot"><button className="btn" onClick={() => setMenu(null)}>Cancel</button><button className={`btn ${menu.kind === "retire" ? "danger" : "primary"}`} onClick={() => start(async () => {
+              const r = menu.kind === "flag" ? await flagForReviewAction(view.id, menu.text) : await retireActivityAction(view.id, menu.text);
+              if (!r.ok) setMenuErr(r.error ?? "Could not complete."); else { setMenu(null); if (menu.kind === "flag") router.push(`${LIST}/${view.id}?pane=review`); router.refresh(); }
+            })}>{menu.kind === "flag" ? "Flag for review" : "Retire"}</button></div>
+          </div>
+        </div>, document.body)}
     </div>
   );
 }

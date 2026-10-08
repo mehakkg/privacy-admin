@@ -185,6 +185,22 @@ export function blockingChecklist(a: Activity, ctx: Ctx, purposeName: (id: strin
 
 export interface RopaPreviewRow { purpose: string; legalBasis: string; retention: string; dataCount: number; processors: string[]; transfer: boolean }
 
+// --- Review reasons (Keep it right) -----------------------------------------
+
+import type { ReviewReasonType } from "@/lib/activities/types";
+/** The single verb a review reason offers, and whether it can be dismissed. */
+export function reasonMeta(type: ReviewReasonType): { verb: string; dismissible: boolean } {
+  switch (type) {
+    case "new_field_in_linked_table": return { verb: "Add it", dismissible: true };
+    case "reclassified_field": return { verb: "Check it", dismissible: true };
+    case "vendor_changed": return { verb: "Check it", dismissible: true };
+    case "purpose_version_approved": return { verb: "Check it", dismissible: true };
+    case "purpose_retired": return { verb: "Replace this purpose", dismissible: false };
+    case "review_due": return { verb: "Confirm", dismissible: false };
+    case "manual": return { verb: "Check it", dismissible: true };
+  }
+}
+
 /** Count of blocking items for the Review & activate rail/verdict (M7 expands this
  *  into the full B1–B9 checklist; the count must match). */
 export function reviewBlockers(a: Activity, ctx: Ctx): number {
