@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Lock } from "lucide-react";
 import { Notice } from "@/components/ui";
 import { DataSection } from "@/components/activities/DataSection";
+import { ProcessorSection } from "@/components/activities/ProcessorSection";
 import { submitPurposeAction, withdrawPurposeAction, removePurposeFromActivityAction } from "@/app/actions/purposes";
 import type { PurposePaneData } from "@/lib/engines/activities";
 
@@ -53,10 +54,7 @@ export function PurposePane({ data, activityId, onEdit, onReplace }: { data: Pur
       {data.notApproved && <Notice tone="info" title="You can keep building">This purpose must be approved before the activity can go live. Data and processor links take effect when it is approved.</Notice>}
 
       <DataSection activityId={activityId} purposeId={data.purposeId} purposeName={data.name} />
-      <div className="stack" style={{ gap: 8 }}>
-        <div className="inv-sec-h">Processors</div>
-        <Notice tone="info" title="Being built">Choosing processors (or recording none) arrives in the next step (M6).</Notice>
-      </div>
+      <ProcessorSection activityId={activityId} purposeId={data.purposeId} purposeName={data.name} />
 
       {confirmRemove && (
         <Notice tone="warn" title="Remove this purpose from the activity?">

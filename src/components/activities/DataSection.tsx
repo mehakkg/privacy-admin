@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
+import { useRouter } from "next/navigation";
 import { X, Search, ChevronRight, ChevronDown } from "lucide-react";
 import { SENS_TONE } from "@/lib/inventory";
 import { getPurposeDataAction, getDataPickerAction, addDataAction, removeDataAction, acceptSuggestedDataAction, acceptAllSuggestedDataAction } from "@/app/actions/activityData";
@@ -12,10 +13,12 @@ export function DataSection({ activityId, purposeId, purposeName }: { activityId
   const [data, setData] = useState<PurposeDataView | null>(null);
   const [picker, setPicker] = useState(false);
   const [, start] = useTransition();
+  const router = useRouter();
   const load = () => getPurposeDataAction(activityId, purposeId).then(setData);
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [activityId, purposeId]);
 
-  const act = (fn: () => Promise<unknown>) => start(async () => { await fn(); await load(); });
+  // Refresh the section AND the server-rendered rail/review counts.
+  const act = (fn: () => Promise<unknown>) => start(async () => { await fn(); await load(); router.refresh(); });
   const confirmed = data?.rows.filter((r) => r.state === "confirmed").length ?? 0;
 
   // Group by system.
@@ -63,7 +66,7 @@ export function DataSection({ activityId, purposeId, purposeName }: { activityId
         ))
       )}
 
-      {picker && <DataPicker activityId={activityId} purposeId={purposeId} purposeName={purposeName} onClose={() => setPicker(false)} onAdded={() => { setPicker(false); load(); }} />}
+      {picker && <DataPicker activityId={activityId} purposeId={purposeId} purposeName={purposeName} onClose={() => setPicker(false)} onAdded={() => { setPicker(false); load(); router.refresh(); }} />}
     </div>
   );
 }
