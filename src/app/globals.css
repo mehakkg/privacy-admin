@@ -448,6 +448,19 @@ textarea {
   .inv-kv { flex-direction: column; gap: 2px; }
 }
 
+/* Processing activities list */
+.pa-list { max-width: 1120px; }
+.pa-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.pa-rows { margin-top: 6px; }
+.pa-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; min-height: 76px; padding: 16px 0; border-top: 1px solid var(--border-soft); cursor: pointer; }
+.pa-row:hover { background: var(--bg-subtle, #f7f8fa); }
+.pa-row-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.pa-row-name { font-size: 15px; font-weight: 500; }
+.pa-row-status { display: flex; align-items: center; gap: 16px; margin-top: 2px; }
+.pa-verb { margin-left: 8px; font-weight: 500; }
+.pa-esc { display: inline-flex; align-items: center; gap: 4px; color: var(--yellow-700, #b45309); }
+.pa-row-right { white-space: nowrap; }
+
 /* readiness card + workbench (revision) */
 .sev-success { color: var(--green, #16a34a); }
 .inv-headlinks { gap: 16px; align-items: center; }

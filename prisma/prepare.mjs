@@ -130,4 +130,9 @@ if (!POOLED) {
 
   // Idempotent: remaps inventory sensitivity to DLP labels + backfills field↔purpose links.
   run("Migrating Data inventory", "npx tsx prisma/patch-inventory.ts", POOLED);
+
+  // Idempotent: seeds the Processing Activities governance demo (8 activities,
+  // versioned purposes, processors, templates). Runs LAST — it makes the activity
+  // set deterministic by removing any activity that isn't one of the seeded 8.
+  run("Seeding Processing Activities", "npx tsx prisma/patch-activities.ts", POOLED);
 }

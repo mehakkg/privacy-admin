@@ -783,6 +783,41 @@ model PurposeTag {
   ropaSuggestions    RopaSuggestion[]
   activityPurposes   ActivityPurpose[] @relation("SegmentPurpose")
   fieldLinks         InventoryFieldPurpose[]
+  purposeVersions    PurposeVersion[]
+}
+
+/// A version of a Purpose (Processing Activities governance). The PurposeTag is
+/// the container; its approval/retention history lives in versions. At most one
+/// non-approved version exists at a time; an approved version stays in force
+/// while a newer one is draft/waiting.
+model PurposeVersion {
+  id          String @id @default(cuid())
+  purposeId   String
+  number      Int
+  /// draft | waiting_for_dpo | approved | changes_requested | rejected | retired
+  state       String @default("draft")
+  name        String
+  description String
+  /// consent | legitimate_use
+  legalBasis  String
+  legitimateUseType String?
+  retentionAmount  Int?
+  retentionUnit    String?
+  retentionTrigger String?
+  justification    String?
+  submittedBy      String?
+  submittedAt      DateTime?
+  decidedBy        String?
+  decidedAt        DateTime?
+  decisionComment  String?
+  selfApproved     Boolean @default(false)
+  /// linked | not_linked | not_required (derived from the Consent module; seeded).
+  consent          String  @default("not_required")
+  createdAt        DateTime @default(now())
+
+  purpose PurposeTag @relation(fields: [purposeId], references: [id], onDelete: Cascade)
+  @@unique([purposeId, number])
+  @@index([purposeId])
 }
 
 /// A record of processing activity, entered by hand for data no scanner can
@@ -808,10 +843,9 @@ model ProcessingActivity {
   /// Optional plain-English description captured in the Add Activity modal.
   description String?
 
-  /// active | under_review | archived. Admin sets active/under_review directly;
-  /// moving to archived routes a DPO-approval request (the same escalation
-  /// pattern as Purpose/Processor) and is blocked while any element is still
-  /// "requested — awaiting DPO".
+  /// draft | pending_dpo_review | active | under_review | retired (governance
+  /// flow). Legacy rows may still hold "archived"; treated as retired. Admin sets
+  /// active/under_review; pending_dpo_review/retired go through their own actions.
   lifecycleState String @default("active")
 
   /// The Fiduciary registry entry (Entity) this activity belongs to. Links to
@@ -819,13 +853,65 @@ model ProcessingActivity {
   /// activity with no entity shows "Unassigned entity" and still functions.
   entityId String?
 
+  /// Governance flow (Processing Activities): owner, department, principals, the
+  /// review clock and DPO-review state. Owner/principals are not on the legacy
+  /// element model, so they live here.
+  ownerName      String?
+  department     String?
+  principalsJson String   @default("[]")
+  lastReviewedAt DateTime?
+  nextReviewDue  DateTime?
+  activatedAt    DateTime?
+  retiredAt      DateTime?
+  retireReason   String?
+  createdBy      String?
+  /// Optimistic-locking token; bumped on each save.
+  version        Int      @default(1)
+  /// blank | suggestion | template origin reference (the suggestion/template id).
+  sourceRef      String?
+  /// JSON {requestedAt, requestedBy, note, decision?, decidedBy?, decidedAt?, comment?} | null.
+  dpoReviewJson  String?
+
   purposeTag PurposeTag? @relation(fields: [purposeTagId], references: [id])
   entity     Entity?     @relation(fields: [entityId], references: [id])
   elements   ActivityElement[]
   purposeSegments ActivityPurpose[]
+  reasons    ReviewReason[]
 
   @@index([purposeTagId])
   @@index([entityId])
+}
+
+/// A reason an active activity was flagged for review (Keep it right). One open
+/// reason per (type, sourceRef) — de-duplicated by the trigger engine.
+model ReviewReason {
+  id         String   @id @default(cuid())
+  activityId String
+  /// review_due | new_field_in_linked_table | reclassified_field | vendor_changed
+  /// | purpose_version_approved | purpose_retired | manual
+  type       String
+  detail     String
+  detectedAt DateTime @default(now())
+  sourceRef  String?
+  /// open | resolved | dismissed
+  status     String   @default("open")
+  dismissNote String?
+  resolvedBy String?
+  resolvedAt DateTime?
+  createdAt  DateTime @default(now())
+
+  activity ProcessingActivity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  @@index([activityId])
+  @@index([status])
+}
+
+/// A DPO-curated starting point for an activity (Add activity → From a template).
+model ActivityTemplate {
+  id                  String @id @default(cuid())
+  name                String @unique
+  description         String?
+  purposeIdsJson      String @default("[]")
+  typicalDataTypesJson String @default("[]")
 }
 
 /// PURPOSE-FIRST STRUCTURE. A purpose segment under an activity: you declare WHY
@@ -841,6 +927,15 @@ model ActivityPurpose {
   processorId  String?
   /// none | requested
   requestState String @default("none")
+  /// confirmed | suggested — a suggested segment (from a suggestion/template) is
+  /// never counted as done until the Admin confirms it.
+  linkState    String @default("confirmed")
+  /// unanswered | uses_processors | none — the explicit processor answer. An empty
+  /// processor list never means "no processor"; only "none" does.
+  processorMode String @default("unanswered")
+  noProcessorBy String?
+  noProcessorAt DateTime?
+  addedBy       String?
   /// True when the segment's purpose was approved under combined_admin_dpo
   /// governance. System-computed; permanent historical marker.
   selfApproved Boolean @default(false)
@@ -850,9 +945,27 @@ model ActivityPurpose {
   purposeTag PurposeTag?        @relation("SegmentPurpose", fields: [purposeTagId], references: [id])
   processor  DataProcessor?     @relation("SegmentProcessor", fields: [processorId], references: [id])
   elements   ActivityPurposeElement[]
+  processorLinks ActivityPurposeProcessor[]
 
   @@index([activityId])
   @@index([purposeTagId])
+}
+
+/// A processor (vendor) linked to a purpose segment, with its own confirmed/
+/// suggested state so a field can carry several processors under one purpose.
+model ActivityPurposeProcessor {
+  id String @id @default(cuid())
+  activityPurposeId String
+  /// DataProcessor id (looked up by the engine; no back-relation needed).
+  vendorId String
+  /// confirmed | suggested
+  linkState String @default("confirmed")
+  addedBy   String?
+  createdAt DateTime @default(now())
+
+  activityPurpose ActivityPurpose @relation(fields: [activityPurposeId], references: [id], onDelete: Cascade)
+  @@unique([activityPurposeId, vendorId])
+  @@index([activityPurposeId])
 }
 
 /// The many-to-many linkage of a data field UNDER a purpose segment. The same
@@ -865,6 +978,10 @@ model ActivityPurposeElement {
   /// The field name (also the Data Inventory field path when linked to one).
   fieldName String
   classifiedFieldId String?
+  /// confirmed | suggested — a suggested data link doesn't count as done, and (per
+  /// the Data inventory rules) a link to an unapproved purpose is inactive.
+  linkState String @default("confirmed")
+  addedBy   String?
   createdAt DateTime @default(now())
 
   activityPurpose ActivityPurpose @relation(fields: [activityPurposeId], references: [id], onDelete: Cascade)
