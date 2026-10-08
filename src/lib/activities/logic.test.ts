@@ -5,7 +5,7 @@
  */
 import {
   basicsGaps, completeness, completenessLabel, nextStep, summary, listSentence,
-  purposeRailText, basicsRailText, isNeedsWork, reviewBlockers, reviewRailText,
+  purposeRailText, basicsRailText, isNeedsWork, reviewBlockers, reviewRailText, blockingChecklist,
 } from "./logic";
 import { purposeState, type Activity, type Purpose, type PurposeVersion, type Ctx, type ActivityPurpose, type LegalBasis, type ConsentStatus, type PurposeVersionState } from "./types";
 
@@ -108,6 +108,14 @@ eq("a7 blockers (owner+principals+no purpose)", reviewBlockers(a7, ctx), 3);
 eq("a3 blockers (customerSupport no data + unanswered)", reviewBlockers(a3, ctx), 2);
 eq("a1 review rail", reviewRailText(reviewBlockers(a1, ctx)), "Ready");
 eq("a7 review rail", reviewRailText(reviewBlockers(a7, ctx)), "Fix 3 items");
+
+// --- checklist --------------------------------------------------------------
+const pname = () => "P";
+eq("a7 checklist == blockers", blockingChecklist(a7, ctx, pname).length, reviewBlockers(a7, ctx));
+eq("a3 checklist == blockers", blockingChecklist(a3, ctx, pname).length, reviewBlockers(a3, ctx));
+eq("a1 checklist empty", blockingChecklist(a1, ctx, pname).length, 0);
+eq("a7 checklist ids", blockingChecklist(a7, ctx, pname).map((i) => i.id), ["B1", "B3", "B4"]);
+eq("a3 checklist ids", blockingChecklist(a3, ctx, pname).map((i) => i.id).sort(), ["B7", "B8"]);
 
 console.log(`\nProcessing Activities logic: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

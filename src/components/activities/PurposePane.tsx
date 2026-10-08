@@ -6,17 +6,21 @@ import { Lock } from "lucide-react";
 import { Notice } from "@/components/ui";
 import { DataSection } from "@/components/activities/DataSection";
 import { ProcessorSection } from "@/components/activities/ProcessorSection";
-import { submitPurposeAction, withdrawPurposeAction, removePurposeFromActivityAction } from "@/app/actions/purposes";
+import { submitPurposeAction, withdrawPurposeAction, removePurposeFromActivityAction, approvePurposeAction, decidePurposeAction } from "@/app/actions/purposes";
 import type { PurposePaneData } from "@/lib/engines/activities";
 
 /** SCREEN 6 — Purpose pane header + state actions. Data and Processors sections
  *  are built in M5/M6. */
-export function PurposePane({ data, activityId, onEdit, onReplace }: { data: PurposePaneData; activityId: string; onEdit: () => void; onReplace: () => void }) {
+export function PurposePane({ data, activityId, role, onEdit, onReplace }: { data: PurposePaneData; activityId: string; role: string; onEdit: () => void; onReplace: () => void }) {
   const router = useRouter();
   const [, start] = useTransition();
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [dpoComment, setDpoComment] = useState("");
+  const [dpoErr, setDpoErr] = useState<string | null>(null);
+  const canGovern = role === "dpo" || role === "ciso";
   const refresh = () => router.refresh();
   const run = (fn: () => Promise<unknown>) => start(async () => { await fn(); refresh(); });
+  const decide = (fn: () => Promise<{ ok: boolean; error?: string }>) => start(async () => { const r = await fn(); if (!r.ok) setDpoErr(r.error ?? "Could not decide."); else { setDpoErr(null); refresh(); } });
 
   const consentText = data.consent === "linked" ? "Linked" : data.consent === "not_linked" ? "Not yet linked to an approved purpose" : "Not required (legitimate use)";
 
@@ -40,6 +44,18 @@ export function PurposePane({ data, activityId, onEdit, onReplace }: { data: Pur
 
       {data.decisionComment && (data.displayState === "changes_requested" || data.displayState === "rejected") && (
         <Notice tone="warn" title={data.displayState === "rejected" ? "Rejected" : "Changes requested"}>{data.decisionComment}</Notice>
+      )}
+
+      {canGovern && data.displayState === "waiting_for_dpo" && (
+        <Notice tone="info" title="Waiting for your approval">
+          <textarea className="input" rows={2} value={dpoComment} onChange={(e) => setDpoComment(e.target.value)} placeholder="Comment (required to request changes or reject)" style={{ marginTop: 8 }} />
+          <div className="row" style={{ gap: 8, marginTop: 8 }}>
+            <button className="btn primary sm" onClick={() => decide(() => approvePurposeAction(data.purposeId))}>Approve</button>
+            <button className="btn sm" onClick={() => decide(() => decidePurposeAction(data.purposeId, "request_changes", dpoComment))}>Request changes</button>
+            <button className="btn ghost sm" onClick={() => decide(() => decidePurposeAction(data.purposeId, "reject", dpoComment))}>Reject</button>
+          </div>
+          {dpoErr && <div className="cell-sub sev-warning" style={{ marginTop: 6 }}>{dpoErr}</div>}
+        </Notice>
       )}
 
       {/* Read-only definition (in-force version) */}

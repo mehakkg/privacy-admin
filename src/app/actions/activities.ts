@@ -3,7 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/session";
+import { getReview, type ReviewView } from "@/lib/engines/activities";
+import { isCombinedGovernance } from "@/lib/governance";
 import type { Principal } from "@/lib/activities/types";
+
+async function canGovern(role: string): Promise<boolean> { return role === "dpo" || role === "ciso" || (role === "admin" && (await isCombinedGovernance())); }
+function plusMonths(d: Date, m: number): Date { const n = new Date(d); n.setMonth(n.getMonth() + m); return n; }
 
 export interface ActResult { ok: boolean; error?: string; id?: string }
 const LIST = "/data-map/processing-activities";
@@ -111,4 +116,48 @@ export async function setBasicsAction(id: string, patch: BasicsPatch, expectedVe
   const updated = await db.processingActivity.update({ where: { id }, data, select: { version: true } });
   touch(id);
   return { ok: true, version: updated.version, savedAt: new Date().toISOString() };
+}
+
+// --- Activate / DPO review of the activity ----------------------------------
+
+export async function getReviewAction(activityId: string): Promise<ReviewView | null> { return getReview(activityId); }
+
+export async function activateActivityAction(activityId: string): Promise<ActResult> {
+  const review = await getReview(activityId);
+  if (!review) return { ok: false, error: "This activity no longer exists." };
+  if (review.blocking.length > 0) return { ok: false, error: `Fix ${review.blocking.length} item${review.blocking.length === 1 ? "" : "s"} before activating.` };
+  const now = new Date();
+  await db.processingActivity.update({ where: { id: activityId }, data: { lifecycleState: "active", activatedAt: now, lastReviewedAt: now, nextReviewDue: plusMonths(now, 12), dpoReviewJson: null, version: { increment: 1 } } });
+  touch(activityId);
+  return { ok: true, id: activityId };
+}
+
+export async function submitActivityForDpoAction(activityId: string, note: string): Promise<ActResult> {
+  const { actor } = await getSession();
+  const review = await getReview(activityId);
+  if (!review) return { ok: false, error: "This activity no longer exists." };
+  if (review.blocking.length > 0) return { ok: false, error: `Fix ${review.blocking.length} item${review.blocking.length === 1 ? "" : "s"} before submitting.` };
+  await db.processingActivity.update({ where: { id: activityId }, data: { lifecycleState: "pending_dpo_review", dpoReviewJson: JSON.stringify({ requestedBy: actor.label, requestedAt: new Date().toISOString(), note }), version: { increment: 1 } } });
+  touch(activityId);
+  return { ok: true, id: activityId };
+}
+
+export async function withdrawActivitySubmissionAction(activityId: string): Promise<ActResult> {
+  await db.processingActivity.update({ where: { id: activityId }, data: { lifecycleState: "draft", dpoReviewJson: null, version: { increment: 1 } } });
+  touch(activityId);
+  return { ok: true };
+}
+
+export async function decideActivityAction(activityId: string, decision: "approve" | "request_changes", comment: string): Promise<ActResult> {
+  const { actor, role } = await getSession();
+  if (!(await canGovern(role))) return { ok: false, error: "Only the DPO can decide this." };
+  if (decision === "request_changes" && !comment.trim()) return { ok: false, error: "A comment is required." };
+  if (decision === "approve") {
+    const now = new Date();
+    await db.processingActivity.update({ where: { id: activityId }, data: { lifecycleState: "active", activatedAt: now, lastReviewedAt: now, nextReviewDue: plusMonths(now, 12), dpoReviewJson: null, version: { increment: 1 } } });
+  } else {
+    await db.processingActivity.update({ where: { id: activityId }, data: { lifecycleState: "draft", dpoReviewJson: JSON.stringify({ requestedBy: actor.label, requestedAt: new Date().toISOString(), note: `Changes requested: ${comment.trim()}` }), version: { increment: 1 } } });
+  }
+  touch(activityId);
+  return { ok: true };
 }

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Notice } from "@/components/ui";
 import { BasicsPane } from "@/components/activities/BasicsPane";
 import { PurposePane } from "@/components/activities/PurposePane";
+import { ReviewPane } from "@/components/activities/ReviewPane";
 import { AddPurposePopover } from "@/components/activities/AddPurposePopover";
 import { PurposeModal, type PurposeModalInitial } from "@/components/activities/PurposeModal";
 import { setBasicsAction, type BasicsPatch } from "@/app/actions/activities";
@@ -16,7 +17,7 @@ const LIFECYCLE_LABEL: Record<string, string> = { draft: "Draft", pending_dpo_re
 
 interface PaneState { pane: string; purpose?: string; section?: string; from?: string; n?: string; of?: string }
 
-export function WorkspaceShell({ view: initial, state }: { view: WorkspaceView; state: PaneState }) {
+export function WorkspaceShell({ view: initial, state, role }: { view: WorkspaceView; state: PaneState; role: string }) {
   const router = useRouter();
   const [view, setView] = useState(initial);
   const [version, setVersion] = useState(initial.version);
@@ -109,7 +110,7 @@ export function WorkspaceShell({ view: initial, state }: { view: WorkspaceView; 
             <BasicsPane view={view} save={doSave} readOnly={readOnly} />
           ) : cur.pane === "purpose" ? (
             state.purpose && view.purposeDetails[state.purpose] ? (
-              <PurposePane data={view.purposeDetails[state.purpose]} activityId={view.id}
+              <PurposePane data={view.purposeDetails[state.purpose]} activityId={view.id} role={role}
                 onEdit={() => { const d = view.purposeDetails[state.purpose!]; setModal({ mode: "edit", purposeId: d.purposeId, initial: d.edit, editApproved: d.editApproved, inForceVersion: d.inForceVersion ?? undefined }); }}
                 onReplace={() => setPopover({ top: 120, left: 360 })} />
             ) : (
@@ -118,7 +119,7 @@ export function WorkspaceShell({ view: initial, state }: { view: WorkspaceView; 
           ) : cur.pane === "review" ? (
             <PanePlaceholder title="Review" body="The review of changes (Keep it right) arrives in a later step (M8)." />
           ) : (
-            <PanePlaceholder title="Review and activate" body={`${view.reviewBlockers > 0 ? `Fix ${view.reviewBlockers} item(s) before activating. ` : "Ready to activate. "}The full checklist and activation arrive in a later step (M7).`} />
+            <ReviewPane activityId={view.id} role={role} go={(t) => pushPane(t.pane, { purpose: t.purpose, section: t.section })} />
           )}
 
           <div className="pa-ws-bottom">

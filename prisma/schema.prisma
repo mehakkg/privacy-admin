@@ -1324,6 +1324,9 @@ model IntegrationConfig {
   /// rows exist (other modules seed several), so the activities flow stays single
   /// entity unless this is set.
   paMultiEntity Boolean @default(false)
+  /// When on, activating an activity routes a DPO review first (Admin submits,
+  /// DPO approves). Off by default.
+  paRequireDpoReview Boolean @default(false)
   updatedAt   DateTime @updatedAt
   updatedBy   String?
 }

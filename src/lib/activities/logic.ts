@@ -7,6 +7,11 @@
  */
 import { purposeState, type Activity, type ActivityPurpose, type Ctx } from "@/lib/activities/types";
 
+// --- Review & activate checklist --------------------------------------------
+
+export interface CheckTarget { pane: "basics" | "purpose" | "review" | "activate"; purpose?: string; section?: "data" | "processors"; addPurpose?: boolean }
+export interface CheckItem { id: string; text: string; verb: string | null; target: CheckTarget | null; blocking: boolean }
+
 // --- Basics -----------------------------------------------------------------
 
 export type BasicsGap = "owner" | "entity" | "principals";
@@ -142,6 +147,43 @@ export function purposeRailText(a: Activity, link: ActivityPurpose, ctx: Ctx): s
 export function reviewRailText(blockingCount: number): string {
   return blockingCount > 0 ? `Fix ${blockingCount} item${blockingCount === 1 ? "" : "s"}` : "Ready";
 }
+
+/** The itemised blocking checklist (B1–B9). Warnings (W1–W4) are added by the
+ *  engine (they need field/vendor data). purposeName resolves a purpose's name. */
+export function blockingChecklist(a: Activity, ctx: Ctx, purposeName: (id: string) => string): CheckItem[] {
+  const items: CheckItem[] = [];
+  if (a.lifecycle === "retired") return items;
+  const gaps = basicsGaps(a, ctx.multiEntity);
+  if (gaps.includes("owner")) items.push({ id: "B1", text: "This activity has no owner.", verb: "Add an owner", target: { pane: "basics" }, blocking: true });
+  if (gaps.includes("entity")) items.push({ id: "B2", text: "Choose the entity that owns this activity.", verb: "Choose an entity", target: { pane: "basics" }, blocking: true });
+  if (gaps.includes("principals")) items.push({ id: "B3", text: "Choose whose data this activity covers.", verb: "Choose whose data", target: { pane: "basics" }, blocking: true });
+
+  const confirmed = confirmedPurposes(a);
+  if (confirmed.length === 0) { items.push({ id: "B4", text: "Add at least one purpose.", verb: "Add a purpose", target: { pane: "purpose", addPurpose: true }, blocking: true }); return items; }
+
+  const suggestedCount = a.purposeLinks.filter((p) => p.state === "suggested").length + a.purposeLinks.reduce((n, p) => n + p.dataLinks.filter((d) => d.state === "suggested").length, 0);
+  if (suggestedCount > 0) { const firstSug = a.purposeLinks.find((p) => p.state === "suggested" || p.dataLinks.some((d) => d.state === "suggested")); items.push({ id: "B5", text: `${suggestedCount} suggested item${suggestedCount === 1 ? "" : "s"} need your decision.`, verb: "Review suggestions", target: { pane: "purpose", purpose: firstSug?.purposeId }, blocking: true }); }
+
+  for (const p of confirmed) {
+    const name = purposeName(p.purposeId);
+    const ps = purposeState(ctx.purposes[p.purposeId]);
+    if (!ps.approvedForUse) {
+      if (ps.state === "draft") items.push({ id: "B6", text: `${name} hasn’t been submitted for approval.`, verb: "Submit for approval", target: { pane: "purpose", purpose: p.purposeId }, blocking: true });
+      else if (ps.state === "waiting_for_dpo") items.push({ id: "B6", text: `${name} is waiting for K. Menon.`, verb: "Open purpose", target: { pane: "purpose", purpose: p.purposeId }, blocking: true });
+      else if (ps.state === "changes_requested") items.push({ id: "B6", text: `${name} needs changes: ${(ps.latest?.decisionComment ?? "").slice(0, 80)}`, verb: "Edit and resubmit", target: { pane: "purpose", purpose: p.purposeId }, blocking: true });
+      else if (ps.state === "rejected") items.push({ id: "B6", text: `${name} was rejected.`, verb: "Edit and resubmit", target: { pane: "purpose", purpose: p.purposeId }, blocking: true });
+      else if (ps.state === "retired") items.push({ id: "B6", text: `${name} has been retired.`, verb: "Replace this purpose", target: { pane: "purpose", purpose: p.purposeId }, blocking: true });
+    }
+    if (confirmedData(p).length === 0) items.push({ id: "B7", text: `${name} has no data.`, verb: "Add data", target: { pane: "purpose", purpose: p.purposeId, section: "data" }, blocking: true });
+    if (p.processorMode === "unanswered") items.push({ id: "B8", text: `${name}: choose processors, or say there are none.`, verb: "Choose processors", target: { pane: "purpose", purpose: p.purposeId, section: "processors" }, blocking: true });
+    else if (p.processorMode === "uses_processors" && confirmedProcessors(p).length === 0) items.push({ id: "B9", text: `${name} says it uses processors but none are chosen.`, verb: "Choose processors", target: { pane: "purpose", purpose: p.purposeId, section: "processors" }, blocking: true });
+  }
+  return items;
+}
+
+// --- ROPA preview -----------------------------------------------------------
+
+export interface RopaPreviewRow { purpose: string; legalBasis: string; retention: string; dataCount: number; processors: string[]; transfer: boolean }
 
 /** Count of blocking items for the Review & activate rail/verdict (M7 expands this
  *  into the full B1–B9 checklist; the count must match). */

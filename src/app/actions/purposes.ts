@@ -4,10 +4,12 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/session";
 import { getPurposePicker, type PurposePickerData } from "@/lib/engines/purposes";
+import { isCombinedGovernance } from "@/lib/governance";
 
 export async function getPurposePickerAction(activityId: string): Promise<PurposePickerData> {
   return getPurposePicker(activityId);
 }
+async function canGovern(role: string): Promise<boolean> { return role === "dpo" || role === "ciso" || (role === "admin" && (await isCombinedGovernance())); }
 
 export interface PResult { ok: boolean; error?: string; purposeId?: string }
 function touch(activityId?: string) {
@@ -104,6 +106,57 @@ export async function submitPurposeAction(purposeId: string, activityId?: string
   await db.purposeVersion.update({ where: { id: nonApproved.id }, data: { state: "waiting_for_dpo", submittedBy: actor.label, submittedAt: new Date() } });
   await db.purposeTag.update({ where: { id: purposeId }, data: { status: "pending_dpo_approval" } });
   touch(activityId);
+  return { ok: true };
+}
+
+// --- DPO decisions on a purpose ---------------------------------------------
+
+export async function approvePurposeAction(purposeId: string): Promise<PResult> {
+  const { actor, role } = await getSession();
+  if (!(await canGovern(role))) return { ok: false, error: "Only the DPO can approve." };
+  const tag = await db.purposeTag.findUnique({ where: { id: purposeId }, include: { purposeVersions: true } });
+  if (!tag) return { ok: false, error: "No such purpose." };
+  const versions = [...tag.purposeVersions].sort((a, b) => b.number - a.number);
+  const waiting = versions.find((v) => v.state === "waiting_for_dpo");
+  if (!waiting) return { ok: false, error: "This purpose is not waiting for a decision." };
+  const priorApproved = versions.some((v) => v.state === "approved");
+  const selfApproved = role === "admin" && (await isCombinedGovernance());
+  const now = new Date();
+  await db.purposeVersion.update({ where: { id: waiting.id }, data: { state: "approved", decidedBy: actor.label, decidedAt: now, selfApproved } });
+  await db.purposeTag.update({ where: { id: purposeId }, data: { status: "approved", approvedBy: actor.label, approvedAt: now, selfApproved } });
+
+  // Activate inventory links for confirmed data links to this purpose.
+  const els = await db.activityPurposeElement.findMany({ where: { linkState: "confirmed", classifiedFieldId: { not: null }, activityPurpose: { purposeTagId: purposeId } }, select: { classifiedFieldId: true } });
+  for (const e of els) if (e.classifiedFieldId) await db.inventoryFieldPurpose.upsert({ where: { fieldId_purposeTagId: { fieldId: e.classifiedFieldId, purposeTagId: purposeId } }, update: {}, create: { fieldId: e.classifiedFieldId, purposeTagId: purposeId, assignedBy: actor.label } });
+
+  // An approved EDIT: flag active activities using this purpose for review.
+  if (priorApproved) {
+    const segs = await db.activityPurpose.findMany({ where: { purposeTagId: purposeId, activity: { lifecycleState: "active" } }, select: { activityId: true } });
+    const seen = new Set<string>();
+    for (const s of segs) {
+      if (seen.has(s.activityId)) continue; seen.add(s.activityId);
+      await db.processingActivity.update({ where: { id: s.activityId }, data: { lifecycleState: "under_review" } });
+      const exists = await db.reviewReason.findFirst({ where: { activityId: s.activityId, type: "purpose_version_approved", sourceRef: `${purposeId}:${waiting.number}`, status: "open" } });
+      if (!exists) await db.reviewReason.create({ data: { activityId: s.activityId, type: "purpose_version_approved", detail: `A new version of ${tag.name} was approved (version ${waiting.number}). Check it.`, sourceRef: `${purposeId}:${waiting.number}` } });
+    }
+  }
+  touch();
+  return { ok: true };
+}
+
+export async function decidePurposeAction(purposeId: string, decision: "request_changes" | "reject", comment: string): Promise<PResult> {
+  const { actor, role } = await getSession();
+  if (!(await canGovern(role))) return { ok: false, error: "Only the DPO can decide." };
+  if (!comment.trim()) return { ok: false, error: "A comment is required." };
+  const tag = await db.purposeTag.findUnique({ where: { id: purposeId }, include: { purposeVersions: true } });
+  if (!tag) return { ok: false, error: "No such purpose." };
+  const waiting = [...tag.purposeVersions].sort((a, b) => b.number - a.number).find((v) => v.state === "waiting_for_dpo");
+  if (!waiting) return { ok: false, error: "This purpose is not waiting for a decision." };
+  const state = decision === "reject" ? "rejected" : "changes_requested";
+  await db.purposeVersion.update({ where: { id: waiting.id }, data: { state, decidedBy: actor.label, decidedAt: new Date(), decisionComment: comment.trim() } });
+  const stillApproved = tag.purposeVersions.some((v) => v.state === "approved");
+  await db.purposeTag.update({ where: { id: purposeId }, data: { status: decision === "reject" ? (stillApproved ? "approved" : "rejected") : (stillApproved ? "approved" : "draft"), rejectionReason: decision === "reject" ? comment.trim() : null } });
+  touch();
   return { ok: true };
 }
 

@@ -6,8 +6,8 @@ import {
 } from "@/lib/activities/types";
 import {
   completeness, completenessLabel, nextStep, summary, listSentence, isNeedsWork,
-  basicsRailText, purposeRailText, reviewBlockers, openReasonsCount,
-  type Completeness, type NextStep,
+  basicsRailText, purposeRailText, reviewBlockers, openReasonsCount, blockingChecklist,
+  type Completeness, type NextStep, type CheckItem, type RopaPreviewRow,
 } from "@/lib/activities/logic";
 
 /**
@@ -268,4 +268,52 @@ export async function getActivityWorkspace(id: string): Promise<WorkspaceView | 
     basicsRailText: basicsRailText(a, ctx.multiEntity), purposeRails, reviewBlockers: reviewBlockers(a, ctx), openReasons: openReasonsCount(a),
     completenessKind: c.kind, completenessLabel: completenessLabel(c), next: nextStep(a, ctx), prepared, purposeDetails,
   };
+}
+
+// --- Review & activate ------------------------------------------------------
+
+export interface ReviewView {
+  verdict: "ready" | "blocked"; blocking: CheckItem[]; warnings: CheckItem[]; ropa: RopaPreviewRow[];
+  requireDpoReview: boolean; lifecycle: Lifecycle; dpoReview: { requestedBy: string; requestedAt: string; note: string } | null;
+}
+const NOTIFIED_PA = new Set(["IN", "SG", "AE", "JP"]);
+
+export async function getReview(activityId: string): Promise<ReviewView | null> {
+  const [row, tags, cfg] = await Promise.all([
+    db.processingActivity.findUnique({ where: { id: activityId }, include: { purposeSegments: { include: { elements: true, processorLinks: true } }, reasons: true } }),
+    db.purposeTag.findMany({ include: { purposeVersions: true } }),
+    db.integrationConfig.findUnique({ where: { id: "singleton" }, select: { paMultiEntity: true, paRequireDpoReview: true } }),
+  ]);
+  if (!row) return null;
+  const purposes: Record<string, Purpose> = {};
+  for (const t of tags) purposes[t.id] = toPurpose(t as unknown as TagWithVersions);
+  const ctx: Ctx = { purposes, multiEntity: cfg?.paMultiEntity ?? false };
+  const nameById = new Map(tags.map((t) => [t.id, t.name]));
+  const a = toActivity(row as never);
+  const blocking = blockingChecklist(a, ctx, (id) => nameById.get(id) ?? "Purpose");
+
+  const confirmed = a.purposeLinks.filter((p) => p.state === "confirmed");
+  const fieldIds = [...new Set(confirmed.flatMap((p) => p.dataLinks.filter((dd) => dd.state === "confirmed").map((dd) => dd.fieldId).filter(Boolean) as string[]))];
+  const vendorIds = [...new Set(confirmed.flatMap((p) => p.processorLinks.filter((x) => x.state === "confirmed").map((x) => x.vendorId)))];
+  const [fields, vendors] = await Promise.all([
+    fieldIds.length ? db.classifiedField.findMany({ where: { id: { in: fieldIds } }, select: { sensitivityTier: true } }) : Promise.resolve([] as { sensitivityTier: string }[]),
+    vendorIds.length ? db.dataProcessor.findMany({ where: { id: { in: vendorIds } }, select: { id: true, name: true, jurisdiction: true, dpaStatus: true, dpaExpiresAt: true } }) : Promise.resolve([] as { id: string; name: string; jurisdiction: string | null; dpaStatus: string; dpaExpiresAt: Date | null }[]),
+  ]);
+  const vById = new Map(vendors.map((v) => [v.id, v]));
+  const warnings: CheckItem[] = [];
+  const unclassified = fields.filter((f) => f.sensitivityTier === "Not classified").length;
+  if (unclassified > 0) warnings.push({ id: "W1", text: `${unclassified} linked field${unclassified === 1 ? " isn’t" : "s aren’t"} classified in DLP.`, verb: "Classify in DLP", target: null, blocking: false });
+  for (const v of vendors.filter((v) => v.dpaStatus !== "active" || (v.dpaExpiresAt && v.dpaExpiresAt.getTime() < Date.now()))) warnings.push({ id: "W2", text: `${v.name} has no contract on file.`, verb: "Check the contract", target: null, blocking: false });
+  for (const v of vendors.filter((v) => v.jurisdiction && !NOTIFIED_PA.has(v.jurisdiction))) warnings.push({ id: "W3", text: `Data goes outside India: ${v.jurisdiction} (${v.name}).`, verb: "Review transfer", target: null, blocking: false });
+  if (a.principals.includes("children")) warnings.push({ id: "W4", text: "This activity covers children’s data.", verb: "Review", target: { pane: "basics" }, blocking: false });
+
+  const ropa: RopaPreviewRow[] = confirmed.map((p) => {
+    const ps = purposeState(ctx.purposes[p.purposeId]); const inForce = ps.inForce ?? ps.latest!;
+    const procs = p.processorLinks.filter((x) => x.state === "confirmed").map((x) => vById.get(x.vendorId)?.name ?? "—");
+    const transfer = p.processorLinks.some((x) => { const v = vById.get(x.vendorId); return !!v?.jurisdiction && !NOTIFIED_PA.has(v.jurisdiction); });
+    return { purpose: nameById.get(p.purposeId) ?? "Purpose", legalBasis: inForce.legalBasis === "consent" ? "Consent" : "Legitimate use", retention: inForce.retention.amount ? `${inForce.retention.amount} ${inForce.retention.unit} ${inForce.retention.trigger}`.trim() : "—", dataCount: p.dataLinks.filter((dd) => dd.state === "confirmed").length, processors: procs, transfer };
+  });
+
+  const dpoReview = row.dpoReviewJson ? (JSON.parse(row.dpoReviewJson) as { requestedBy: string; requestedAt: string; note: string }) : null;
+  return { verdict: blocking.length > 0 ? "blocked" : "ready", blocking, warnings, ropa, requireDpoReview: cfg?.paRequireDpoReview ?? false, lifecycle: a.lifecycle, dpoReview };
 }
