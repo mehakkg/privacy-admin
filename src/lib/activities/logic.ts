@@ -143,6 +143,22 @@ export function reviewRailText(blockingCount: number): string {
   return blockingCount > 0 ? `Fix ${blockingCount} item${blockingCount === 1 ? "" : "s"}` : "Ready";
 }
 
+/** Count of blocking items for the Review & activate rail/verdict (M7 expands this
+ *  into the full B1–B9 checklist; the count must match). */
+export function reviewBlockers(a: Activity, ctx: Ctx): number {
+  if (a.lifecycle === "retired") return 0;
+  let n = 0;
+  n += basicsGaps(a, ctx.multiEntity).length; // B1–B3
+  const confirmed = confirmedPurposes(a);
+  if (confirmed.length === 0) { n += 1; return n; } // B4
+  for (const p of confirmed) {
+    if (!approvedForUse(a, ctx, p)) n += 1; // B6
+    if (confirmedData(p).length === 0) n += 1; // B7
+    if (p.processorMode === "unanswered" || (p.processorMode === "uses_processors" && confirmedProcessors(p).length === 0)) n += 1; // B8/B9
+  }
+  return n;
+}
+
 export function openReasonsCount(a: Activity): number {
   return a.reasons.filter((r) => r.status === "open").length;
 }

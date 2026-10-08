@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Search, X, Check, SlidersHorizontal, ChevronDown, AlertTriangle } from "lucide-react";
 import type { ActivityListView, ActivityListParams, ActivityListRow } from "@/lib/engines/activities";
-import { createDraftActivityAction } from "@/app/actions/activities";
+import { AddActivityModal } from "@/components/activities/AddActivityModal";
 
 const LIST = "/data-map/processing-activities";
 const LIFECYCLE_LABEL: Record<string, string> = { draft: "Draft", pending_dpo_review: "Waiting for DPO review", active: "Active", under_review: "Under review", retired: "Retired" };
@@ -77,7 +77,7 @@ export function ActivitiesList({ view, params }: { view: ActivityListView; param
         </div>
       )}
 
-      {addOpen && <AddModal onClose={() => setAddOpen(false)} onCreated={(id) => { setAddOpen(false); router.push(`${LIST}/${id}`); }} />}
+      {addOpen && <AddActivityModal onClose={() => setAddOpen(false)} onCreated={(id, start) => { setAddOpen(false); router.push(`${LIST}/${id}?pane=${start === "blank" ? "basics" : "purpose"}`); }} />}
     </div>
   );
 }
@@ -150,21 +150,3 @@ function MoreFilters({ view, params, push }: { view: ActivityListView; params: A
   );
 }
 
-function AddModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
-  const [name, setName] = useState("");
-  const [err, setErr] = useState<string | null>(null);
-  const [pending, start] = useTransition();
-  const submit = () => start(async () => { const r = await createDraftActivityAction(name); if (r.ok && r.id) onCreated(r.id); else setErr(r.error ?? "Couldn’t create."); });
-  return createPortal(
-    <div className="modal-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal std-modal sm" role="dialog" aria-modal="true" aria-label="Add activity">
-        <div className="std-modal-head"><h3 style={{ margin: 0 }}>Add activity</h3><button className="icon-btn" onClick={onClose}><X size={16} /></button></div>
-        <div className="std-modal-body stack" style={{ gap: 8 }}>
-          <label className="fld"><span>Name</span><input className="input" autoFocus value={name} onChange={(e) => { setName(e.target.value); setErr(null); }} placeholder="e.g. Retail Loan Origination" /></label>
-          <p className="cell-sub" style={{ margin: 0 }}>Starting from a suggestion or template arrives in the next step. This creates a blank draft.</p>
-          {err && <div className="notice warn" style={{ margin: 0 }}>{err}</div>}
-        </div>
-        <div className="std-modal-foot"><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={pending} onClick={submit}>Create draft</button></div>
-      </div>
-    </div>, document.body);
-}

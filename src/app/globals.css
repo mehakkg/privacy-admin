@@ -448,6 +448,36 @@ textarea {
   .inv-kv { flex-direction: column; gap: 2px; }
 }
 
+/* Processing activities — form helpers */
+.fld-err { color: var(--red); font-size: 12px; }
+.fld-help { color: var(--text-3); font-size: 12px; }
+
+/* Processing activities — workspace */
+.pa-ws-top { padding-bottom: 4px; }
+.pa-ws { display: flex; gap: 32px; align-items: flex-start; }
+.pa-rail { width: 240px; flex: 0 0 240px; position: sticky; top: 24px; display: flex; flex-direction: column; gap: 2px; }
+.pa-rail-item { display: flex; flex-direction: column; gap: 1px; text-align: left; background: none; border: 0; border-radius: 8px; padding: 8px 10px; font: inherit; cursor: pointer; color: var(--text); }
+.pa-rail-item:hover { background: var(--bg-subtle, #f7f8fa); }
+.pa-rail-item.on { background: var(--bg-selected, #eef4ff); }
+.pa-rail-label { font-size: 13.5px; font-weight: 500; }
+.pa-rail-sub { font-size: 11.5px; color: var(--text-3); }
+.pa-rail-add { padding: 6px 10px; border-top: 1px solid var(--border-soft); margin-top: 6px; }
+.pa-ws-pane { flex: 1; min-width: 0; max-width: 760px; }
+.pa-ws-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border-soft); }
+@media (max-width: 1000px) { .pa-ws { flex-direction: column; } .pa-rail { position: static; width: 100%; flex-direction: row; flex-wrap: wrap; } }
+
+/* Add activity modal */
+.pa-start-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.pa-start-card { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; text-align: left; padding: 12px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface, #fff); font: inherit; cursor: pointer; }
+.pa-start-card:hover { border-color: var(--blue); }
+.pa-start-card.on { border-color: var(--blue); background: var(--bg-selected, #eef4ff); }
+.pa-start-title { font-weight: 600; font-size: 13.5px; }
+.pa-start-panel { border: 1px solid var(--border-soft); border-radius: 10px; padding: 8px; max-height: 240px; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
+.pa-pick-row { display: flex; gap: 10px; align-items: flex-start; padding: 8px; border-radius: 8px; cursor: pointer; }
+.pa-pick-row:hover { background: var(--bg-subtle, #f7f8fa); }
+.pa-pick-row.on { background: var(--bg-selected, #eef4ff); }
+.pa-start-summary { font-size: 13px; }
+
 /* Processing activities list */
 .pa-list { max-width: 1120px; }
 .pa-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }

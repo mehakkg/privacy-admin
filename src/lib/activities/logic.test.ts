@@ -5,7 +5,7 @@
  */
 import {
   basicsGaps, completeness, completenessLabel, nextStep, summary, listSentence,
-  purposeRailText, basicsRailText, isNeedsWork,
+  purposeRailText, basicsRailText, isNeedsWork, reviewBlockers, reviewRailText,
 } from "./logic";
 import { purposeState, type Activity, type Purpose, type PurposeVersion, type Ctx, type ActivityPurpose, type LegalBasis, type ConsentStatus, type PurposeVersionState } from "./types";
 
@@ -101,6 +101,13 @@ const withWaiting = P("x", [V(3, "approved", "legitimate_use", "not_required"), 
 eq("newer waiting displayState", purposeState(withWaiting).displayState, "approved_newer_waiting");
 eq("newer waiting approvedForUse", purposeState(withWaiting).approvedForUse, true);
 eq("newer waiting number", purposeState(withWaiting).waitingVersionNumber, 4);
+
+// --- review blockers --------------------------------------------------------
+eq("a1 blockers 0", reviewBlockers(a1, ctx), 0);
+eq("a7 blockers (owner+principals+no purpose)", reviewBlockers(a7, ctx), 3);
+eq("a3 blockers (customerSupport no data + unanswered)", reviewBlockers(a3, ctx), 2);
+eq("a1 review rail", reviewRailText(reviewBlockers(a1, ctx)), "Ready");
+eq("a7 review rail", reviewRailText(reviewBlockers(a7, ctx)), "Fix 3 items");
 
 console.log(`\nProcessing Activities logic: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

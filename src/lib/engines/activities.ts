@@ -6,6 +6,7 @@ import {
 } from "@/lib/activities/types";
 import {
   completeness, completenessLabel, nextStep, summary, listSentence, isNeedsWork,
+  basicsRailText, purposeRailText, reviewBlockers, openReasonsCount,
   type Completeness, type NextStep,
 } from "@/lib/activities/logic";
 
@@ -173,4 +174,45 @@ export async function getActivityList(params: ActivityListParams = {}): Promise<
   const purposes = tags.map((t) => ({ id: t.id, name: t.name })).sort((a, b) => a.name.localeCompare(b.name));
 
   return { rows: rowsOut, sentence, gapsLine, counts, multiEntity: ctx.multiEntity, options: { owners, departments, purposes }, total: built.length, showing: rowsOut.length };
+}
+
+// --- Workspace --------------------------------------------------------------
+
+export interface WorkspacePurposeRail { purposeId: string; name: string; railText: string; waitingVersion: number | null; state: "confirmed" | "suggested" }
+export interface WorkspaceView {
+  id: string; name: string; description: string; ownerName: string | null; department: string | null; entityId: string | null;
+  principals: string[]; lifecycle: Lifecycle; version: number; lastReviewedAt: string | null; nextReviewDue: string | null;
+  multiEntity: boolean; entities: { id: string; name: string }[];
+  basicsRailText: string; purposeRails: WorkspacePurposeRail[]; reviewBlockers: number; openReasons: number;
+  completenessKind: Completeness["kind"]; completenessLabel: string; next: NextStep;
+  prepared: boolean;
+}
+
+export async function getActivityWorkspace(id: string): Promise<WorkspaceView | null> {
+  const [row, tags, entities] = await Promise.all([
+    db.processingActivity.findUnique({ where: { id }, include: { purposeSegments: { include: { elements: true, processorLinks: true } }, reasons: true } }),
+    db.purposeTag.findMany({ include: { purposeVersions: true } }),
+    db.entity.findMany({ select: { id: true, name: true } }),
+  ]);
+  if (!row) return null;
+  const purposes: Record<string, Purpose> = {};
+  for (const t of tags) purposes[t.id] = toPurpose(t as unknown as TagWithVersions);
+  const ctx: Ctx = { purposes, multiEntity: entities.length > 1 };
+  const nameById = new Map(tags.map((t) => [t.id, t.name]));
+  const a = toActivity(row as never);
+  const c = completeness(a, ctx);
+
+  const purposeRails: WorkspacePurposeRail[] = a.purposeLinks.map((link) => ({
+    purposeId: link.purposeId, name: nameById.get(link.purposeId) ?? "Purpose", railText: purposeRailText(a, link, ctx),
+    waitingVersion: purposeState(ctx.purposes[link.purposeId]).waitingVersionNumber, state: link.state,
+  }));
+  const prepared = a.purposeLinks.some((l) => l.state === "suggested" || l.dataLinks.some((d) => d.state === "suggested"));
+
+  return {
+    id: a.id, name: a.name, description: row.description ?? "", ownerName: a.ownerId, department: a.department, entityId: a.entityId,
+    principals: a.principals, lifecycle: a.lifecycle, version: row.version, lastReviewedAt: a.lastReviewedAt, nextReviewDue: a.nextReviewDue,
+    multiEntity: ctx.multiEntity, entities,
+    basicsRailText: basicsRailText(a, ctx.multiEntity), purposeRails, reviewBlockers: reviewBlockers(a, ctx), openReasons: openReasonsCount(a),
+    completenessKind: c.kind, completenessLabel: completenessLabel(c), next: nextStep(a, ctx), prepared,
+  };
 }
