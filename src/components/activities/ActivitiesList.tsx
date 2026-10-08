@@ -88,7 +88,10 @@ function fmtDate(iso: string | null): string {
   return `Last reviewed ${dt.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
 }
 
-function targetHref(r: ActivityListRow): string {
+/** D5: verb links deep-link to the exact pane and carry from=list so the workspace
+ *  shows the context bar. They never edit anything inline. A plain row click opens
+ *  the activity without a context bar (withContext=false). */
+function targetHref(r: ActivityListRow, withContext = false): string {
   const t = r.next.target;
   const base = `${LIST}/${r.id}`;
   if (!t) return base;
@@ -97,6 +100,7 @@ function targetHref(r: ActivityListRow): string {
   if (t.purpose) sp.set("purpose", t.purpose);
   if (t.section) sp.set("section", t.section);
   if (t.addPurpose) sp.set("add", "purpose");
+  if (withContext) sp.set("from", "list");
   return `${base}?${sp}`;
 }
 
@@ -115,7 +119,7 @@ function Row({ r, multiEntity, onOpen }: { r: ActivityListRow; multiEntity: bool
           ) : r.completenessKind === "retired" ? (
             <span className="cell-sub">Retired</span>
           ) : (
-            <span className="inv-status"><span className="dot" style={{ background: dotTone }} />{r.completenessLabel}{r.next.actionable && r.next.verb ? <button className="link-btn pa-verb" onClick={() => onOpen(targetHref(r))}>{r.next.verb}</button> : null}</span>
+            <span className="inv-status"><span className="dot" style={{ background: dotTone }} />{r.completenessLabel}{r.next.actionable && r.next.verb ? <button className="link-btn pa-verb" onClick={() => onOpen(targetHref(r, true))}>{r.next.verb}</button> : null}</span>
           )}
           {r.openEscalations > 0 && <Link href={`/escalations?activity=${r.id}`} className="link-btn pa-esc" onClick={(e) => e.stopPropagation()}><AlertTriangle size={12} /> {r.openEscalations} pending escalation</Link>}
         </div>

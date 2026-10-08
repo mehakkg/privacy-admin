@@ -12,6 +12,7 @@ import { ReviewPane } from "@/components/activities/ReviewPane";
 import { ReviewChangesPane } from "@/components/activities/ReviewChangesPane";
 import { AddPurposePopover } from "@/components/activities/AddPurposePopover";
 import { PurposeModal, type PurposeModalInitial } from "@/components/activities/PurposeModal";
+import { firstIncompleteIndex } from "@/lib/activities/logic";
 import { setBasicsAction, type BasicsPatch } from "@/app/actions/activities";
 import { flagForReviewAction, retireActivityAction, reactivateActivityAction } from "@/app/actions/activityReview";
 import type { WorkspaceView } from "@/lib/engines/activities";
@@ -64,6 +65,9 @@ export function WorkspaceShell({ view: initial, state, role }: { view: Workspace
   for (const p of view.purposeRails) order.push({ key: `p-${p.purposeId}`, label: p.name, pane: "purpose", purpose: p.purposeId, sub: p.railText, waiting: p.waitingVersion });
   order.push({ key: "activate", label: "Review and activate", pane: "activate", sub: view.reviewBlockers > 0 ? `Fix ${view.reviewBlockers} item${view.reviewBlockers === 1 ? "" : "s"}` : "Ready" });
 
+  // D6: the first incomplete rail item gets the accent "Next ·" marker.
+  const nextIdx = firstIncompleteIndex(order.map((o) => o.sub ?? ""));
+
   const curIndex = order.findIndex((o) => o.pane === state.pane && (!o.purpose || o.purpose === state.purpose));
   const cur = curIndex >= 0 ? order[curIndex] : order.find((o) => o.pane === "basics")!;
   const prev = curIndex > 0 ? order[curIndex - 1] : null;
@@ -75,7 +79,7 @@ export function WorkspaceShell({ view: initial, state, role }: { view: Workspace
     <div className="stack" style={{ gap: 12 }}>
       {state.from && (
         <div className="mp-ctxbar">
-          <span>From {state.from === "data-inventory" ? "Data inventory" : state.from === "home" ? "Home" : "notification"}{state.n && state.of ? ` · ${state.n} of ${state.of}` : ""}</span>
+          <span>From {state.from === "data-inventory" ? "Data inventory" : state.from === "home" ? "Home" : state.from === "list" ? "Processing activities" : "notification"}{state.n && state.of ? ` · ${state.n} of ${state.of}` : ""}</span>
           <div className="row" style={{ gap: 12, marginLeft: "auto" }}>
             <Link href={LIST} className="row-link">← Back</Link>
             {next && <button className="row-link" onClick={() => pushPane(next.pane, { purpose: next.purpose })}>Next: {next.label}</button>}
@@ -108,10 +112,10 @@ export function WorkspaceShell({ view: initial, state, role }: { view: Workspace
 
       <div className="pa-ws">
         <nav className="pa-rail">
-          {order.map((o) => (
+          {order.map((o, i) => (
             <button key={o.key} className={`pa-rail-item${cur.key === o.key ? " on" : ""}`} aria-current={cur.key === o.key ? "true" : undefined} onClick={() => pushPane(o.pane, { purpose: o.purpose })}>
               <span className="pa-rail-label">{o.label}</span>
-              <span className="pa-rail-sub">{o.sub}{o.waiting ? ` · Version ${o.waiting} waiting` : ""}</span>
+              <span className="pa-rail-sub">{i === nextIdx && <span className="pa-rail-next" style={{ color: "var(--accent, #2563eb)", fontWeight: 600 }}>Next</span>}{i === nextIdx ? " · " : ""}{o.sub}{o.waiting ? ` · Version ${o.waiting} waiting` : ""}</span>
             </button>
           ))}
           <div className="pa-rail-add"><button className="link-btn" onClick={(e) => { const b = (e.currentTarget as HTMLElement).getBoundingClientRect(); setPopover({ top: b.bottom + 4, left: b.left }); }}>+ Add purpose</button></div>

@@ -201,20 +201,32 @@ export function reasonMeta(type: ReviewReasonType): { verb: string; dismissible:
   }
 }
 
-/** Count of blocking items for the Review & activate rail/verdict (M7 expands this
- *  into the full B1–B9 checklist; the count must match). */
+/**
+ * Count of blocking items for the Review & activate rail/verdict. D2: this MUST be
+ * the same source as the pane's checklist, or the rail and pane disagree (the
+ * "Fix 3 / Fix 2" bug). So it delegates to blockingChecklist() — the single source
+ * of truth. The purpose name is irrelevant to the count, so pass a no-op.
+ */
 export function reviewBlockers(a: Activity, ctx: Ctx): number {
   if (a.lifecycle === "retired") return 0;
-  let n = 0;
-  n += basicsGaps(a, ctx.multiEntity).length; // B1–B3
-  const confirmed = confirmedPurposes(a);
-  if (confirmed.length === 0) { n += 1; return n; } // B4
-  for (const p of confirmed) {
-    if (!approvedForUse(a, ctx, p)) n += 1; // B6
-    if (confirmedData(p).length === 0) n += 1; // B7
-    if (p.processorMode === "unanswered" || (p.processorMode === "uses_processors" && confirmedProcessors(p).length === 0)) n += 1; // B8/B9
-  }
-  return n;
+  return blockingChecklist(a, ctx, () => "").length;
+}
+
+/**
+ * D6: the rail is an outline, not a sequence. Given each rail item's status text,
+ * return the index of the first item still incomplete (the one that gets the
+ * accent "Next ·" marker), or -1 when every item is done. "Complete" and "Ready"
+ * are the only done states; everything else (Needs …, Fix N, Suggested, Waiting …)
+ * is incomplete.
+ */
+export function firstIncompleteIndex(subs: string[]): number {
+  return subs.findIndex((s) => s !== "Complete" && s !== "Ready");
+}
+
+/** The purposes that any checklist item names (via its target), for D1: every one
+ *  must have a rail item. */
+export function checklistPurposeIds(items: CheckItem[]): string[] {
+  return [...new Set(items.map((i) => i.target?.purpose).filter((x): x is string => !!x))];
 }
 
 export function openReasonsCount(a: Activity): number {

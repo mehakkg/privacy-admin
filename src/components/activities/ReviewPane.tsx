@@ -22,7 +22,12 @@ export function ReviewPane({ activityId, role, go }: { activityId: string; role:
   if (!rv) return <div className="stack" style={{ gap: 10 }}><h2 style={{ margin: 0 }}>Review and activate</h2><span className="cell-sub">Loading…</span></div>;
 
   const run = (fn: () => Promise<{ ok: boolean; error?: string }>) => start(async () => { const r = await fn(); if (!r.ok) { setErr(r.error ?? "Something went wrong."); } else { setErr(null); router.refresh(); getReviewAction(activityId).then(setRv); } });
-  const onActivate = () => { if (rv.verdict === "blocked") { setErr(`Fix ${rv.blocking.length} item${rv.blocking.length === 1 ? "" : "s"} before activating.`); const t = rv.blocking[0].target; if (t) go(t as Nav); return; } run(() => activateActivityAction(activityId)); };
+  const blockingCount = rv.blocking.length;
+  const blockedLabel = `Fix ${blockingCount} item${blockingCount === 1 ? "" : "s"}`;
+  /** D3: a blocked primary never activates/submits — it moves to the first blocker. */
+  const goToFirstBlocker = () => { const first = document.getElementById(`blocker-0`); if (first) { first.scrollIntoView({ behavior: "smooth", block: "center" }); (first.querySelector("button") as HTMLElement | null)?.focus(); } const t = rv.blocking[0]?.target; if (t) go(t as Nav); };
+  const onActivate = () => { if (rv.verdict === "blocked") { goToFirstBlocker(); return; } run(() => activateActivityAction(activityId)); };
+  const onSubmitDpo = () => { if (rv.verdict === "blocked") { goToFirstBlocker(); return; } run(() => submitActivityForDpoAction(activityId, note)); };
 
   return (
     <div className="stack" style={{ gap: 18, maxWidth: 720 }}>
@@ -46,7 +51,7 @@ export function ReviewPane({ activityId, role, go }: { activityId: string; role:
       {rv.blocking.length > 0 && (
         <div className="stack" style={{ gap: 6 }}>
           {rv.blocking.map((it, i) => (
-            <div key={i} className="row" style={{ gap: 8, alignItems: "baseline" }}><span className="dot" style={{ background: "var(--yellow-700, #b45309)", marginTop: 5 }} /><span>{it.text}</span>{it.verb && it.target && <button className="link-btn" onClick={() => go(it.target as Nav)}>{it.verb}</button>}</div>
+            <div key={i} id={`blocker-${i}`} className="row" style={{ gap: 8, alignItems: "baseline" }}><span className="dot" style={{ background: "var(--yellow-700, #b45309)", marginTop: 5 }} /><span>{it.text}</span>{it.verb && it.target && <button className="link-btn" onClick={() => go(it.target as Nav)}>{it.verb}</button>}</div>
           ))}
         </div>
       )}
@@ -89,10 +94,10 @@ export function ReviewPane({ activityId, role, go }: { activityId: string; role:
       ) : rv.requireDpoReview && !canGovern ? (
         <div className="stack" style={{ gap: 8 }}>
           <textarea className="input" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="An optional note to the DPO" />
-          <div><button className="btn primary" onClick={() => run(() => submitActivityForDpoAction(activityId, note))}>Submit for DPO review</button></div>
+          <div><button className="btn primary" onClick={onSubmitDpo}>{rv.verdict === "blocked" ? blockedLabel : "Submit for DPO review"}</button></div>
         </div>
       ) : (
-        <div><button className="btn primary" onClick={onActivate}>Activate activity</button></div>
+        <div><button className="btn primary" onClick={onActivate}>{rv.verdict === "blocked" ? blockedLabel : "Activate activity"}</button></div>
       )}
     </div>
   );

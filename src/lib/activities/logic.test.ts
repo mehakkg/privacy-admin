@@ -6,6 +6,7 @@
 import {
   basicsGaps, completeness, completenessLabel, nextStep, summary, listSentence,
   purposeRailText, basicsRailText, isNeedsWork, reviewBlockers, reviewRailText, blockingChecklist,
+  firstIncompleteIndex, checklistPurposeIds,
 } from "./logic";
 import { purposeState, type Activity, type Purpose, type PurposeVersion, type Ctx, type ActivityPurpose, type LegalBasis, type ConsentStatus, type PurposeVersionState } from "./types";
 
@@ -116,6 +117,38 @@ eq("a3 checklist == blockers", blockingChecklist(a3, ctx, pname).length, reviewB
 eq("a1 checklist empty", blockingChecklist(a1, ctx, pname).length, 0);
 eq("a7 checklist ids", blockingChecklist(a7, ctx, pname).map((i) => i.id), ["B1", "B3", "B4"]);
 eq("a3 checklist ids", blockingChecklist(a3, ctx, pname).map((i) => i.id).sort(), ["B7", "B8"]);
+
+// --- M0 D2: rail count and pane count are the SAME source -------------------
+// Three blockers: no owner (B1) + one confirmed approved purpose with no data (B7)
+// + unanswered processors (B8). principals present, single-entity, so no B3.
+const d2 = act({ ownerId: null, principals: ["employees"], purposeLinks: [link("payroll", { dataLinks: [], processorMode: "unanswered" })] });
+eq("D2 reviewBlockers = 3", reviewBlockers(d2, ctx), 3);
+eq("D2 checklist length = 3", blockingChecklist(d2, ctx, pname).length, 3);
+eq("D2 rail text = Fix 3 items", reviewRailText(reviewBlockers(d2, ctx)), "Fix 3 items");
+eq("D2 rail count == pane count", reviewBlockers(d2, ctx), blockingChecklist(d2, ctx, pname).length);
+
+// D2 regression: a complete purpose plus a suggested data link. B5 ("suggested
+// items need a decision") must be counted by BOTH the rail and the pane — the old
+// reviewBlockers missed it, giving the "Fix 3 / Fix 2" split.
+const d2b = act({ purposeLinks: [link("payroll", { dataLinks: [{ fieldId: "f1", state: "confirmed" }, { fieldId: "f2", state: "suggested" }], processorMode: "none" })] });
+eq("D2 suggested -> B5 counted by rail", reviewBlockers(d2b, ctx), 1);
+eq("D2 suggested -> B5 in checklist", blockingChecklist(d2b, ctx, pname).map((i) => i.id), ["B5"]);
+eq("D2 rail == pane with suggestions", reviewBlockers(d2b, ctx), blockingChecklist(d2b, ctx, pname).length);
+
+// --- M0 D1: every purpose the checklist names has a rail item ---------------
+// Rail = activity.purposeLinks. A confirmed-but-unapproved purpose (B6) and a
+// suggested purpose (B5) must both be reachable in the rail.
+const d1 = act({ purposeLinks: [link("creditScoring", { dataLinks: data(1), processorLinks: procs("snow") }), link("feedback", { state: "suggested" })] });
+for (const a of all.concat([d1, d2, d2b])) {
+  const named = checklistPurposeIds(blockingChecklist(a, ctx, pname));
+  const railIds = a.purposeLinks.map((p) => p.purposeId);
+  check(`D1 ${a.name}: every checklist purpose is in the rail`, named.every((id) => railIds.includes(id)));
+}
+
+// --- M0 D6: the "Next" marker is the first incomplete rail item -------------
+eq("D6 first incomplete", firstIncompleteIndex(["Complete", "Needs data", "Fix 2 items"]), 1);
+eq("D6 none incomplete", firstIncompleteIndex(["Complete", "Ready"]), -1);
+eq("D6 suggested counts as incomplete", firstIncompleteIndex(["Suggested", "Complete"]), 0);
 
 console.log(`\nProcessing Activities logic: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);
