@@ -12,7 +12,7 @@ import {
   type InventoryView as View, type InventoryRow, type Readiness, type Segment, type Grouping, type PurposeOption, type GroupView,
 } from "@/lib/inventory";
 import { MovedNote } from "@/components/MovedNote";
-import { assignPurposeAction, removePurposeAction, setFieldAttributeAction, suggestPurposesAction, syncNowAction } from "@/app/actions/inventory";
+import { assignPurposeAction, removePurposeAction, setFieldAttributeAction, suggestPurposesAction, syncNowAction, getAssignActivityOptionsAction } from "@/app/actions/inventory";
 import type { InventoryParams } from "@/lib/engines/inventory";
 
 type Opt = { id: string; name: string };
@@ -106,15 +106,16 @@ export function InventoryView({ view, params, moved, categories, subjectTypes }:
   const toggleGroup = (key: string) => setOpenGroups((s) => { const base = s ?? new Set((groups ?? []).filter((_, i) => i === 0).map((g) => g.key)); const n = new Set(base); n.has(key) ? n.delete(key) : n.add(key); return n; });
 
   // ---- Assign flow ---------------------------------------------------------
-  const doAssign = (fieldIds: string[], purposeId: string) => {
+  const doAssign = (fieldIds: string[], purposeId: string, opts?: { activityId?: string; newActivity?: boolean }) => {
     const purpose = purposeById.get(purposeId); if (!purpose) return;
     setAdded((a) => { const n = { ...a }; for (const id of fieldIds) if (!n[id]) n[id] = purpose; return n; });
     setPopover(null);
     const stillPur = Math.max(0, counts.byStatus.pur - fieldIds.filter((id) => view.rows.find((r) => r.id === id)?.status === "pur").length);
     setLive(`Purpose assigned. ${stillPur} field${stillPur === 1 ? "" : "s"} still need a purpose.`);
     start(async () => {
-      const r = await assignPurposeAction(fieldIds, purposeId);
+      const r = await assignPurposeAction(fieldIds, purposeId, opts);
       if (!r.ok) { setToast({ msg: r.error ?? "Couldn’t assign.", undo: null }); setAdded({}); router.refresh(); return; }
+      if (r.result?.activityId) { router.push(`/data-map/processing-activities/${r.result.activityId}?pane=purpose&purpose=${purposeId}`); return; }
       const applied = r.result?.assigned ?? fieldIds.length;
       const skipped = r.result?.skipped ?? 0;
       setToast({
@@ -244,7 +245,7 @@ export function InventoryView({ view, params, moved, categories, subjectTypes }:
         </div>
       )}
 
-      {popover && <AssignPopover fieldIds={popover.fieldIds} anchor={popover.anchor} purposes={view.approvedPurposes} onClose={() => setPopover(null)} onAssign={(pid) => doAssign(popover.fieldIds, pid)} />}
+      {popover && <AssignPopover fieldIds={popover.fieldIds} anchor={popover.anchor} purposes={view.approvedPurposes} onClose={() => setPopover(null)} onAssign={(pid, opts) => doAssign(popover.fieldIds, pid, opts)} />}
       {drawerRow && <FieldDrawer row={drawerRow} categories={categories} subjectTypes={subjectTypes}
         onClose={() => setDrawerId(null)}
         onAssign={(e) => openAssign([drawerRow.id], e, setPopover)}
@@ -386,19 +387,24 @@ function MoreFilters({ params, pushParams, categories, subjectTypes, purposes, s
 }
 
 // --- Assign popover ---------------------------------------------------------
-function AssignPopover({ fieldIds, anchor, purposes, onClose, onAssign }: { fieldIds: string[]; anchor: { top: number; left: number }; purposes: PurposeOption[]; onClose: () => void; onAssign: (purposeId: string) => void }) {
+function AssignPopover({ fieldIds, anchor, purposes, onClose, onAssign }: { fieldIds: string[]; anchor: { top: number; left: number }; purposes: PurposeOption[]; onClose: () => void; onAssign: (purposeId: string, opts: { activityId?: string; newActivity?: boolean }) => void }) {
   const [m, setM] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const [q, setQ] = useState("");
   const [sel, setSel] = useState<string | null>(null);
   const [suggested, setSuggested] = useState<{ id: string; name: string; strong: boolean }[]>([]);
   const [top, setTop] = useState(Math.max(8, anchor.top));
+  const [acts, setActs] = useState<{ activities: { id: string; name: string }[]; requireChoice: boolean } | null>(null);
+  const [actChoice, setActChoice] = useState("");
   useEffect(() => { setM(true); const c = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); }; document.addEventListener("mousedown", c); return () => document.removeEventListener("mousedown", c); }, [onClose]);
   useEffect(() => { if (fieldIds.length === 1) suggestPurposesAction(fieldIds[0]).then((r) => { setSuggested(r.suggestions); if (r.suggestions[0]) setSel(r.suggestions[0].id); }); }, [fieldIds]);
-  useEffect(() => { if (m && ref.current) setTop(Math.max(8, Math.min(anchor.top, window.innerHeight - ref.current.offsetHeight - 8))); }, [m, anchor.top, suggested, sel, q]);
+  // Load the activities that use the chosen purpose → the "In activity" choices.
+  useEffect(() => { setActs(null); setActChoice(""); if (!sel) return; getAssignActivityOptionsAction(sel).then((o) => { setActs(o); setActChoice(o.activities.length === 1 ? o.activities[0].id : o.activities.length === 0 ? "new" : ""); }); }, [sel]);
+  useEffect(() => { if (m && ref.current) setTop(Math.max(8, Math.min(anchor.top, window.innerHeight - ref.current.offsetHeight - 8))); }, [m, anchor.top, suggested, sel, q, acts]);
   if (!m) return null;
   const filtered = purposes.filter((p) => p.name.toLowerCase().includes(q.toLowerCase()));
   const chosen = sel ? purposes.find((p) => p.id === sel) : null;
+  const needActivity = !actChoice;
   return createPortal(
     <div ref={ref} className="mp-pop inv-assign" style={{ position: "fixed", top, left: Math.max(8, anchor.left), width: 340 }}>
       <div className="mp-pop-head"><div className="stack" style={{ gap: 0 }}><strong>Assign purpose</strong><span className="cell-sub">{fieldIds.length} field{fieldIds.length === 1 ? "" : "s"}</span></div><button className="icon-btn" onClick={onClose}><X size={14} /></button></div>
@@ -412,10 +418,21 @@ function AssignPopover({ fieldIds, anchor, purposes, onClose, onAssign }: { fiel
             <div className="row" style={{ justifyContent: "space-between" }}><span className="cell-sub">Processor</span><span>{chosen.processors.length ? chosen.processors.join(", ") : "—"}</span></div>
             <div className="row" style={{ justifyContent: "space-between" }}><span className="cell-sub">Consent</span><span className={chosen.consent === "not_linked" ? "sev-warning" : ""}>{chosen.consent === "linked" ? "Linked" : chosen.consent === "not_linked" ? "Not yet linked to an approved purpose" : "Not required"}</span></div>
           </div>)}
+          {chosen && (
+            <label className="stack" style={{ gap: 4, marginTop: 10 }}>
+              <span className="cell-sub inv-sugg-h">In activity</span>
+              <select className="input sm" value={actChoice} onChange={(e) => setActChoice(e.target.value)}>
+                <option value="">Choose an activity…</option>
+                {(acts?.activities ?? []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                <option value="new">New activity from these fields</option>
+              </select>
+              {acts?.requireChoice && needActivity && <span className="cell-sub sev-warning">More than one activity uses this purpose — choose one.</span>}
+            </label>
+          )}
           <p className="cell-sub" style={{ margin: "8px 0 0" }}>Purposes waiting for DPO approval aren&rsquo;t listed.</p>
         </>}
       </div>
-      {purposes.length > 0 && <div className="mp-pop-foot"><button className="btn ghost sm" onClick={onClose}>Cancel</button><button className="btn primary sm" disabled={!sel} onClick={() => sel && onAssign(sel)}>Assign</button></div>}
+      {purposes.length > 0 && <div className="mp-pop-foot"><button className="btn ghost sm" onClick={onClose}>Cancel</button><button className="btn primary sm" disabled={!sel || needActivity} onClick={() => sel && onAssign(sel, actChoice === "new" ? { newActivity: true } : { activityId: actChoice })}>Assign</button></div>}
     </div>, document.body);
 }
 

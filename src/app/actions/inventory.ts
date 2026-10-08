@@ -2,16 +2,18 @@
 
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/session";
-import { assignPurposeToFields, removePurposeFromField, setFieldAttribute, suggestPurposes, type AssignResult } from "@/lib/engines/inventory";
+import { assignPurposeToFields, removePurposeFromField, setFieldAttribute, suggestPurposes, getAssignActivityOptions, type AssignResult } from "@/lib/engines/inventory";
 import { syncDlpNow } from "@/lib/engines/dlp";
 
 export interface InvResult { ok: boolean; error?: string; errorKind?: string }
 function fail(e: unknown): InvResult { const err = e as Error; return { ok: false, error: err.message, errorKind: err.name }; }
-function touch() { revalidatePath("/discovery/inventory", "page"); revalidatePath("/audit", "layout"); }
+function touch() { revalidatePath("/discovery/inventory", "page"); revalidatePath("/data-map/processing-activities", "layout"); revalidatePath("/audit", "layout"); }
 
-export async function assignPurposeAction(fieldIds: string[], purposeTagId: string): Promise<InvResult & { result?: AssignResult }> {
+export async function getAssignActivityOptionsAction(purposeTagId: string) { return getAssignActivityOptions(purposeTagId); }
+
+export async function assignPurposeAction(fieldIds: string[], purposeTagId: string, opts?: { activityId?: string; newActivity?: boolean }): Promise<InvResult & { result?: AssignResult & { activityId?: string } }> {
   const { actor } = await getSession();
-  try { const result = await assignPurposeToFields(fieldIds, purposeTagId, actor); touch(); return { ok: true, result }; } catch (e) { return fail(e); }
+  try { const result = await assignPurposeToFields(fieldIds, purposeTagId, actor, opts); touch(); return { ok: true, result }; } catch (e) { return fail(e); }
 }
 export async function removePurposeAction(fieldId: string, purposeTagId: string): Promise<InvResult> {
   const { actor } = await getSession();

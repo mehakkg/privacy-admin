@@ -200,15 +200,24 @@ export async function getInventory(params: InventoryParams = {}): Promise<Invent
 
 export interface AssignResult { ok: true; assigned: number; skipped: number }
 
-export async function assignPurposeToFields(fieldIds: string[], purposeTagId: string, actor: AuditActor): Promise<AssignResult> {
+/** Activities that already use a purpose — the inventory "In activity" choices. */
+export async function getAssignActivityOptions(purposeTagId: string): Promise<{ activities: { id: string; name: string }[]; requireChoice: boolean }> {
+  const segs = await db.activityPurpose.findMany({ where: { purposeTagId, activity: { lifecycleState: { not: "retired" } } }, select: { activity: { select: { id: true, activity: true } } } });
+  const map = new Map<string, string>();
+  for (const s of segs) map.set(s.activity.id, s.activity.activity);
+  const activities = [...map.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  return { activities, requireChoice: activities.length > 1 };
+}
+
+export async function assignPurposeToFields(fieldIds: string[], purposeTagId: string, actor: AuditActor, opts?: { activityId?: string; newActivity?: boolean }): Promise<AssignResult & { activityId?: string }> {
   const purpose = await db.purposeTag.findUnique({ where: { id: purposeTagId } });
   if (!purpose) throw err("NotFoundError", "No such purpose.");
   if (purpose.status !== "approved") throw err("ForbiddenError", `${purpose.name} is not an approved purpose.`);
   const fields = await db.classifiedField.findMany({ where: { id: { in: fieldIds } }, include: { purposeLinks: true } });
   if (fields.length !== fieldIds.length) throw err("NotFoundError", "One or more fields no longer exist.");
-  let assigned = 0, skipped = 0;
+  let assigned = 0, skipped = 0; let createdActivityId: string | undefined;
   await audited(
-    { actor, action: "inventory.purpose_assigned", targetType: "ClassifiedField", targetId: fieldIds.join(","), eventDescription: `Assigned purpose ${purpose.name} to ${fieldIds.length} field(s)`, payload: { purpose: purpose.name, fields: fieldIds.length } },
+    { actor, action: "inventory.purpose_assigned", targetType: "ClassifiedField", targetId: fieldIds.join(","), eventDescription: `Assigned purpose ${purpose.name} to ${fieldIds.length} field(s)`, payload: { purpose: purpose.name, fields: fieldIds.length, activityId: opts?.activityId ?? (opts?.newActivity ? "new" : null) } },
     async (tx) => {
       for (const f of fields) {
         if (f.purposeLinks.some((l) => l.purposeTagId === purposeTagId) || f.purposeTagId === purposeTagId) { skipped++; continue; }
@@ -216,9 +225,21 @@ export async function assignPurposeToFields(fieldIds: string[], purposeTagId: st
         if (!f.purposeTagId) await tx.classifiedField.update({ where: { id: f.id }, data: { purposeTagId } });
         assigned++;
       }
+      // Attach the fields to this purpose within a named activity.
+      let targetActivityId = opts?.activityId;
+      if (opts?.newActivity) {
+        const act = await tx.processingActivity.create({ data: { activity: `${purpose.name} — new activity`, origin: "manual", lifecycleState: "draft", ownerName: actor.label, createdBy: actor.label, principalsJson: "[]" } });
+        targetActivityId = act.id; createdActivityId = act.id;
+      }
+      if (targetActivityId) {
+        let seg = await tx.activityPurpose.findFirst({ where: { activityId: targetActivityId, purposeTagId } });
+        if (!seg) seg = await tx.activityPurpose.create({ data: { activityId: targetActivityId, purposeTagId, linkState: "confirmed", processorMode: "unanswered", addedBy: actor.label } });
+        const existing = new Set((await tx.activityPurposeElement.findMany({ where: { activityPurposeId: seg.id }, select: { classifiedFieldId: true } })).map((e) => e.classifiedFieldId));
+        for (const f of fields) if (!existing.has(f.id)) await tx.activityPurposeElement.create({ data: { activityPurposeId: seg.id, fieldName: f.fieldPath, classifiedFieldId: f.id, linkState: "confirmed", addedBy: actor.label } });
+      }
     },
   );
-  return { ok: true, assigned, skipped };
+  return { ok: true, assigned, skipped, activityId: createdActivityId };
 }
 
 export async function removePurposeFromField(fieldId: string, purposeTagId: string, actor: AuditActor): Promise<void> {
