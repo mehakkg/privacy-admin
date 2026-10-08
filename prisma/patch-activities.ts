@@ -122,6 +122,9 @@ async function main() {
 
   // Deterministic set: remove any activity that isn't one of the 8, then upsert.
   const keepIds = ACTIVITIES.map((a) => a.id);
+  // Clear legacy element rows first (their FK predates the cascade), then the activities.
+  await prisma.activityElement.deleteMany({ where: { activityId: { notIn: keepIds } } });
+  await prisma.activityPurpose.deleteMany({ where: { activityId: { notIn: keepIds } } });
   await prisma.processingActivity.deleteMany({ where: { id: { notIn: keepIds } } });
 
   for (const a of ACTIVITIES) {

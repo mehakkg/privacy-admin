@@ -1010,7 +1010,7 @@ model ActivityElement {
 
   createdAt DateTime @default(now())
 
-  activity   ProcessingActivity @relation(fields: [activityId], references: [id])
+  activity   ProcessingActivity @relation(fields: [activityId], references: [id], onDelete: Cascade)
   purposeTag PurposeTag?        @relation("ElementPurpose", fields: [purposeTagId], references: [id])
   processor  DataProcessor?     @relation(fields: [processorId], references: [id])
 
