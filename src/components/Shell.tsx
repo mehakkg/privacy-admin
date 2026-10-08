@@ -207,6 +207,7 @@ function navGroups(counts: NavCounts, role: ActorRole): NavEntry[] {
       footer: true,
       children: [
         { href: "/settings/organization", label: "Organization", ready: true },
+        { href: "/settings/organization/entities", label: "Entities", ready: true },
         { href: "/settings/entity-setup", label: "Entity setup", ready: true },
         { href: "/settings/users", label: "Users", ready: true },
         // Integrations opens on DLP (the discovery source) first; connected systems,
