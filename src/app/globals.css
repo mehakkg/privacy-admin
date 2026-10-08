@@ -477,6 +477,10 @@ textarea {
 .pa-pick-row:hover { background: var(--bg-subtle, #f7f8fa); }
 .pa-pick-row.on { background: var(--bg-selected, #eef4ff); }
 .pa-start-summary { font-size: 13px; }
+.pa-pick-group { margin-bottom: 8px; }
+.pa-pick-h { text-transform: uppercase; font-size: 10px; letter-spacing: .05em; margin: 4px 0; }
+.pa-pick-row { width: 100%; background: none; border: 0; justify-content: space-between; text-align: left; font: inherit; color: var(--text); }
+.pa-pick-row:disabled { opacity: 0.55; cursor: default; }
 
 /* Processing activities list */
 .pa-list { max-width: 1120px; }

@@ -179,13 +179,23 @@ export async function getActivityList(params: ActivityListParams = {}): Promise<
 // --- Workspace --------------------------------------------------------------
 
 export interface WorkspacePurposeRail { purposeId: string; name: string; railText: string; waitingVersion: number | null; state: "confirmed" | "suggested" }
+export interface PurposePaneData {
+  purposeId: string; name: string; linkState: "confirmed" | "suggested";
+  displayState: string; stateLine: string; actions: string[];
+  description: string; basisLabel: string; legitimateUseType: string | null; retentionText: string;
+  consent: "linked" | "not_linked" | "not_required"; decisionComment: string | null;
+  version: number | null; waitingVersion: number | null; notApproved: boolean;
+  dataCount: number; processorMode: string; processorCount: number;
+  editApproved: boolean; inForceVersion: number | null;
+  edit: { name: string; description: string; legalBasis: "consent" | "legitimate_use"; legitimateUseType: string | null; amount: number; unit: "months" | "years"; trigger: string; justification: string };
+}
 export interface WorkspaceView {
   id: string; name: string; description: string; ownerName: string | null; department: string | null; entityId: string | null;
   principals: string[]; lifecycle: Lifecycle; version: number; lastReviewedAt: string | null; nextReviewDue: string | null;
   multiEntity: boolean; entities: { id: string; name: string }[];
   basicsRailText: string; purposeRails: WorkspacePurposeRail[]; reviewBlockers: number; openReasons: number;
   completenessKind: Completeness["kind"]; completenessLabel: string; next: NextStep;
-  prepared: boolean;
+  prepared: boolean; purposeDetails: Record<string, PurposePaneData>;
 }
 
 export async function getActivityWorkspace(id: string): Promise<WorkspaceView | null> {
@@ -208,11 +218,45 @@ export async function getActivityWorkspace(id: string): Promise<WorkspaceView | 
   }));
   const prepared = a.purposeLinks.some((l) => l.state === "suggested" || l.dataLinks.some((d) => d.state === "suggested"));
 
+  const fmt = (iso: string | null) => iso ? new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
+  const purposeDetails: Record<string, PurposePaneData> = {};
+  for (const link of a.purposeLinks) {
+    const p = ctx.purposes[link.purposeId];
+    const ps = purposeState(p);
+    const inForce = ps.inForce ?? ps.latest!;
+    const latest = ps.latest!;
+    const basisLabel = inForce.legalBasis === "consent" ? "Consent" : "Legitimate use";
+    const retentionText = inForce.retention.amount ? `${inForce.retention.amount} ${inForce.retention.unit} ${inForce.retention.trigger}`.trim() : "No retention set";
+    let stateLine = ""; const actions: string[] = [];
+    if (ps.approvedForUse) { stateLine = `Approved by ${inForce.decidedBy || "K. Menon"} on ${fmt(inForce.decidedAt)} · version ${inForce.number}`; actions.push("edit", "history"); }
+    else if (ps.state === "draft") { stateLine = "Draft · not submitted"; actions.push("edit", "submit"); }
+    else if (ps.state === "waiting_for_dpo") { stateLine = `Submitted ${fmt(latest.submittedAt)} by ${latest.submittedBy || "R. Iyer"}. Waiting for K. Menon.`; actions.push("withdraw"); }
+    else if (ps.state === "changes_requested") { stateLine = `Changes requested by ${latest.decidedBy || "K. Menon"} on ${fmt(latest.decidedAt)}.`; actions.push("edit", "resubmit"); }
+    else if (ps.state === "rejected") { stateLine = "Rejected."; actions.push("edit", "remove"); }
+    else if (ps.state === "retired") { stateLine = `Retired.`; actions.push("replace", "remove"); }
+    const confirmedData = link.dataLinks.filter((x) => x.state === "confirmed").length;
+    const confirmedProc = link.processorLinks.filter((x) => x.state === "confirmed").length;
+    // The version the Edit modal prefills from: an in-progress version if one exists, else the in-force one.
+    const nonApproved = ps.latest && ps.latest.state !== "approved" && ps.latest.state !== "retired" ? ps.latest : null;
+    const editSrc = nonApproved ?? inForce;
+    const editApproved = ps.approvedForUse && !nonApproved;
+    purposeDetails[link.purposeId] = {
+      purposeId: link.purposeId, name: nameById.get(link.purposeId) ?? "Purpose", linkState: link.state,
+      displayState: ps.displayState, stateLine, actions,
+      description: inForce.description, basisLabel, legitimateUseType: inForce.legitimateUseType, retentionText,
+      consent: inForce.consent, decisionComment: latest.decisionComment,
+      version: ps.inForce?.number ?? null, waitingVersion: ps.waitingVersionNumber, notApproved: !ps.approvedForUse,
+      dataCount: confirmedData, processorMode: link.processorMode, processorCount: confirmedProc,
+      editApproved, inForceVersion: ps.inForce?.number ?? null,
+      edit: { name: editSrc.name, description: editSrc.description, legalBasis: editSrc.legalBasis, legitimateUseType: editSrc.legitimateUseType, amount: editSrc.retention.amount, unit: editSrc.retention.unit, trigger: editSrc.retention.trigger, justification: editSrc.justification },
+    };
+  }
+
   return {
     id: a.id, name: a.name, description: row.description ?? "", ownerName: a.ownerId, department: a.department, entityId: a.entityId,
     principals: a.principals, lifecycle: a.lifecycle, version: row.version, lastReviewedAt: a.lastReviewedAt, nextReviewDue: a.nextReviewDue,
     multiEntity: ctx.multiEntity, entities,
     basicsRailText: basicsRailText(a, ctx.multiEntity), purposeRails, reviewBlockers: reviewBlockers(a, ctx), openReasons: openReasonsCount(a),
-    completenessKind: c.kind, completenessLabel: completenessLabel(c), next: nextStep(a, ctx), prepared,
+    completenessKind: c.kind, completenessLabel: completenessLabel(c), next: nextStep(a, ctx), prepared, purposeDetails,
   };
 }

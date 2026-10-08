@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Notice } from "@/components/ui";
 import { BasicsPane } from "@/components/activities/BasicsPane";
+import { PurposePane } from "@/components/activities/PurposePane";
+import { AddPurposePopover } from "@/components/activities/AddPurposePopover";
+import { PurposeModal, type PurposeModalInitial } from "@/components/activities/PurposeModal";
 import { setBasicsAction, type BasicsPatch } from "@/app/actions/activities";
 import type { WorkspaceView } from "@/lib/engines/activities";
 
@@ -18,6 +21,8 @@ export function WorkspaceShell({ view: initial, state }: { view: WorkspaceView; 
   const [view, setView] = useState(initial);
   const [version, setVersion] = useState(initial.version);
   const [save, setSave] = useState<{ status: "idle" | "saving" | "saved" | "error" | "conflict"; at?: string }>({ status: "idle" });
+  const [popover, setPopover] = useState<{ top: number; left: number } | null>(null);
+  const [modal, setModal] = useState<{ mode: "create" | "edit"; purposeId?: string; initial?: PurposeModalInitial; editApproved?: boolean; inForceVersion?: number } | null>(null);
   const readOnly = view.lifecycle === "retired" || view.lifecycle === "pending_dpo_review";
 
   // Keep local view in sync when the server re-renders (navigation / refresh).
@@ -96,14 +101,20 @@ export function WorkspaceShell({ view: initial, state }: { view: WorkspaceView; 
               <span className="pa-rail-sub">{o.sub}{o.waiting ? ` · Version ${o.waiting} waiting` : ""}</span>
             </button>
           ))}
-          <div className="pa-rail-add"><button className="link-btn" onClick={() => pushPane("purpose", { add: "purpose" })}>+ Add purpose</button></div>
+          <div className="pa-rail-add"><button className="link-btn" onClick={(e) => { const b = (e.currentTarget as HTMLElement).getBoundingClientRect(); setPopover({ top: b.bottom + 4, left: b.left }); }}>+ Add purpose</button></div>
         </nav>
 
         <div className="pa-ws-pane">
           {cur.pane === "basics" ? (
             <BasicsPane view={view} save={doSave} readOnly={readOnly} />
           ) : cur.pane === "purpose" ? (
-            <PanePlaceholder title={view.purposeRails.find((p) => p.purposeId === state.purpose)?.name ?? "Purpose"} body="Data and Processors for this purpose arrive in the next steps (M4–M6)." />
+            state.purpose && view.purposeDetails[state.purpose] ? (
+              <PurposePane data={view.purposeDetails[state.purpose]} activityId={view.id}
+                onEdit={() => { const d = view.purposeDetails[state.purpose!]; setModal({ mode: "edit", purposeId: d.purposeId, initial: d.edit, editApproved: d.editApproved, inForceVersion: d.inForceVersion ?? undefined }); }}
+                onReplace={() => setPopover({ top: 120, left: 360 })} />
+            ) : (
+              <div className="stack" style={{ gap: 12, maxWidth: 520 }}><h2 style={{ margin: 0 }}>Purposes</h2><Notice tone="info" title="No purpose selected">Add a purpose to this activity.</Notice><div><button className="btn primary" onClick={() => setPopover({ top: 120, left: 360 })}>Add a purpose</button></div></div>
+            )
           ) : cur.pane === "review" ? (
             <PanePlaceholder title="Review" body="The review of changes (Keep it right) arrives in a later step (M8)." />
           ) : (
@@ -116,6 +127,14 @@ export function WorkspaceShell({ view: initial, state }: { view: WorkspaceView; 
           </div>
         </div>
       </div>
+
+      {popover && <AddPurposePopover activityId={view.id} anchor={popover}
+        onClose={() => setPopover(null)}
+        onAdded={(id) => { setPopover(null); router.push(`${LIST}/${view.id}?pane=purpose&purpose=${id}`); router.refresh(); }}
+        onCreate={() => { setPopover(null); setModal({ mode: "create" }); }} />}
+      {modal && <PurposeModal mode={modal.mode} activityId={view.id} purposeId={modal.purposeId} initial={modal.initial} editApproved={modal.editApproved} inForceVersion={modal.inForceVersion}
+        onClose={() => setModal(null)}
+        onDone={(id) => { setModal(null); router.push(`${LIST}/${view.id}?pane=purpose&purpose=${id}`); router.refresh(); }} />}
     </div>
   );
 }
