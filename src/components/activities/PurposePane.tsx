@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Lock } from "lucide-react";
 import { Notice } from "@/components/ui";
+import { DataSection } from "@/components/activities/DataSection";
 import { submitPurposeAction, withdrawPurposeAction, removePurposeFromActivityAction } from "@/app/actions/purposes";
 import type { PurposePaneData } from "@/lib/engines/activities";
 
@@ -51,10 +52,7 @@ export function PurposePane({ data, activityId, onEdit, onReplace }: { data: Pur
 
       {data.notApproved && <Notice tone="info" title="You can keep building">This purpose must be approved before the activity can go live. Data and processor links take effect when it is approved.</Notice>}
 
-      <div className="stack" style={{ gap: 8 }}>
-        <div className="inv-sec-h">Data <span className="cell-sub">{data.dataCount} field{data.dataCount === 1 ? "" : "s"}</span></div>
-        <Notice tone="info" title="Being built">Adding data to a purpose (the data picker) arrives in the next step (M5).</Notice>
-      </div>
+      <DataSection activityId={activityId} purposeId={data.purposeId} purposeName={data.name} />
       <div className="stack" style={{ gap: 8 }}>
         <div className="inv-sec-h">Processors</div>
         <Notice tone="info" title="Being built">Choosing processors (or recording none) arrives in the next step (M6).</Notice>
