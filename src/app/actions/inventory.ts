@@ -7,7 +7,7 @@ import { syncDlpNow } from "@/lib/engines/dlp";
 
 export interface InvResult { ok: boolean; error?: string; errorKind?: string }
 function fail(e: unknown): InvResult { const err = e as Error; return { ok: false, error: err.message, errorKind: err.name }; }
-function touch() { revalidatePath("/discovery/inventory", "page"); revalidatePath("/data-map/processing-activities", "layout"); revalidatePath("/audit", "layout"); }
+function touch() { revalidatePath("/data-map/inventory", "page"); revalidatePath("/data-map/processing-activities", "layout"); revalidatePath("/audit", "layout"); }
 
 export async function getAssignActivityOptionsAction(purposeTagId: string) { return getAssignActivityOptions(purposeTagId); }
 

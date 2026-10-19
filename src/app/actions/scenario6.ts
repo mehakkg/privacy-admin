@@ -16,7 +16,7 @@ function touch(...p: string[]) { for (const x of p) revalidatePath(x, "layout");
 // Data Map
 export async function tagFieldsToPurposeAction(fieldIds: string[], choice: PurposeTagInput): Promise<ActionResult> {
   const { actor } = await getSession();
-  try { await tagFieldsToPurpose(fieldIds, choice, actor); touch("/discovery/inventory", "/data-map/categories"); return ok(); } catch (e) { return fail(e); }
+  try { await tagFieldsToPurpose(fieldIds, choice, actor); touch("/data-map/inventory", "/data-map/categories"); return ok(); } catch (e) { return fail(e); }
 }
 export async function createDataCategoryAction(name: string, description: string): Promise<ActionResult> {
   const { actor } = await getSession();
@@ -32,7 +32,7 @@ export async function deleteDataCategoryAction(categoryId: string): Promise<Acti
 }
 export async function bulkTagCategoryAction(categoryId: string, choice: PurposeTagInput): Promise<ActionResult & { count?: number }> {
   const { actor } = await getSession();
-  try { const n = await bulkTagCategory(categoryId, choice, actor); touch("/data-map/categories", "/discovery/inventory"); return { ok: true, count: n }; } catch (e) { return fail(e); }
+  try { const n = await bulkTagCategory(categoryId, choice, actor); touch("/data-map/categories", "/data-map/inventory"); return { ok: true, count: n }; } catch (e) { return fail(e); }
 }
 
 // Notices

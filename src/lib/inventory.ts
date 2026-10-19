@@ -20,18 +20,24 @@ export const SENS_TONE: Record<string, { dot: string; cls: string }> = {
   "Not classified": { dot: "var(--yellow-700, #b45309)", cls: "sev-warning" },
 };
 
-/** One readiness status per field, by priority: cls > pur > link > old > ready. */
+/**
+ * One readiness status per field, by priority: cls > pur > link > ready.
+ * "old" (stale) is NO LONGER a per-field status (M2): DLP staleness is shown ONCE
+ * on the sync line, not per row. The type keeps "old" only for back-compat on old
+ * URL params; the engine never produces it.
+ */
 export type Readiness = "cls" | "pur" | "link" | "old" | "ready";
 /** Priority order (also sort severity). */
-export const READINESS_PRIORITY: Readiness[] = ["cls", "pur", "link", "old", "ready"];
-/** Bar + legend order (gaps first, ready last). */
-export const READINESS_ORDER: Readiness[] = ["cls", "pur", "link", "old", "ready"];
+export const READINESS_PRIORITY: Readiness[] = ["cls", "pur", "link", "ready"];
+/** Bar + legend order (gaps first, ready last). All gaps share the "attention"
+ *  token colour (red is reserved for failures); the label distinguishes them. */
+export const READINESS_ORDER: Readiness[] = ["cls", "pur", "link", "ready"];
 export const READINESS_META: Record<Readiness, { label: string; dot: string; cls: string; action: string | null; kind: "classify" | "assign" | "review" | null }> = {
-  cls: { label: "Needs classification", dot: "var(--red)", cls: "sev-danger", action: "Classify in DLP", kind: "classify" },
+  cls: { label: "Needs classification", dot: "var(--yellow-700, #b45309)", cls: "sev-warning", action: "Classify in DLP", kind: "classify" },
   pur: { label: "Needs a purpose", dot: "var(--yellow-700, #b45309)", cls: "sev-warning", action: "Assign purpose", kind: "assign" },
-  link: { label: "Purpose not linked to consent", dot: "var(--blue)", cls: "sev-accent", action: "Review purpose", kind: "review" },
+  link: { label: "Purpose not linked to consent", dot: "var(--yellow-700, #b45309)", cls: "sev-warning", action: "Review purpose", kind: "review" },
   old: { label: "Out of date", dot: "var(--text-4, #94a3b8)", cls: "sev-secondary", action: null, kind: null },
-  ready: { label: "Ready for ROPA", dot: "var(--green, #16a34a)", cls: "sev-success", action: null, kind: null },
+  ready: { label: "Ready", dot: "var(--green, #16a34a)", cls: "sev-success", action: null, kind: null },
 };
 
 export type Grouping = "system" | "dataType" | "none";
@@ -78,10 +84,19 @@ export interface GroupView {
 
 export interface ReadinessCounts { total: number; ready: number; attention: number; byStatus: Record<Readiness, number> }
 
+/** DLP sync is "stale" after this many days (M2, OPEN ITEM 1 default). A constant. */
+export const STALE_AFTER_DAYS = 7;
+
 export interface SyncStateView {
   status: "idle" | "syncing" | "failed" | "not_connected" | "out_of_date";
   lastSyncedAgo: string | null;
   lastSyncedExact: string | null;
+  /** "19 Oct 2026, 12:49" — the single date format. */
+  lastSyncedLabel: string | null;
+  /** Whole days since the last sync, for the "N days old" warning. */
+  daysOld: number | null;
+  /** True when older than STALE_AFTER_DAYS or the DLP reports out_of_date. */
+  stale: boolean;
   systems: number;
   warnText: string | null;
 }
@@ -104,8 +119,8 @@ export interface InventoryView {
 
 /** The readiness-card next-step line, from the whole-inventory counts + a flag for suggestions. */
 export function nextStepLine(counts: ReadinessCounts, suggestedPur: number): string | null {
-  if (counts.attention === 0) return "Every field is ready for ROPA.";
-  const biggest = (["cls", "pur", "link", "old"] as Readiness[]).filter((s) => counts.byStatus[s] > 0).sort((a, b) => counts.byStatus[b] - counts.byStatus[a])[0];
+  if (counts.attention === 0) return "Every field is complete.";
+  const biggest = (["cls", "pur", "link"] as Readiness[]).filter((s) => counts.byStatus[s] > 0).sort((a, b) => counts.byStatus[b] - counts.byStatus[a])[0];
   if (biggest === "pur") {
     const n = counts.byStatus.pur;
     if (suggestedPur >= n) return `${n} need a purpose, and DLP suggests one for all ${n}.`;
@@ -114,15 +129,15 @@ export function nextStepLine(counts: ReadinessCounts, suggestedPur: number): str
   }
   if (biggest === "cls") return `${counts.byStatus.cls} need a classification in DLP.`;
   if (biggest === "link") return `${counts.byStatus.link} have a purpose that isn’t linked to consent.`;
-  return `${counts.byStatus.old} are out of date.`;
+  return null;
 }
 
 /** The outlined card action for the biggest gap, or null when none. */
 export function cardAction(counts: ReadinessCounts): { label: string; status: Readiness } | null {
   if (counts.attention === 0) return null;
-  const biggest = (["cls", "pur", "link", "old"] as Readiness[]).filter((s) => counts.byStatus[s] > 0).sort((a, b) => counts.byStatus[b] - counts.byStatus[a])[0];
+  const biggest = (["cls", "pur", "link"] as Readiness[]).filter((s) => counts.byStatus[s] > 0).sort((a, b) => counts.byStatus[b] - counts.byStatus[a])[0];
   if (biggest === "pur") return { label: "Review suggestions", status: "pur" };
   if (biggest === "cls") return { label: "Classify in DLP", status: "cls" };
   if (biggest === "link") return { label: "Review purposes", status: "link" };
-  return { label: "Review out of date", status: "old" };
+  return null;
 }

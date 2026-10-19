@@ -12,14 +12,17 @@ import {
   type InventoryView as View, type InventoryRow, type Readiness, type Segment, type Grouping, type PurposeOption, type GroupView,
 } from "@/lib/inventory";
 import { MovedNote } from "@/components/MovedNote";
+import { ReadinessStrip } from "@/components/datamap/PageChrome";
+import { plural, agree } from "@/lib/datamap/foundations";
 import { assignPurposeAction, removePurposeAction, setFieldAttributeAction, suggestPurposesAction, syncNowAction, getAssignActivityOptionsAction } from "@/app/actions/inventory";
 import type { InventoryParams } from "@/lib/engines/inventory";
+import type { ReadinessStripData } from "@/lib/engines/datamap";
 
 type Opt = { id: string; name: string };
 const DLP_URL = "#";
 
-export function InventoryView({ view, params, moved, categories, subjectTypes }: {
-  view: View; params: InventoryParams; moved?: string; categories: Opt[]; subjectTypes: string[];
+export function InventoryView({ view, params, moved, categories, subjectTypes, strip }: {
+  view: View; params: InventoryParams; moved?: string; categories: Opt[]; subjectTypes: string[]; strip: ReadinessStripData;
 }) {
   const router = useRouter();
   const [, start] = useTransition();
@@ -73,7 +76,7 @@ export function InventoryView({ view, params, moved, categories, subjectTypes }:
     const sp = new URLSearchParams();
     const merged: Record<string, string | undefined> = { ...params, ...patch };
     for (const [k, v] of Object.entries(merged)) if (v) sp.set(k, v);
-    start(() => router.push(`/discovery/inventory${sp.toString() ? `?${sp}` : ""}`));
+    start(() => router.push(`/data-map/inventory${sp.toString() ? `?${sp}` : ""}`));
   };
   useEffect(() => {
     const t = setTimeout(() => { if ((params.q ?? "") !== qLocal) pushParams({ q: qLocal || undefined }); }, 350);
@@ -173,13 +176,15 @@ export function InventoryView({ view, params, moved, categories, subjectTypes }:
         </div>
       </div>
 
+      <ReadinessStrip data={strip} current="fields" />
+
       <MovedNote moved={moved} />
 
       {/* Readiness card */}
       <div className="inv-card">
         <div className="inv-card-top">
           <div className="stack" style={{ gap: 4 }}>
-            <div className="inv-card-sentence"><span className="tnum">{counts.ready}</span> of <span className="tnum">{counts.total}</span> fields are ready for ROPA.</div>
+            <div className="inv-card-sentence">{counts.attention === 0 ? <>All <span className="tnum">{counts.total}</span> {agree(counts.total, "field is", "fields are")} complete.</> : <><span className="tnum">{counts.attention}</span> of <span className="tnum">{counts.total}</span> {agree(counts.attention, "field needs", "fields need")} attention.</>}</div>
             {nextStep && <div className="cell-sub">{nextStep}{view.sync.status === "failed" && view.sync.lastSyncedExact ? ` · As of ${view.sync.lastSyncedExact}` : ""}</div>}
           </div>
           {act && <button className="btn sm" onClick={() => pushParams({ status: act.status, segment: act.status === "ready" ? "all" : "attention" })}>{act.label}</button>}
@@ -215,13 +220,13 @@ export function InventoryView({ view, params, moved, categories, subjectTypes }:
 
       <div className="inv-chips">
         {chips.map((c, i) => <button key={i} className="chip" onClick={c.clear}>{c.label} <X size={11} /></button>)}
-        {chips.length > 0 && <button className="link-btn" onClick={() => start(() => router.push("/discovery/inventory"))}>Clear</button>}
+        {chips.length > 0 && <button className="link-btn" onClick={() => start(() => router.push("/data-map/inventory"))}>Clear</button>}
         <span className="cell-sub" style={{ marginLeft: "auto" }}>Showing <span className="tnum">{totalShown}</span> of <span className="tnum">{counts.total}</span></span>
       </div>
 
       {/* Work list */}
       {totalShown === 0 ? (
-        <div className="inv-noresult">No fields match these filters. <button className="link-btn" onClick={() => start(() => router.push("/discovery/inventory"))}>Clear filters</button></div>
+        <div className="inv-noresult">No fields match these filters. <button className="link-btn" onClick={() => start(() => router.push("/data-map/inventory"))}>Clear filters</button></div>
       ) : grouping === "none" ? (
         <FlatTable rows={displayed} sel={sel} setSel={setSel} grouping={grouping} onOpen={setDrawerId} onAssign={(ids, e) => openAssign(ids, e, setPopover)} />
       ) : (
@@ -265,9 +270,10 @@ function openAssign(fieldIds: string[], e: React.MouseEvent, setPopover: (p: { f
 // --- Sync line --------------------------------------------------------------
 function SyncLine({ view, onSync }: { view: View; onSync: () => void }) {
   const s = view.sync;
-  if (s.status === "failed") return <div className="inv-syncline danger"><AlertTriangle size={12} /> DLP sync failed{s.lastSyncedAgo ? ` ${s.lastSyncedAgo}` : ""}.{s.lastSyncedExact ? ` Showing data from ${s.lastSyncedExact}.` : ""} <button className="link-btn" onClick={onSync}>Try again</button> · <a href={DLP_URL} className="link-btn">Open in DLP</a></div>;
-  if (s.status === "out_of_date") return <div className="inv-syncline warn"><Clock size={12} /> DLP data is out of date.{s.lastSyncedAgo ? ` Last sync ${s.lastSyncedAgo}.` : ""} <button className="link-btn" onClick={onSync}>Sync now</button></div>;
-  return <div className="inv-syncline"><span title={s.lastSyncedExact ?? undefined}>Synced from DLP {s.lastSyncedAgo ?? "just now"} · {s.systems} systems</span> · <button className="link-btn" onClick={onSync}>Sync now</button></div>;
+  // Failure is the one red state. Staleness is the single warning, shown here only.
+  if (s.status === "failed") return <div className="inv-syncline danger"><AlertTriangle size={12} /> DLP sync failed{s.lastSyncedAgo ? ` ${s.lastSyncedAgo}` : ""}.{s.lastSyncedLabel ? ` Showing data from ${s.lastSyncedLabel}.` : ""} <button className="btn sm" onClick={onSync}>Sync now</button></div>;
+  if (s.stale) return <div className="inv-syncline warn"><Clock size={12} /> DLP data is {plural(s.daysOld ?? 0, "day")} old. <button className="btn sm" onClick={onSync}>Sync now</button></div>;
+  return <div className="inv-syncline"><span>Synced from DLP {s.lastSyncedLabel ?? "just now"} · {plural(s.systems, "system")}</span> · <button className="link-btn" onClick={onSync}>Sync now</button></div>;
 }
 
 // --- Readiness bar ----------------------------------------------------------
@@ -295,20 +301,21 @@ function GroupBlock({ g, grouping, open, onToggle, sel, setSel, onOpen, onAssign
       <div className="inv-group-head">
         <button className="icon-btn" aria-expanded={open} onClick={onToggle}>{open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}</button>
         <input type="checkbox" checked={allSel} aria-label={`Select all in ${g.name}`} onChange={(e) => setSel((s) => { const n = new Set(s); for (const r of g.rows) e.target.checked ? n.add(r.id) : n.delete(r.id); return n; })} />
-        <div className="inv-group-name"><strong>{g.name}</strong> <span className="cell-sub"><span className="tnum">{g.fieldCount}</span> fields{g.newCount > 0 ? <span className="sev-accent"> · {g.newCount} new</span> : ""}</span></div>
+        <div className="inv-group-name"><strong>{g.name}</strong> <span className="cell-sub">{plural(g.fieldCount, "field")}{g.newCount > 0 ? <span className="sev-accent"> · {g.newCount} new</span> : ""}</span></div>
         <div className="inv-group-mid">
           <MixBar mix={g.mix} />
           <span className="cell-sub">{g.gaps.length === 0 ? <span className="sev-success">Ready</span> : g.gaps.map((gg, i) => <span key={gg.status}>{i > 0 ? " · " : ""}<span className="tnum">{gg.count}</span> {gg.status === "cls" ? "need classification" : gg.status === "pur" ? "need a purpose" : gg.status === "link" ? "not linked to consent" : "out of date"}</span>)}</span>
         </div>
         {grouping === "system" && g.suggestion && (
           <div className="inv-group-sug">
-            <span className="cell-sub">Suggested: {g.suggestion.purposeName} · {g.suggestion.confidence} confidence</span>
-            <button className="btn ghost sm" onClick={(e) => onAssignSuggestion(g, e)}>Assign to {g.suggestion.fieldIds.length}</button>
+            <span className="cell-sub">{g.suggestion.purposeName}</span>
+            <button className="btn ghost sm" onClick={(e) => onAssignSuggestion(g, e)}>Apply to {plural(g.suggestion.fieldIds.length, "field")}</button>
           </div>
         )}
       </div>
       {open && (
         <table className="inv-table">
+          <thead><tr><th className="inv-check"></th><th>Field</th><th>Sensitivity</th><th>Purposes</th><th>Status</th></tr></thead>
           <tbody>
             {g.rows.map((r) => <Row key={r.id} r={r} grouping={grouping} selected={sel.has(r.id)}
               onToggle={() => setSel((s) => { const n = new Set(s); n.has(r.id) ? n.delete(r.id) : n.add(r.id); return n; })}
@@ -374,7 +381,7 @@ function MoreFilters({ params, pushParams, categories, subjectTypes, purposes, s
       {open && (
         <div className="inv-more-pop">
           <Select value={params.system ?? ""} onChange={(v) => pushParams({ system: v || undefined })} label="System" options={systems} />
-          <Select value={params.status ?? ""} onChange={(v) => pushParams({ status: v || undefined })} label="Status" options={[{ id: "cls", name: "Needs classification" }, { id: "pur", name: "Needs a purpose" }, { id: "link", name: "Not linked to consent" }, { id: "old", name: "Out of date" }, { id: "ready", name: "Ready for ROPA" }]} />
+          <Select value={params.status ?? ""} onChange={(v) => pushParams({ status: v || undefined })} label="Status" options={[{ id: "cls", name: "Needs classification" }, { id: "pur", name: "Needs a purpose" }, { id: "link", name: "Not linked to consent" }, { id: "ready", name: "Ready" }]} />
           <Select value={params.dataType ?? ""} onChange={(v) => pushParams({ dataType: v || undefined })} label="Data type" options={dataTypes.map((t) => ({ id: t, name: t }))} />
           <Select value={params.dataCategory ?? ""} onChange={(v) => pushParams({ dataCategory: v || undefined })} label="Data category" options={categories} />
           <Select value={params.purpose ?? ""} onChange={(v) => pushParams({ purpose: v || undefined })} label="Purpose" options={purposes.map((p) => ({ id: p.id, name: p.name }))} />
@@ -479,7 +486,7 @@ function FieldDrawer({ row, categories, subjectTypes, onClose, onAssign, onRemov
           </section>
           <section>
             <div className="inv-sec-h">Readiness</div>
-            {row.status === "ready" ? <div className="inv-status sev-success"><Check size={13} /> Ready for ROPA</div> : (
+            {row.status === "ready" ? <div className="inv-status sev-success"><Check size={13} /> Ready</div> : (
               <ul className="inv-gaplist"><li>{meta.label}.{meta.action ? (meta.kind === "assign" ? <button className="link-btn" onClick={onAssign}> {meta.action}</button> : meta.kind === "classify" ? <a href={DLP_URL} className="link-btn"> {meta.action}</a> : <span> {meta.action}</span>) : ""}</li></ul>
             )}
           </section>

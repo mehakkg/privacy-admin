@@ -36,7 +36,7 @@ function plusMonths(d: Date, m: number): Date { const n = new Date(d); n.setMont
 
 export interface ActResult { ok: boolean; error?: string; id?: string }
 const LIST = "/data-map/processing-activities";
-function touch(id?: string) { revalidatePath(LIST, "page"); if (id) revalidatePath(`${LIST}/${id}`, "page"); revalidatePath("/discovery/inventory", "page"); }
+function touch(id?: string) { revalidatePath(LIST, "page"); if (id) revalidatePath(`${LIST}/${id}`, "page"); revalidatePath("/data-map/inventory", "page"); }
 
 async function nameClash(name: string, entityId: string | null, excludeId?: string): Promise<boolean> {
   const rows = await db.processingActivity.findMany({ where: { lifecycleState: { not: "retired" }, ...(entityId ? { entityId } : {}) }, select: { id: true, activity: true } });

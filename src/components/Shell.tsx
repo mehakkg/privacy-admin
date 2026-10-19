@@ -52,7 +52,7 @@ function navGroups(counts: NavCounts, role: ActorRole): NavEntry[] {
     {
       key: "data-map",
       label: "Data Map",
-      href: "/discovery/inventory",
+      href: "/data-map/inventory",
       ready: true,
       // Discovery, classification and scanning now live in the DLP; Privacy Admin
       // only reads from it. Sources and Review queue were removed — the systems
@@ -61,7 +61,7 @@ function navGroups(counts: NavCounts, role: ActorRole): NavEntry[] {
       // config moved to Settings › Integrations › DLP. Pipeline order: what
       // exists → why → where it moves → the record.
       children: [
-        { href: "/discovery/inventory", label: "Data inventory", ready: true, badge: counts.inventoryGaps || undefined, badgeLabel: `${counts.inventoryGaps} inventory gaps`, warn: counts.dlpWarn },
+        { href: "/data-map/inventory", label: "Data inventory", ready: true, badge: counts.inventoryGaps || undefined, badgeLabel: `${counts.inventoryGaps} inventory gaps`, warn: counts.dlpWarn },
         { href: "/data-map/processing-activities", label: "Processing activities", ready: true, badge: counts.activitiesNeedsWork || undefined, badgeLabel: `${counts.activitiesNeedsWork} activities need work` },
         { href: "/data-flow/map", label: "Data flow", ready: true },
         { href: "/discovery/ropa", label: "ROPA", ready: true, badge: counts.ropaPending || undefined, badgeLabel: `${counts.ropaPending} pending recommendations` },

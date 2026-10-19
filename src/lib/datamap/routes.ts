@@ -5,7 +5,7 @@
  * call sites. Spec target roots noted beside each.
  */
 export const DATAMAP_ROUTES = {
-  inventory: "/discovery/inventory",            // → /data-map/inventory
+  inventory: "/data-map/inventory",
   activities: "/data-map/processing-activities", // → /data-map/activities
   flow: "/data-flow/map",                        // → /data-map/flow
   ropa: "/discovery/ropa",                       // → /data-map/ropa

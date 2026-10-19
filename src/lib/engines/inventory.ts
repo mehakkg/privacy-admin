@@ -2,10 +2,11 @@ import { db } from "@/lib/db";
 import { audited, type AuditActor } from "@/lib/engines/audit";
 import { getDlpHealth } from "@/lib/engines/dlp";
 import {
-  READINESS_PRIORITY, SENS_RANK, SENSITIVITIES,
+  READINESS_PRIORITY, SENS_RANK, SENSITIVITIES, STALE_AFTER_DAYS,
   type Readiness, type InventoryRow, type InventoryView, type SyncStateView,
   type PurposeOption, type Segment, type Grouping, type GroupView, type ReadinessCounts, type InheritPreview,
 } from "@/lib/inventory";
+import { formatDateTime, daysBetween } from "@/lib/datamap/foundations";
 
 /**
  * DATA INVENTORY ENGINE (server).
@@ -68,7 +69,6 @@ async function deriveAll(): Promise<Derived & { health: Awaited<ReturnType<typeo
     .sort((a, b) => a.name.localeCompare(b.name));
   const purposeName = new Map(purposeRows.map((p) => [p.id, p.name]));
 
-  const intervalMs = health.syncIntervalHours * 3600_000;
   const now = Date.now();
 
   const rows: InventoryRow[] = fields.map((f) => {
@@ -80,18 +80,18 @@ async function deriveAll(): Promise<Derived & { health: Awaited<ReturnType<typeo
     const sensitivity = f.sensitivityTier;
     const provenance: InventoryRow["provenance"] = f.source.provenance === "manually_added" ? "declared" : "discovered";
     const lastScan = f.source.lastScanned ?? null;
-    const outOfDate = health.state === "out_of_date" || (!!lastScan && now - lastScan.getTime() > intervalMs);
     const retention = linked.map((p) => retentionOf(p)).find((r) => r) ?? null;
     const processors = [...new Set(linked.flatMap((p) => processorsOf(p.id)))];
     const consentStates = linked.filter((p) => p.lawfulBasis === "consent").map((p) => consentOf(p));
     const consent: InheritPreview["consent"] = consentStates.length === 0 ? "not_required" : consentStates.every((c) => c === "linked") ? "linked" : "not_linked";
 
-    // ONE readiness status, by priority.
+    // ONE readiness status, by priority. Staleness is NOT a per-field status (M2):
+    // it is shown once on the sync line, so a classified + purposed + consent-ok
+    // field is "ready" even when the whole DLP sync is old.
     let status: Readiness;
     if (sensitivity === "Not classified") status = "cls";
     else if (purposes.length === 0) status = "pur";
     else if (consentStates.some((c) => c === "not_linked")) status = "link";
-    else if (outOfDate) status = "old";
     else status = "ready";
 
     const isChanged = f.driftFlag;
@@ -179,9 +179,15 @@ export async function getInventory(params: InventoryParams = {}): Promise<Invent
     groups.sort((a, b) => (b.gaps.reduce((n, g) => n + g.count, 0)) - (a.gaps.reduce((n, g) => n + g.count, 0)) || a.name.localeCompare(b.name));
   }
 
+  const lastSyncAt = d.health.lastSyncAt ?? null;
+  const daysOld = lastSyncAt ? daysBetween(lastSyncAt, new Date()) : null;
+  // One staleness rule (STALE_AFTER_DAYS, default 7): the DLP health state OR a
+  // sync older than the threshold. Shown once, on the sync line.
+  const stale = d.health.state === "out_of_date" || (daysOld !== null && daysOld > STALE_AFTER_DAYS);
   const sync: SyncStateView = {
     status: d.health.state === "connected" ? "idle" : d.health.state,
-    lastSyncedAgo: d.health.lastSyncAgo, lastSyncedExact: d.health.lastSyncAt ? exactText(d.health.lastSyncAt) : null,
+    lastSyncedAgo: d.health.lastSyncAgo, lastSyncedExact: lastSyncAt ? exactText(lastSyncAt) : null,
+    lastSyncedLabel: lastSyncAt ? formatDateTime(lastSyncAt) : null, daysOld, stale,
     systems: d.systems.length, warnText: d.health.warnText,
   };
 

@@ -8,7 +8,7 @@ import { tagToPurpose } from "@/lib/engines/purposes";
 import { getPurposeData, getDataPicker, type PurposeDataView, type DataPickerView } from "@/lib/engines/activityData";
 
 export interface DResult { ok: boolean; error?: string; added?: number }
-function touch(activityId: string) { revalidatePath(`/data-map/processing-activities/${activityId}`, "page"); revalidatePath("/data-map/processing-activities", "page"); revalidatePath("/discovery/inventory", "page"); }
+function touch(activityId: string) { revalidatePath(`/data-map/processing-activities/${activityId}`, "page"); revalidatePath("/data-map/processing-activities", "page"); revalidatePath("/data-map/inventory", "page"); }
 
 export async function getPurposeDataAction(activityId: string, purposeId: string): Promise<PurposeDataView> { return getPurposeData(activityId, purposeId); }
 export async function getDataPickerAction(activityId: string, purposeId: string): Promise<DataPickerView> { return getDataPicker(activityId, purposeId); }

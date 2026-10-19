@@ -16,7 +16,7 @@ export async function scheduleScanAction(sourceIds: string[], schedule: string, 
 
 export async function overrideClassificationAction(fieldId: string, newType: string, category: string, note: string): Promise<ActionResult> {
   const { actor } = await getSession();
-  try { await overrideClassification(fieldId, newType, category, note, actor); touch("/discovery/scan-results", "/discovery/inventory"); return ok(); } catch (e) { return fail(e); }
+  try { await overrideClassification(fieldId, newType, category, note, actor); touch("/discovery/scan-results", "/data-map/inventory"); return ok(); } catch (e) { return fail(e); }
 }
 
 export async function bulkOnboardSourcesAction(sourceIds: string[]): Promise<ActionResult> {
