@@ -137,6 +137,19 @@ async function loadCtxAndActivities() {
   return { ctx, activities, rows, entityName, escFor, tags };
 }
 
+/** Lightweight counts over ALL activities (for the nav badge and the ReadinessStrip).
+ *  ready = completeness complete; needsWork = any needs_* kind. One source, shared. */
+export async function getActivityCounts(): Promise<{ ready: number; needsWork: number; underReview: number; all: number }> {
+  const { ctx, activities } = await loadCtxAndActivities();
+  const comps = activities.map((a) => completeness(a, ctx));
+  return {
+    ready: comps.filter((c) => c.kind === "complete").length,
+    needsWork: comps.filter((c) => isNeedsWork(c)).length,
+    underReview: activities.filter((a) => a.lifecycle === "under_review").length,
+    all: activities.length,
+  };
+}
+
 export async function getActivityList(params: ActivityListParams = {}): Promise<ActivityListView> {
   const { ctx, activities, rows, entityName, escFor, tags } = await loadCtxAndActivities();
   const rowById = new Map(rows.map((r) => [r.id, r]));

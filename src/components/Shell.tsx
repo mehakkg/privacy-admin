@@ -4,6 +4,7 @@ import { getSession } from "@/lib/session";
 import { countUnread } from "@/lib/engines/notification";
 import { getDlpHealth } from "@/lib/engines/dlp";
 import { getInventoryCounts } from "@/lib/engines/inventory";
+import { getActivityCounts } from "@/lib/engines/activities";
 import { requireOnboardingGate } from "@/lib/guards/onboardingGate";
 import { ShellFrame } from "@/components/ShellFrame";
 import { type NavEntry } from "@/components/SidebarNav";
@@ -27,6 +28,7 @@ interface NavCounts {
   auditOpen: number;
   maskingPending: number;
   inventoryGaps: number;
+  activitiesNeedsWork: number;
   ropaPending: number;
   dlpWarn: string | null;
 }
@@ -60,7 +62,7 @@ function navGroups(counts: NavCounts, role: ActorRole): NavEntry[] {
       // exists → why → where it moves → the record.
       children: [
         { href: "/discovery/inventory", label: "Data inventory", ready: true, badge: counts.inventoryGaps || undefined, badgeLabel: `${counts.inventoryGaps} inventory gaps`, warn: counts.dlpWarn },
-        { href: "/data-map/processing-activities", label: "Processing activities", ready: true },
+        { href: "/data-map/processing-activities", label: "Processing activities", ready: true, badge: counts.activitiesNeedsWork || undefined, badgeLabel: `${counts.activitiesNeedsWork} activities need work` },
         { href: "/data-flow/map", label: "Data flow", ready: true },
         { href: "/discovery/ropa", label: "ROPA", ready: true, badge: counts.ropaPending || undefined, badgeLabel: `${counts.ropaPending} pending recommendations` },
       ],
@@ -254,7 +256,7 @@ export async function Shell({
   }
 
   const session = await getSession();
-  const [openRequests, unread, auditOpen, maskingPending, invCounts, ropaPending, dlpHealth] = await Promise.all([
+  const [openRequests, unread, auditOpen, maskingPending, invCounts, actCounts, ropaPending, dlpHealth] = await Promise.all([
     db.dataPrincipalRequest.count({
       where: { status: { notIn: ["closed", "rejected"] } },
     }),
@@ -266,19 +268,22 @@ export async function Shell({
     // Data inventory badge = the "Needs attention" count, from the SAME readiness
     // derivation the inventory page uses (one source of truth).
     getInventoryCounts(),
+    // Processing activities badge = the needs-work count, same source as the list.
+    getActivityCounts(),
     // ROPA badge: pending ROPA recommendations awaiting a DPO decision.
     db.ropaSuggestion.count({ where: { status: "pending" } }),
     // DLP connection health → the warning on Data inventory.
     getDlpHealth(),
   ]);
   const inventoryGaps = invCounts.attention;
+  const activitiesNeedsWork = actCounts.needsWork;
 
   const name = session.actor.label;
   const email = `${name.toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/(^\.|\.$)/g, "")}@privacyconsole.in`;
 
   return (
     <ShellFrame
-      nav={navGroups({ openRequests, auditOpen, maskingPending, inventoryGaps, ropaPending, dlpWarn: dlpHealth.warnText }, session.role)}
+      nav={navGroups({ openRequests, auditOpen, maskingPending, inventoryGaps, activitiesNeedsWork, ropaPending, dlpWarn: dlpHealth.warnText }, session.role)}
       active={active}
       brandName="Privacy Admin"
       brandCaption="PRIVACY CONSOLE"
