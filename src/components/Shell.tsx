@@ -30,105 +30,39 @@ interface NavCounts {
   inventoryGaps: number;
   activitiesNeedsWork: number;
   ropaPending: number;
+  escalationsOpen: number;
   dlpWarn: string | null;
 }
 
+/**
+ * Admin-portal navigation (nav restructure spec). Macro groups in use-frequency
+ * order: OPERATE (daily) → CONFIGURE (set once) → GOVERN & REVIEW → SETTINGS.
+ * Single-item modules (Escalations, Evidence requests, Audit log, Approved policy)
+ * are leaf rows directly under their macro label. A parent's badge (shown only
+ * when collapsed) is the sum of its children's — so Data Map = 3 + 5 + 3 = 11.
+ */
 function navGroups(counts: NavCounts, role: ActorRole): NavEntry[] {
   return [
-    {
-      key: "dashboard",
-      label: "Dashboard",
-      href: "/dashboard",
-      ready: true,
-    },
+    { key: "dashboard", label: "Dashboard", href: "/dashboard", ready: true },
     // Legal/Procurement's dedicated home — role-scoped, appears only while acting
-    // as Legal. Not part of the macro structure; unmapped by the nav spec.
+    // as Legal. Not part of the macro structure.
     ...(role === "legal"
       ? [{ key: "tprm-dashboard", label: "TPRM Dashboard", href: "/tprm", ready: true } as NavEntry]
       : []),
 
-    // ---- CONFIGURE: foundations that must exist before anything operates. ----
-    { section: "Configure" },
-    {
-      key: "data-map",
-      label: "Data Map",
-      href: "/data-map/inventory",
-      ready: true,
-      // Discovery, classification and scanning now live in the DLP; Privacy Admin
-      // only reads from it. Sources and Review queue were removed — the systems
-      // list, unclassified fields and quarantine are now facets of Data inventory,
-      // near-duplicates moved to Rights requests › Identity matching, and scan
-      // config moved to Settings › Integrations › DLP. Pipeline order: what
-      // exists → why → where it moves → the record.
-      children: [
-        { href: "/data-map/inventory", label: "Data inventory", ready: true, badge: counts.inventoryGaps || undefined, badgeLabel: `${counts.inventoryGaps} inventory gaps`, warn: counts.dlpWarn },
-        { href: "/data-map/processing-activities", label: "Processing activities", ready: true, badge: counts.activitiesNeedsWork || undefined, badgeLabel: `${counts.activitiesNeedsWork} activities need work` },
-        { href: "/data-flow/map", label: "Data flow", ready: true },
-        { href: "/discovery/ropa", label: "ROPA", ready: true, badge: counts.ropaPending || undefined, badgeLabel: `${counts.ropaPending} pending recommendations` },
-      ],
-    },
-    // NEW SECTION — Data Protection groups the Rule 6(1)(a) safeguards (masking,
-    // protection rules, scope adjustments, and later encryption/keys). They share
-    // one ownership model (CISO/DPO defines, Admin implements, governed changes
-    // need approval), so they share one section. It sits directly under Data Map
-    // because it consumes Data Map's output (masking fields link to data elements,
-    // protection rules scope to data categories).
-    {
-      key: "data-protection",
-      label: "Data Protection",
-      href: "/data-flow/protection-rules",
-      ready: true,
-      // One page, four tabs (By field · By rule · Library · Pending changes).
-      // Masking is a METHOD on a rule, not a separate page; the former Masking
-      // policy, Scope adjustments and Rule library are now tabs. The pending-
-      // approval badge (DPO only) sits on this page.
-      children: [
-        { href: "/data-flow/protection-rules", label: "Protection rules", ready: true, badge: role === "dpo" ? counts.maskingPending : undefined },
-        { href: "/data-flow/masking-policy", label: "Masking policy", ready: true },
-      ],
-    },
-    {
-      key: "consent",
-      label: "Consent & Notices",
-      href: "/consent/notices",
-      ready: true,
-      // Cookie consent, offline/assisted capture, integrity, language variants,
-      // withdrawals etc. are now tabs inside these three pages; routes stay live.
-      children: [
-        { href: "/consent/notices", label: "Notices", ready: true },
-        { href: "/consent/platform", label: "Consent collection", ready: true },
-        { href: "/consent/records", label: "Consent records", ready: true },
-        // Undisclosed-scripts findings (moved out of the old Review queue) live on
-        // the existing website/cookie scan page. Route stays live.
-        { href: "/consent/cookies", label: "Cookie & website scan", ready: true },
-      ],
-    },
-
-    // ---- OPERATE: live queues with statutory clocks. ----
+    // ---- OPERATE: what the Admin runs daily. ----
     { section: "Operate" },
     {
-      key: "rights",
-      label: "Rights Requests",
-      href: "/requests",
-      ready: true,
-      badge: counts.openRequests,
+      key: "rights", label: "Rights Requests", href: "/requests", ready: true, badge: counts.openRequests,
       children: [
-        { href: "/requests", label: "Requests", ready: true },
-        { href: "/escalations", label: "Escalations", ready: true },
-        // Near-duplicate resolution (identity matching), moved out of the old
-        // Review queue — it belongs with rights-request intake.
+        { href: "/requests", label: "Requests", ready: true, badge: counts.openRequests || undefined, badgeLabel: `${counts.openRequests} open requests` },
         { href: "/requests/identity-matching", label: "Identity matching", ready: true },
-        // The execution leg of a deletion request (s.8(7) erasure, incl. at
-        // processors) — moved here from Audit & Escalation. Route unchanged.
-        { href: "/audit-trail/deletions", label: "Deletion instructions", ready: true },
+        { href: "/requests/deletion-instructions", label: "Deletion instructions", ready: true },
         { href: "/requests/sla", label: "SLA & routing", ready: true },
       ],
     },
     {
-      key: "breach",
-      label: "Breach Management",
-      href: "/breach/incidents",
-      ready: true,
+      key: "breach", label: "Breach Management", href: "/breach/incidents", ready: true,
       children: [
         { href: "/breach/incidents", label: "Incidents", ready: true },
         { href: "/breach/investigation", label: "Investigation", ready: true },
@@ -136,88 +70,74 @@ function navGroups(counts: NavCounts, role: ActorRole): NavEntry[] {
       ],
     },
     {
-      key: "tprm",
-      label: "Vendor Risk (TPRM)",
-      href: "/vendor-risk/register",
-      ready: true,
+      key: "tprm", label: "Vendor Risk (TPRM)", href: "/vendor-risk/register", ready: true,
       children: [
         { href: "/vendor-risk/register", label: "Vendor register", ready: true },
         { href: "/vendor-risk/assessments", label: "Vendor assessments", ready: true },
         { href: "/vendor-risk/sub-processor-disclosures", label: "Sub-processor disclosures", ready: true },
       ],
     },
-
-    // ---- GOVERN AND REVIEW: oversight, evidence and policy. ----
-    { section: "Govern and review" },
-    // Approved Policy is a top-level page (the one deliberate exception to
-    // "sections contain pages"): six other modules route users to it. For Admin
-    // it shows a lock — it is set by the DPO/CISO — but stays visible and readable.
     {
-      key: "governance",
-      label: "Approved Policy",
-      href: "/governance",
-      ready: true,
-      locked: role !== "dpo" && role !== "ciso",
-    },
-    {
-      key: "risk",
-      label: "Risk & Compliance",
-      href: "/analytics/risk",
-      ready: true,
-      // Configuration screens (protection rules, scope adjustments, libraries)
-      // moved to Data Protection; this section is now review-only. Assessments
-      // here means DPIA + gap assessments (DPO-owned; Admin read-only).
+      // IAM overlay (renamed from Identity & Access) — tracking and evidence only;
+      // provisioning/role-editing stay in miniOrange IAM.
+      key: "access", label: "Access", href: "/access/insights", ready: true,
       children: [
-        { href: "/analytics/risk", label: "Risk dashboard", ready: true },
-        { href: "/analytics/risk-sources", label: "Risk analytics sources", ready: true },
-        { href: "/risk/assessments", label: "Assessments", ready: true },
-        { href: "/analytics/reports", label: "Reports", ready: true },
-      ],
-    },
-    {
-      key: "access",
-      label: "Identity & Access",
-      href: "/access/insights",
-      ready: true,
-      // IAM overlay — no RBAC matrix, provisioning or role editing here (those
-      // live in IAM). The other current I&A routes stay live for deep links.
-      children: [
+        { href: "/access/changes", label: "Access changes", ready: true },
         { href: "/access/insights", label: "Personal data access review", ready: true },
         { href: "/access/drift", label: "Dormant accounts", ready: true },
       ],
     },
+
+    // ---- CONFIGURE: foundations set once. ----
+    { section: "Configure" },
     {
-      key: "audit-escalation",
-      label: "Audit & Escalation",
-      href: "/audit",
-      ready: true,
-      badge: counts.auditOpen,
+      key: "data-map", label: "Data Map", href: "/data-map/inventory", ready: true,
       children: [
-        // Masking events live in the single hash-chained Audit log (Module filter).
-        { href: "/audit", label: "Audit log", ready: true },
-        { href: "/audit-trail/evidence", label: "Evidence requests", ready: true, badge: counts.auditOpen || undefined },
-        { href: "/audit-trail/rulings", label: "DPO rulings", ready: true },
+        { href: "/data-map/inventory", label: "Data inventory", ready: true, badge: counts.inventoryGaps || undefined, badgeLabel: `${counts.inventoryGaps} inventory gaps`, warn: counts.dlpWarn },
+        { href: "/data-map/processing-activities", label: "Processing activities", ready: true, badge: counts.activitiesNeedsWork || undefined, badgeLabel: `${counts.activitiesNeedsWork} activities need work` },
+        { href: "/data-flow/map", label: "Data flow", ready: true },
+        { href: "/discovery/ropa", label: "ROPA", ready: true, badge: counts.ropaPending || undefined, badgeLabel: `${counts.ropaPending} pending recommendations` },
+      ],
+    },
+    {
+      key: "data-protection", label: "Data Protection", href: "/data-flow/protection-rules", ready: true,
+      children: [
+        { href: "/data-flow/protection-rules", label: "Protection rules", ready: true, badge: role === "dpo" ? counts.maskingPending : undefined },
+        { href: "/data-flow/masking-policy", label: "Masking policy", ready: true },
+        { href: "/data-protection/retention", label: "Retention schedules", ready: true },
+      ],
+    },
+    {
+      key: "consent", label: "Consent & Notices", href: "/consent/notices", ready: true,
+      children: [
+        { href: "/consent/notices", label: "Notices", ready: true },
+        { href: "/consent/platform", label: "Consent collection", ready: true },
+        { href: "/consent/records", label: "Consent records", ready: true },
+        { href: "/consent/cookies", label: "Cookie & website scan", ready: true },
       ],
     },
 
-    // Settings is pinned to the bottom of the sidebar, below a divider.
+    // ---- GOVERN & REVIEW: oversight, evidence and policy (leaf rows + Risk). ----
+    { section: "Govern & review" },
+    { key: "escalations", label: "Escalations", href: "/escalations", ready: true, badge: counts.escalationsOpen || undefined, badgeLabel: `${counts.escalationsOpen} open escalations` },
+    { key: "evidence", label: "Evidence requests", href: "/audit-trail/evidence", ready: true, badge: counts.auditOpen || undefined, badgeLabel: `${counts.auditOpen} open evidence requests` },
+    { key: "audit", label: "Audit log", href: "/audit", ready: true },
+    { key: "governance", label: "Approved policy", href: "/governance", ready: true, locked: role !== "dpo" && role !== "ciso" },
     {
-      key: "settings",
-      label: "Settings",
-      href: "/settings/organization",
-      ready: true,
-      footer: true,
+      key: "risk", label: "Risk & Reports", href: "/analytics/risk", ready: true,
       children: [
-        { href: "/settings/organization", label: "Organization", ready: true },
-        { href: "/settings/organization/entities", label: "Entities", ready: true },
-        { href: "/settings/entity-setup", label: "Entity setup", ready: true },
-        { href: "/settings/users", label: "Users", ready: true },
-        // Integrations opens on DLP (the discovery source) first; connected systems,
-        // health and processors are reachable from there.
-        { href: "/integrations/dlp", label: "Integrations", ready: true },
-        { href: "/notifications/channels", label: "Notifications", ready: true },
+        { href: "/analytics/risk", label: "Risk dashboard", ready: true },
+        { href: "/analytics/reports", label: "Reports", ready: true },
       ],
     },
+
+    // ---- SETTINGS: leaf rows. ----
+    { section: "Settings" },
+    { key: "settings-org", label: "Organization", href: "/settings/organization", ready: true },
+    { key: "settings-users", label: "Users", href: "/settings/users", ready: true },
+    { key: "settings-connectors", label: "Connectors", href: "/integrations", ready: true },
+    { key: "settings-health", label: "Connection health", href: "/integrations/health", ready: true },
+    { key: "settings-notifications", label: "Notifications", href: "/notifications/channels", ready: true },
   ];
 }
 
@@ -256,7 +176,7 @@ export async function Shell({
   }
 
   const session = await getSession();
-  const [openRequests, unread, auditOpen, maskingPending, invCounts, actCounts, ropaPending, dlpHealth] = await Promise.all([
+  const [openRequests, unread, auditOpen, maskingPending, invCounts, actCounts, ropaPending, escalationsOpen, dlpHealth] = await Promise.all([
     db.dataPrincipalRequest.count({
       where: { status: { notIn: ["closed", "rejected"] } },
     }),
@@ -272,6 +192,8 @@ export async function Shell({
     getActivityCounts(),
     // ROPA badge: pending ROPA recommendations awaiting a DPO decision.
     db.ropaSuggestion.count({ where: { status: "pending" } }),
+    // Escalations badge (Govern & Review): open escalations awaiting a decision.
+    db.escalation.count({ where: { status: "open" } }),
     // DLP connection health → the warning on Data inventory.
     getDlpHealth(),
   ]);
@@ -283,7 +205,7 @@ export async function Shell({
 
   return (
     <ShellFrame
-      nav={navGroups({ openRequests, auditOpen, maskingPending, inventoryGaps, activitiesNeedsWork, ropaPending, dlpWarn: dlpHealth.warnText }, session.role)}
+      nav={navGroups({ openRequests, auditOpen, maskingPending, inventoryGaps, activitiesNeedsWork, ropaPending, escalationsOpen, dlpWarn: dlpHealth.warnText }, session.role)}
       active={active}
       brandName="Privacy Admin"
       brandCaption="PRIVACY CONSOLE"

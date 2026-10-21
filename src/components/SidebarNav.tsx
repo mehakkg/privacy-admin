@@ -37,6 +37,15 @@ const GROUP_ICON: Record<string, LucideIcon> = {
   governance: ShieldCheck,
   "data-protection": Shield,
   settings: Settings,
+  // Govern & Review leaf rows + Settings leaf rows (nav restructure).
+  escalations: TriangleAlert,
+  evidence: ClipboardCheck,
+  audit: FileSearch,
+  "settings-org": Building2,
+  "settings-users": Users,
+  "settings-connectors": Plug,
+  "settings-health": Activity,
+  "settings-notifications": Bell,
 };
 
 // A keyword → icon heuristic so every child item gets a meaningful stroke icon
@@ -236,8 +245,10 @@ export function SidebarNav({
     const headerBadge = group.badge ?? (childTotal > 0 ? childTotal : undefined);
     const headerWarn = group.warn ?? (group.children ?? []).find((c) => c.warn)?.warn ?? null;
     const headerBadgeText = headerBadge !== undefined ? (headerBadge > 99 ? "99+" : String(headerBadge)) : "";
+    // §2: when a child is active, the parent gets a 2px left accent but no fill.
+    const ownsActive = groupOwnsActive(group);
     return (
-      <div key={group.key} className={`nav-group${isOpen ? "" : " closed"}`}>
+      <div key={group.key} className={`nav-group${isOpen ? "" : " closed"}${ownsActive ? " owns-active" : ""}`}>
         <button type="button" className="nav-group-header" aria-expanded={isOpen} onClick={() => toggle(group.key)}>
           <span className="label">{group.label}</span>
           {!isOpen && headerWarn && <span className="nav-warn" role="img" aria-label={headerWarn}><AlertTriangle strokeWidth={1.9} /></span>}
