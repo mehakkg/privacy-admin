@@ -16,8 +16,8 @@ const d = (s: string) => new Date(s);
 
 // --- Fiduciary entities -----------------------------------------------------
 const ENTITIES = [
-  { id: "ent-mfs", name: "Meridian Financial Services Ltd" },
-  { id: "ent-msl", name: "Meridian Securities Ltd" },
+  { key: "ent-mfs", name: "Meridian Financial Services Ltd" },
+  { key: "ent-msl", name: "Meridian Securities Ltd" },
 ];
 
 // --- Systems / processors / recipients --------------------------------------
@@ -94,9 +94,12 @@ const TEMPLATES = [
 async function main() {
   if (!process.env.DATABASE_URL) { console.log("patch-activities: no DATABASE_URL, skipping."); return; }
 
-  // Fiduciary entities.
+  // Fiduciary entities — find-or-create by name (avoids a fixed-id clash with an
+  // entity of the same name seeded elsewhere). `entityKeyToId` resolves activities.
+  const entityKeyToId: Record<string, string> = {};
   for (const e of ENTITIES) {
-    await prisma.entity.upsert({ where: { id: e.id }, update: { name: e.name }, create: { id: e.id, name: e.name, kind: "legal_entity" } });
+    const existing = await prisma.entity.findFirst({ where: { name: e.name }, select: { id: true } });
+    entityKeyToId[e.key] = existing ? existing.id : (await prisma.entity.create({ data: { name: e.name, kind: "legal_entity" } })).id;
   }
 
   // Systems / processors.
@@ -142,7 +145,7 @@ async function main() {
   await prisma.processingActivity.deleteMany({ where: { id: { notIn: keepIds } } });
 
   for (const a of ACTIVITIES) {
-    const base = { activity: a.name, ownerName: a.owner, department: a.department, entityId: a.entity, principalsJson: J(a.principals), lifecycleState: a.lifecycle, lastReviewedAt: a.lastReviewedAt ? d(a.lastReviewedAt) : null, activatedAt: a.lifecycle === "active" && a.lastReviewedAt ? d(a.lastReviewedAt) : null, nextReviewDue: a.lastReviewedAt ? d(a.lastReviewedAt) : null, createdBy: "R. Iyer" };
+    const base = { activity: a.name, ownerName: a.owner, department: a.department, entityId: entityKeyToId[a.entity], principalsJson: J(a.principals), lifecycleState: a.lifecycle, lastReviewedAt: a.lastReviewedAt ? d(a.lastReviewedAt) : null, activatedAt: a.lifecycle === "active" && a.lastReviewedAt ? d(a.lastReviewedAt) : null, nextReviewDue: a.lastReviewedAt ? d(a.lastReviewedAt) : null, createdBy: "R. Iyer" };
     await prisma.processingActivity.upsert({ where: { id: a.id }, update: base, create: { id: a.id, origin: "manual", ...base } });
     await prisma.activityPurpose.deleteMany({ where: { activityId: a.id } });
     await prisma.reviewReason.deleteMany({ where: { activityId: a.id } });
@@ -163,7 +166,7 @@ async function main() {
 
   // --- Signed versions: the active (in-register) activities ------------------
   const purposeByKey = Object.fromEntries(PURPOSES.map((p) => [p.key, p]));
-  const entityName = Object.fromEntries(ENTITIES.map((e) => [e.id, e.name]));
+  const entityName = Object.fromEntries(ENTITIES.map((e) => [e.key, e.name]));
   const snapInput = (a: A): SnapshotInput => {
     const p = purposeByKey[a.seg.purpose];
     return {
@@ -183,4 +186,17 @@ async function main() {
   console.log(`patch-activities: seeded ${ENTITIES.length} entities, ${PURPOSES.length} purposes, ${ACTIVITIES.length} activities, ${active.length} signed versions.`);
 }
 
-main().catch((e) => console.error("patch-activities failed (continuing):", e)).finally(async () => { await prisma.$disconnect(); });
+main()
+  .catch(async (e) => {
+    console.error("patch-activities failed (continuing):", e);
+    // Surface the error where it can be read without build logs: a marker purpose
+    // whose description holds the message. Visible on /data-map/purposes.
+    try {
+      await prisma.purposeTag.upsert({
+        where: { name: "ZZ SEED ERROR MARKER" },
+        update: { description: `patch-activities: ${String((e as Error)?.message ?? e)}`.slice(0, 480) },
+        create: { name: "ZZ SEED ERROR MARKER", description: `patch-activities: ${String((e as Error)?.message ?? e)}`.slice(0, 480), status: "draft", lawfulBasis: "consent", retention: "", approvedBy: "", approvedAt: new Date(0) },
+      });
+    } catch (e2) { console.error("could not write seed marker:", e2); }
+  })
+  .finally(async () => { await prisma.$disconnect(); });
