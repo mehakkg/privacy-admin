@@ -1,156 +1,138 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Search, X, Check, SlidersHorizontal, ChevronDown, AlertTriangle } from "lucide-react";
-import type { ActivityListView, ActivityListParams, ActivityListRow } from "@/lib/engines/activities";
+import { Search, X, MoreHorizontal, Download } from "lucide-react";
+import type { ActivitiesView, ActivitiesViewParams } from "@/lib/engines/activities";
+import { formatDate } from "@/lib/datamap/foundations";
 import { AddActivityModal } from "@/components/activities/AddActivityModal";
+import { createDraftActivityAction } from "@/app/actions/activities";
+import { retireActivityAction } from "@/app/actions/activityReview";
 
-const LIST = "/data-map/processing-activities";
-const LIFECYCLE_LABEL: Record<string, string> = { draft: "Draft", pending_dpo_review: "Waiting for DPO review", active: "Active", under_review: "Under review", retired: "Retired" };
+const BASE = "/data-map/processing-activities";
+const BUCKETS: { key: string; label: string }[] = [
+  { key: "needs_work", label: "Needs work" },
+  { key: "waiting_for_dpo", label: "Waiting for DPO" },
+  { key: "review_due", label: "Review due" },
+  { key: "approved", label: "Approved" },
+  { key: "all", label: "All" },
+];
 
-export function ActivitiesList({ view, params }: { view: ActivityListView; params: ActivityListParams }) {
+/**
+ * SCREEN — Activities list (Data Map redesign). Every count is computed from the
+ * fixture store via nine-state readiness; nothing is hard-coded. The register
+ * explanation is DPDP-accurate (a ROPA is not required by the Act).
+ */
+export function ActivitiesList({ view, params }: { view: ActivitiesView; params: ActivitiesViewParams }) {
   const router = useRouter();
   const [, start] = useTransition();
   const [qLocal, setQLocal] = useState(params.q ?? "");
   const [addOpen, setAddOpen] = useState(false);
-  const segment = params.segment ?? (view.counts.needsWork > 0 ? "needs-work" : "all");
+  const bucket = params.bucket ?? "needs_work";
 
   const push = (patch: Record<string, string | undefined>) => {
     const sp = new URLSearchParams();
     const merged: Record<string, string | undefined> = { ...params, ...patch };
     for (const [k, v] of Object.entries(merged)) if (v) sp.set(k, v);
-    start(() => router.push(`${LIST}${sp.toString() ? `?${sp}` : ""}`));
+    start(() => router.push(`${BASE}${sp.toString() ? `?${sp}` : ""}`));
   };
   useEffect(() => {
-    const t = setTimeout(() => { if ((params.q ?? "") !== qLocal) push({ q: qLocal || undefined }); }, 150);
+    const t = setTimeout(() => { if ((params.q ?? "") !== qLocal) push({ q: qLocal || undefined }); }, 200);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qLocal]);
 
   const chips: { label: string; clear: () => void }[] = [];
-  if (params.owner) chips.push({ label: params.owner, clear: () => push({ owner: undefined }) });
+  if (params.entityId) chips.push({ label: view.options.entities.find((e) => e.id === params.entityId)?.name ?? "Fiduciary", clear: () => push({ entityId: undefined }) });
+  if (params.principal) chips.push({ label: params.principal, clear: () => push({ principal: undefined }) });
   if (params.department) chips.push({ label: params.department, clear: () => push({ department: undefined }) });
-  if (params.purpose) chips.push({ label: view.options.purposes.find((p) => p.id === params.purpose)?.name ?? "Purpose", clear: () => push({ purpose: undefined }) });
-  if (params.lifecycle) chips.push({ label: LIFECYCLE_LABEL[params.lifecycle] ?? params.lifecycle, clear: () => push({ lifecycle: undefined }) });
+
+  const count = (k: string) => k === "all" ? view.counts.all : (view.counts as Record<string, number>)[k] ?? 0;
 
   return (
     <div className="pa-list">
       <div className="pa-head">
-        <h1 className="inv-title">Processing activities</h1>
+        <h1 className="inv-title">Activities</h1>
         <div className="row" style={{ gap: 16, alignItems: "center" }}>
           <Link href="/data-map/purposes" className="row-link">Purposes</Link>
-          <a href="/api/discovery/export" className="row-link">Export</a>
+          <a href="/api/discovery/export" className="row-link inv-nowrap">Export register <Download size={13} /></a>
           <button className="btn primary" onClick={() => setAddOpen(true)}>Add activity</button>
         </div>
       </div>
 
-      <p className="inv-sentence" style={{ marginTop: 14 }}>{view.sentence}</p>
-      <p className="cell-sub" style={{ margin: "2px 0 0" }}>{view.gapsLine}</p>
+      <p className="cell-sub" style={{ marginTop: 10, maxWidth: 760 }}>Every way Meridian processes personal data: what it collects, why, and where it goes. Notices, rights requests and DPIAs are built from this register.</p>
+      <p className="inv-sentence" style={{ marginTop: 12 }}>{view.summary}</p>
 
-      <div className="inv-controls" style={{ marginTop: 18 }}>
+      <div className="inv-controls" style={{ marginTop: 16 }}>
         <div className="mp-segment">
-          <button className={segment === "needs-work" ? "on" : ""} onClick={() => push({ segment: "needs-work" })}>Needs work <span className="tnum">{view.counts.needsWork}</span></button>
-          <button className={segment === "under-review" ? "on" : ""} onClick={() => push({ segment: "under-review" })}>Under review <span className="tnum">{view.counts.underReview}</span></button>
-          <button className={segment === "all" ? "on" : ""} onClick={() => push({ segment: "all" })}>All <span className="tnum">{view.counts.all}</span></button>
+          {BUCKETS.map((b) => (
+            <button key={b.key} className={bucket === b.key ? "on" : ""} onClick={() => push({ bucket: b.key })}>{b.label} <span className="tnum">{count(b.key)}</span></button>
+          ))}
         </div>
-        <div className="inv-search" style={{ maxWidth: 280 }}>
-          <Search size={14} /><input value={qLocal} onChange={(e) => setQLocal(e.target.value)} placeholder="Search activities, owners, purposes, systems" aria-label="Search" />
+        <div className="inv-search" style={{ maxWidth: 260 }}>
+          <Search size={14} /><input value={qLocal} onChange={(e) => setQLocal(e.target.value)} placeholder="Search activity, owner or field" aria-label="Search" />
           {qLocal && <button className="icon-btn" onClick={() => setQLocal("")} aria-label="Clear search"><X size={13} /></button>}
         </div>
-        <MoreFilters view={view} params={params} push={push} />
+        <Sel value={params.entityId ?? ""} onChange={(v) => push({ entityId: v || undefined })} label="Fiduciary" options={view.options.entities} />
+        <Sel value={params.principal ?? ""} onChange={(v) => push({ principal: v || undefined })} label="Data principal" options={view.options.principals.map((p) => ({ id: p, name: p }))} />
+        <Sel value={params.department ?? ""} onChange={(v) => push({ department: v || undefined })} label="Department" options={view.options.departments.map((p) => ({ id: p, name: p }))} />
       </div>
 
-      <div className="inv-chips">
-        {chips.map((c, i) => <button key={i} className="chip" onClick={c.clear}>{c.label} <X size={11} /></button>)}
-        {chips.length > 0 && <button className="link-btn" onClick={() => start(() => router.push(LIST))}>Clear</button>}
-        <span className="cell-sub" style={{ marginLeft: "auto" }}>Showing <span className="tnum">{view.showing}</span> of <span className="tnum">{view.total}</span></span>
-      </div>
+      {chips.length > 0 && (
+        <div className="inv-chips">
+          {chips.map((c, i) => <button key={i} className="chip" onClick={c.clear}>{c.label} <X size={11} /></button>)}
+          <button className="link-btn" onClick={() => start(() => router.push(`${BASE}?bucket=${bucket}`))}>Clear</button>
+        </div>
+      )}
 
       {view.rows.length === 0 ? (
-        <div className="inv-noresult">No activities match these filters. <button className="link-btn" onClick={() => start(() => router.push(LIST))}>Clear filters</button></div>
+        <div className="inv-noresult">No activities match these filters.</div>
       ) : (
-        <div className="pa-rows">
-          {view.rows.map((r) => <Row key={r.id} r={r} multiEntity={view.multiEntity} onOpen={(href) => start(() => router.push(href))} />)}
-        </div>
+        <table className="av-table" style={{ marginTop: 14 }}>
+          <thead><tr><th>Activity</th><th>Owner · Dept</th><th>Data principals</th><th>P · F · Proc</th><th>Readiness</th><th>Next step</th><th>Last reviewed</th><th aria-label="Actions"></th></tr></thead>
+          <tbody>
+            {view.rows.map((r) => (
+              <tr key={r.id} className="av-row" onClick={(e) => { if ((e.target as HTMLElement).closest("button,a,select")) return; router.push(`${BASE}/${r.id}`); }}>
+                <td><div className="av-name">{r.name}</div><div className="cell-sub">{r.entityName ?? "—"}</div></td>
+                <td>{r.owner ?? <span className="sev-warning">No owner</span>}<div className="cell-sub">{r.department ?? "—"}</div></td>
+                <td>{r.principals.length ? r.principals.join(", ") : "—"}</td>
+                <td className="av-counts">{r.purposeCount} · {r.fieldCount} · {r.processorCount}</td>
+                <td><span className={`rchip ${r.chipTone}`}>{r.chipLabel}</span></td>
+                <td>{r.next ? (r.next.isLink ? <Link href={`${BASE}/${r.id}`} className="av-next">{r.next.text}</Link> : <span className="av-next text">{r.next.text}</span>) : <span className="cell-sub">—</span>}</td>
+                <td className="cell-sub">{r.lastReviewedAt ? formatDate(r.lastReviewedAt) : "Never"}</td>
+                <td><RowMenu id={r.id} name={r.name} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
 
-      {addOpen && <AddActivityModal onClose={() => setAddOpen(false)} onCreated={(id, start) => { setAddOpen(false); router.push(`${LIST}/${id}?pane=${start === "blank" ? "basics" : "purpose"}`); }} />}
+      {addOpen && <AddActivityModal onClose={() => setAddOpen(false)} onCreated={(id, startFrom) => { setAddOpen(false); router.push(`${BASE}/${id}?pane=${startFrom === "blank" ? "basics" : "purpose"}`); }} />}
     </div>
   );
 }
 
-function fmtDate(iso: string | null): string {
-  if (!iso) return "Never reviewed";
-  const dt = new Date(iso);
-  return `Last reviewed ${dt.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
+function Sel({ value, onChange, label, options }: { value: string; onChange: (v: string) => void; label: string; options: { id: string; name: string }[] }) {
+  return <select className="input sm" value={value} onChange={(e) => onChange(e.target.value)} aria-label={label}><option value="">{label}</option>{options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select>;
 }
 
-/** D5: verb links deep-link to the exact pane and carry from=list so the workspace
- *  shows the context bar. They never edit anything inline. A plain row click opens
- *  the activity without a context bar (withContext=false). */
-function targetHref(r: ActivityListRow, withContext = false): string {
-  const t = r.next.target;
-  const base = `${LIST}/${r.id}`;
-  if (!t) return base;
-  const sp = new URLSearchParams();
-  sp.set("pane", t.pane);
-  if (t.purpose) sp.set("purpose", t.purpose);
-  if (t.section) sp.set("section", t.section);
-  if (t.addPurpose) sp.set("add", "purpose");
-  if (withContext) sp.set("from", "list");
-  return `${base}?${sp}`;
-}
-
-function Row({ r, multiEntity, onOpen }: { r: ActivityListRow; multiEntity: boolean; onOpen: (href: string) => void }) {
-  const dotTone = r.completenessKind === "complete" ? "var(--green)" : r.completenessKind === "needs_review" ? "var(--blue)" : "var(--yellow-700, #b45309)";
-  const sub = [r.owner ?? "No owner", r.department].filter(Boolean).join(" · ") + (multiEntity && r.entityName ? ` · ${r.entityName}` : "") + " · " + fmtDate(r.lastReviewedAt).replace("Last reviewed", "Last reviewed").replace("Never reviewed", "Never reviewed");
-  return (
-    <div className="pa-row" onClick={(e) => { if ((e.target as HTMLElement).closest("a,button")) return; onOpen(targetHref(r)); }}>
-      <div className="pa-row-main">
-        <div className="pa-row-name">{r.name}</div>
-        <div className="cell-sub">{sub}</div>
-        <div className="cell-sub">{r.summary}</div>
-        <div className="pa-row-status">
-          {r.completenessKind === "complete" ? (
-            <span className="inv-status sev-success"><Check size={13} /> Ready for ROPA</span>
-          ) : r.completenessKind === "retired" ? (
-            <span className="cell-sub">Retired</span>
-          ) : (
-            <span className="inv-status"><span className="dot" style={{ background: dotTone }} />{r.completenessLabel}{r.next.actionable && r.next.verb ? <button className="link-btn pa-verb" onClick={() => onOpen(targetHref(r, true))}>{r.next.verb}</button> : null}</span>
-          )}
-          {r.openEscalations > 0 && <Link href={`/escalations?activity=${r.id}`} className="link-btn pa-esc" onClick={(e) => e.stopPropagation()}><AlertTriangle size={12} /> {r.openEscalations} pending escalation</Link>}
-        </div>
-      </div>
-      <div className="pa-row-right">
-        <span className="cell-sub">{LIFECYCLE_LABEL[r.lifecycle]}</span>
-      </div>
-    </div>
-  );
-}
-
-function MoreFilters({ view, params, push }: { view: ActivityListView; params: ActivityListParams; push: (p: Record<string, string | undefined>) => void }) {
+function RowMenu({ id, name }: { id: string; name: string }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [, start] = useTransition();
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => { const c = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }; document.addEventListener("mousedown", c); return () => document.removeEventListener("mousedown", c); }, []);
-  const n = [params.owner, params.department, params.purpose, params.lifecycle].filter(Boolean).length;
-  const Sel = ({ value, onChange, label, options }: { value: string; onChange: (v: string) => void; label: string; options: { id: string; name: string }[] }) => (
-    <select className="input sm" style={{ width: "100%" }} value={value} onChange={(e) => onChange(e.target.value)} aria-label={label}><option value="">{label}</option>{options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select>
-  );
   return (
-    <div className="inv-more" ref={ref}>
-      <button className="btn ghost sm" onClick={() => setOpen((o) => !o)}><SlidersHorizontal size={13} /> More filters{n > 0 && <span className="tnum"> ({n})</span>} <ChevronDown size={13} /></button>
+    <div className="inv-more" ref={ref} style={{ position: "relative" }}>
+      <button className="icon-btn" aria-label="Actions" onClick={() => setOpen((o) => !o)}><MoreHorizontal size={16} /></button>
       {open && (
-        <div className="inv-more-pop">
-          <Sel value={params.lifecycle ?? ""} onChange={(v) => push({ lifecycle: v || undefined })} label="Lifecycle" options={[{ id: "draft", name: "Draft" }, { id: "pending_dpo_review", name: "Waiting for DPO review" }, { id: "active", name: "Active" }, { id: "under_review", name: "Under review" }, { id: "retired", name: "Retired" }]} />
-          <Sel value={params.owner ?? ""} onChange={(v) => push({ owner: v || undefined })} label="Owner" options={view.options.owners.map((o) => ({ id: o, name: o }))} />
-          <Sel value={params.department ?? ""} onChange={(v) => push({ department: v || undefined })} label="Department" options={view.options.departments.map((o) => ({ id: o, name: o }))} />
-          <Sel value={params.purpose ?? ""} onChange={(v) => push({ purpose: v || undefined })} label="Purpose" options={view.options.purposes} />
+        <div className="inv-more-pop" style={{ right: 0, minWidth: 150 }}>
+          <button className="menu-item" onClick={() => router.push(`/data-map/processing-activities/${id}`)}>Open</button>
+          <button className="menu-item" onClick={() => start(async () => { const r = await createDraftActivityAction(`${name} (copy)`); setOpen(false); if (r.ok && r.id) router.push(`/data-map/processing-activities/${r.id}?pane=basics`); })}>Duplicate</button>
+          <button className="menu-item" onClick={() => start(async () => { await retireActivityAction(id, "Archived from the Activities list"); setOpen(false); router.refresh(); })}>Archive</button>
         </div>
       )}
     </div>
   );
 }
-

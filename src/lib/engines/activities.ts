@@ -137,16 +137,109 @@ async function loadCtxAndActivities() {
   return { ctx, activities, rows, entityName, escFor, tags };
 }
 
-/** Lightweight counts over ALL activities (for the nav badge and the ReadinessStrip).
- *  ready = completeness complete; needsWork = any needs_* kind. One source, shared. */
+/** Counts over ALL activities (nav badge + ReadinessStrip), from the nine-state
+ *  readiness so every surface agrees with the Activities list. ready = in the
+ *  register (approved); needsWork = the needs-work bucket. */
 export async function getActivityCounts(): Promise<{ ready: number; needsWork: number; underReview: number; all: number }> {
-  const { ctx, activities } = await loadCtxAndActivities();
-  const comps = activities.map((a) => completeness(a, ctx));
+  const v = await getActivitiesView({ bucket: "all" });
+  return { ready: v.counts.approved, needsWork: v.counts.needs_work, underReview: v.counts.review_due, all: v.counts.all };
+}
+
+// --- Activities view (Data Map redesign — nine-state readiness) --------------
+
+import {
+  readiness, bucketOf, type ReadinessActivity, type ReadinessPurpose, type ReadinessState,
+  type ChipTone, type ReadinessBucket, type PurposeApproval, type NextStep as ReadinessNextStep,
+} from "@/lib/activities/readiness";
+
+function approvalOf(state: string): PurposeApproval {
+  return state === "approved" ? "approved" : state === "waiting_for_dpo" ? "pending" : state === "rejected" ? "rejected" : "draft";
+}
+const DRIFT_REASONS = new Set(["new_field_in_linked_table", "new_system", "reclassified_field"]);
+
+export interface ActivitiesViewRow {
+  id: string; name: string; entityName: string | null; owner: string | null; department: string | null;
+  principals: string[]; purposeCount: number; fieldCount: number; processorCount: number;
+  state: ReadinessState; chipLabel: string; chipTone: ChipTone; next: ReadinessNextStep | null; lastReviewedAt: string | null;
+}
+export interface ActivitiesView {
+  rows: ActivitiesViewRow[];
+  counts: Record<ReadinessBucket, number> & { all: number };
+  summary: string;
+  options: { owners: string[]; departments: string[]; entities: { id: string; name: string }[]; principals: string[] };
+}
+export interface ActivitiesViewParams { bucket?: ReadinessBucket | "all"; q?: string; entityId?: string; principal?: string; department?: string }
+
+export async function getActivitiesView(params: ActivitiesViewParams = {}, today: Date = new Date()): Promise<ActivitiesView> {
+  const [rows, tags, entities] = await Promise.all([
+    db.processingActivity.findMany({ include: { purposeSegments: { include: { elements: true, processorLinks: true } }, entity: { select: { id: true, name: true } }, reasons: true }, orderBy: { activity: "asc" } }),
+    db.purposeTag.findMany({ include: { purposeVersions: { orderBy: { number: "desc" } } } }),
+    db.entity.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+  ]);
+  const tagInfo = new Map(tags.map((t) => {
+    const v = t.purposeVersions[0];
+    return [t.id, { name: t.name, noticeRef: (t as { noticeRef?: string | null }).noticeRef ?? null, approval: approvalOf(v?.state ?? t.status), legalBasis: (v?.legalBasis ?? t.lawfulBasis) === "consent" ? "consent" as const : "legitimate_use" as const }];
+  }));
+
+  const built = rows.map((row): ActivitiesViewRow => {
+    const principals = (decodeList(row.principalsJson) as string[]) ?? [];
+    const segs = row.purposeSegments.filter((s) => s.purposeTagId && s.linkState === "confirmed");
+    const purposes: ReadinessPurpose[] = segs.map((s) => {
+      const info = tagInfo.get(s.purposeTagId!);
+      const vendorIds = new Set(s.processorLinks.filter((p) => p.linkState === "confirmed").map((p) => p.vendorId));
+      if (s.processorId) vendorIds.add(s.processorId);
+      return {
+        name: info?.name ?? "Purpose",
+        fieldCount: s.elements.filter((e) => e.linkState === "confirmed").length,
+        systemCount: vendorIds.size,
+        approval: info?.approval ?? "approved",
+        legalBasis: info?.legalBasis ?? "consent",
+        inPublishedNotice: !!info?.noticeRef,
+      };
+    });
+    const lifecycle = row.lifecycleState;
+    const ra: ReadinessActivity = {
+      ownerId: row.ownerName, department: row.department, principals, purposes,
+      submitted: lifecycle === "pending_dpo_review", approved: lifecycle === "active" || lifecycle === "under_review",
+      lastReviewedAt: row.lastReviewedAt?.toISOString() ?? null,
+      driftSinceApproval: row.reasons.some((r) => r.status === "open" && DRIFT_REASONS.has(r.type)),
+    };
+    const r = readiness(ra, today);
+    return {
+      id: row.id, name: row.activity, entityName: row.entity?.name ?? null, owner: row.ownerName, department: row.department,
+      principals, purposeCount: purposes.length, fieldCount: purposes.reduce((n, p) => n + p.fieldCount, 0),
+      processorCount: purposes.reduce((n, p) => n + p.systemCount, 0),
+      state: r.state, chipLabel: r.label, chipTone: r.tone, next: r.next, lastReviewedAt: ra.lastReviewedAt,
+    };
+  });
+
+  const counts = { needs_work: 0, waiting_for_dpo: 0, review_due: 0, approved: 0, all: built.length } as ActivitiesView["counts"];
+  for (const r of built) counts[bucketOf(r.state)]++;
+
+  const bucket = params.bucket ?? "needs_work";
+  const term = (params.q ?? "").trim().toLowerCase();
+  const rowsOut = built.filter((r) => {
+    if (bucket !== "all" && bucketOf(r.state) !== bucket) return false;
+    if (params.entityId) { const row = rows.find((x) => x.id === r.id); if (row?.entityId !== params.entityId) return false; }
+    if (params.department && r.department !== params.department) return false;
+    if (params.principal && !r.principals.includes(params.principal)) return false;
+    if (term && !`${r.name} ${r.owner ?? ""} ${r.principals.join(" ")}`.toLowerCase().includes(term)) return false;
+    return true;
+  });
+
+  const parts: string[] = [];
+  if (counts.needs_work) parts.push(`${counts.needs_work} need work`);
+  if (counts.waiting_for_dpo) parts.push(`${counts.waiting_for_dpo} ${counts.waiting_for_dpo === 1 ? "is" : "are"} waiting for Kavita Menon`);
+  if (counts.review_due) parts.push(`${counts.review_due} ${counts.review_due === 1 ? "is" : "are"} due for review`);
+  const summary = `${counts.all} ${counts.all === 1 ? "activity" : "activities"}. ${counts.approved} ${counts.approved === 1 ? "is" : "are"} in the register.${parts.length ? ` ${parts.join(", ")}.` : ""}`;
+
   return {
-    ready: comps.filter((c) => c.kind === "complete").length,
-    needsWork: comps.filter((c) => isNeedsWork(c)).length,
-    underReview: activities.filter((a) => a.lifecycle === "under_review").length,
-    all: activities.length,
+    rows: rowsOut, counts, summary,
+    options: {
+      owners: [...new Set(built.map((r) => r.owner).filter(Boolean) as string[])].sort(),
+      departments: [...new Set(built.map((r) => r.department).filter(Boolean) as string[])].sort(),
+      entities, principals: [...new Set(built.flatMap((r) => r.principals))].sort(),
+    },
   };
 }
 

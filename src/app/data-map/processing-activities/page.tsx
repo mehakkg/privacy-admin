@@ -1,36 +1,29 @@
-import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
-import { getCurrentRole } from "@/lib/session";
-import { getActivityList, type ActivityListParams } from "@/lib/engines/activities";
+import { getActivitiesView, type ActivitiesViewParams } from "@/lib/engines/activities";
 import { ActivitiesList } from "@/components/activities/ActivitiesList";
-import { DevBar } from "@/components/activities/DevBar";
+import type { ReadinessBucket } from "@/lib/activities/readiness";
 
 export const dynamic = "force-dynamic";
 
+const BUCKETS = ["needs_work", "waiting_for_dpo", "review_due", "approved", "all"];
+
 /**
- * SCREEN 1 — Processing activities list (governance flow). Which activities need
- * work, and the next step for each. Top-level page: no breadcrumb. The old
- * Fiduciaries tab moved to Settings › Organization › Entities.
+ * Activities — the register of how personal data is processed (Data Map redesign).
+ * Nine-state readiness drives every count; nothing is hard-coded. Title = nav label.
  */
-export default async function ProcessingActivitiesPage({
+export default async function ActivitiesPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const sp = await searchParams;
-  const params: ActivityListParams = {
-    segment: sp.segment === "under-review" || sp.segment === "all" || sp.segment === "needs-work" ? sp.segment : undefined,
-    q: sp.q, owner: sp.owner, department: sp.department, purpose: sp.purpose, lifecycle: sp.lifecycle,
+  const params: ActivitiesViewParams = {
+    bucket: BUCKETS.includes(sp.bucket ?? "") ? (sp.bucket as ReadinessBucket | "all") : undefined,
+    q: sp.q, entityId: sp.entityId, principal: sp.principal, department: sp.department,
   };
-  const dev = sp.dev === "1";
-  const [view, role, cfg] = await Promise.all([
-    getActivityList(params),
-    dev ? getCurrentRole() : Promise.resolve("admin" as const),
-    dev ? db.integrationConfig.findUnique({ where: { id: "singleton" }, select: { paMultiEntity: true, paRequireDpoReview: true } }) : Promise.resolve(null),
-  ]);
+  const view = await getActivitiesView(params);
   return (
-    <Shell active="/data-map/processing-activities" title="Processing activities">
-      {dev && <DevBar role={role} multiEntity={cfg?.paMultiEntity ?? false} requireDpoReview={cfg?.paRequireDpoReview ?? false} />}
+    <Shell active="/data-map/processing-activities" title="Activities">
       <ActivitiesList view={view} params={params} />
     </Shell>
   );

@@ -4106,6 +4106,25 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 /* §2: a parent whose child is active gets a 2px left accent but no fill. */
 .nav-group.owns-active > .nav-group-header { box-shadow: inset 2px 0 0 var(--accent, #2563eb); }
 
+/* ---- Activities (Data Map redesign) readiness chips + list ---------------- */
+.rchip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; border-radius: 999px; padding: 2px 10px; white-space: nowrap; line-height: 1.5; }
+.rchip.amber-outline { border: 1px solid var(--yellow-700, #b45309); color: var(--yellow-700, #b45309); background: transparent; }
+.rchip.primary-outline { border: 1px solid var(--accent, #2563eb); color: var(--accent, #2563eb); background: transparent; }
+.rchip.info { background: var(--blue-bg, #dbeafe); color: #1e40af; }
+.rchip.success { background: var(--green-bg, #d1fae5); color: #065f46; }
+.rchip.amber-fill { background: var(--yellow-700, #b45309); color: #fff; }
+.av-table { width: 100%; border-collapse: collapse; }
+.av-table th { text-align: left; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--text-4, #647388); font-weight: 600; padding: 8px 14px; border-bottom: 1px solid var(--border); }
+.av-table td { padding: 12px 14px; border-top: 1px solid var(--border-soft); vertical-align: top; font-size: 13.5px; }
+.av-row { cursor: pointer; }
+.av-row:hover { background: var(--fill, #f9fafb); }
+.av-name { font-weight: 600; }
+.av-counts { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.av-next { color: var(--accent, #2563eb); font-weight: 500; }
+.av-next.text { color: var(--text-4, #647388); font-weight: 400; }
+.menu-item { display: block; width: 100%; text-align: left; padding: 8px 12px; background: none; border: 0; cursor: pointer; font-size: 13px; color: var(--text-1, #0f172a); border-radius: 6px; }
+.menu-item:hover { background: var(--fill, #f3f4f6); }
+
 /* Approved Policy lock marker */
 .nav-lock { margin-left: auto; display: inline-flex; color: #64748b; }
 .nav-lock svg { width: 13px; height: 13px; }
