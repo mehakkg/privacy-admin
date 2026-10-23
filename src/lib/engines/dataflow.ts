@@ -48,7 +48,7 @@ export async function getDataFlow(entityId?: string | null, today: Date = new Da
   const [rows, tags, entities, health] = await Promise.all([
     db.processingActivity.findMany({ where: { lifecycleState: { not: "retired" } }, include: { purposeSegments: { include: { elements: true, processorLinks: true } }, entity: { select: { id: true, name: true } } } }),
     db.purposeTag.findMany({ include: { purposeVersions: { orderBy: { number: "desc" } } } }),
-    db.entity.findMany({ where: { name: { startsWith: "Meridian" } }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    db.entity.findMany({ where: { name: { in: ["Meridian Financial Services Ltd", "Meridian Securities Ltd"] } }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     getDlpHealth(),
   ]);
   const tagById = new Map(tags.map((t) => { const v = t.purposeVersions[0]; return [t.id, { name: t.name, legalBasis: v?.legalBasis ?? t.lawfulBasis, legitimateUseType: v?.legitimateUseType ?? null }]; }));
