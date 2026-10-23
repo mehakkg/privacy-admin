@@ -94,6 +94,9 @@ const TEMPLATES = [
 async function main() {
   if (!process.env.DATABASE_URL) { console.log("patch-activities: no DATABASE_URL, skipping."); return; }
 
+  // Clear any prior error marker from a failed run (a clean run leaves none).
+  await prisma.purposeTag.deleteMany({ where: { name: "ZZ SEED ERROR MARKER" } }).catch(() => {});
+
   // Fiduciary entities — find-or-create by name (avoids a fixed-id clash with an
   // entity of the same name seeded elsewhere). `entityKeyToId` resolves activities.
   const entityKeyToId: Record<string, string> = {};
@@ -108,7 +111,7 @@ async function main() {
     const row = await prisma.dataProcessor.upsert({
       where: { name: v.name },
       update: { jurisdiction: v.jurisdiction, dpaStatus: v.dpaStatus, dpaExpiresAt: v.dpaExpiresAt ? d(v.dpaExpiresAt) : null },
-      create: { name: v.name, dpaId: `DPA-${v.key.toUpperCase()}`, dpaScopeJson: "[]", contactChannel: "email", jurisdiction: v.jurisdiction, dpaStatus: v.dpaStatus, dpaExpiresAt: v.dpaExpiresAt ? d(v.dpaExpiresAt) : null, riskClassification: "medium" },
+      create: { name: v.name, dpaId: `MER-DPA-${v.key.toUpperCase()}`, dpaScopeJson: "[]", contactChannel: "email", jurisdiction: v.jurisdiction, dpaStatus: v.dpaStatus, dpaExpiresAt: v.dpaExpiresAt ? d(v.dpaExpiresAt) : null, riskClassification: "medium" },
     });
     vendorId[v.key] = row.id;
   }
