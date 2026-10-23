@@ -4128,6 +4128,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 .dm-tab { padding: 8px 14px; background: none; border: 0; border-bottom: 2px solid transparent; cursor: pointer; font-size: 13.5px; color: var(--text-2, #4b5563); margin-bottom: -1px; }
 .dm-tab:hover { color: var(--text-1, #0f172a); }
 .dm-tab.on { color: var(--accent, #2563eb); border-bottom-color: var(--accent, #2563eb); font-weight: 600; }
+@keyframes dm-spin { to { transform: rotate(360deg); } }
+.spin { animation: dm-spin 1s linear infinite; }
 
 /* Approved Policy lock marker */
 .nav-lock { margin-left: auto; display: inline-flex; color: #64748b; }
