@@ -1,16 +1,17 @@
 import { Shell } from "@/components/Shell";
-import { getPurposeLibrary } from "@/lib/engines/purposes";
-import { PurposeLibrary } from "@/components/activities/PurposeLibrary";
+import { getPurposesView } from "@/lib/engines/purposes";
+import { PurposesView } from "@/components/activities/PurposesView";
 
 export const dynamic = "force-dynamic";
 
-/** SCREEN 10 — Purpose library. Which purposes exist, and where each is in approval. */
+/** Purposes (Data Map redesign) — why personal data is processed, where each
+ *  purpose sits in approval, and whether a consent purpose is in a published notice. */
 export default async function PurposesPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
-  const view = await getPurposeLibrary();
+  const view = await getPurposesView();
   return (
     <Shell active="/data-map/processing-activities" title="Purposes">
-      <PurposeLibrary view={view} segment={sp.segment ?? "needs-attention"} q={sp.q ?? ""} />
+      <PurposesView view={view} segment={sp.segment ?? "needs_action"} />
     </Shell>
   );
 }

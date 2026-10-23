@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { purposeState, type Purpose, type PurposeVersion, type LegalBasis, type ConsentStatus, type PurposeVersionState } from "@/lib/activities/types";
+import { noticeFor } from "@/lib/activities/notices";
 
 /**
  * Purpose reads for the Add-purpose popover and the Purpose library. Purposes are
@@ -96,4 +97,57 @@ export async function getPurposeLibrary(): Promise<PurposeLibraryView> {
   if (drafts) parts.push(`${drafts} ${drafts === 1 ? "is a draft" : "are drafts"}`);
   const sentence = parts[0] + " " + parts.slice(1).join(", ") + ".";
   return { rows, sentence, counts: { attention, approved, all: rows.length } };
+}
+
+// --- Purposes page (Data Map redesign) --------------------------------------
+
+export type PurposeStatus = "approved" | "pending" | "draft" | "rejected";
+export interface PurposeRow {
+  id: string; name: string; description: string;
+  legalBasisLabel: string; status: PurposeStatus; statusLabel: string; version: number;
+  usedByCount: number; usedByFirst: string | null;
+  inNotice: string | null; noticeRequired: boolean; rejectionReason: string | null;
+  linkedActivities: string[];
+  edit: { name: string; description: string; legalBasis: "consent" | "legitimate_use"; legitimateUseType: string | null; amount: number; unit: "months" | "years"; trigger: string; justification: string };
+}
+export interface PurposesView { rows: PurposeRow[]; counts: { needs_action: number; pending: number; approved: number; all: number } }
+
+const STATUS_OF: Record<string, PurposeStatus> = { approved: "approved", waiting_for_dpo: "pending", draft: "draft", changes_requested: "draft", rejected: "rejected" };
+const STATUS_LABEL: Record<PurposeStatus, string> = { approved: "Approved", pending: "Pending DPO approval", draft: "Draft", rejected: "Rejected" };
+
+/** The Purposes page: why personal data is processed, and where each purpose sits
+ *  in approval + whether a consent purpose is in a published notice. */
+export async function getPurposesView(): Promise<PurposesView> {
+  const [tags, segs] = await Promise.all([
+    db.purposeTag.findMany({ where: { name: { not: "ZZ SEED ERROR MARKER" } }, include: { purposeVersions: { orderBy: { number: "desc" } } }, orderBy: { name: "asc" } }),
+    db.activityPurpose.findMany({ where: { linkState: "confirmed" }, select: { purposeTagId: true, activity: { select: { activity: true } } } }),
+  ]);
+  const byPurpose = new Map<string, string[]>();
+  for (const s of segs) { if (!s.purposeTagId) continue; (byPurpose.get(s.purposeTagId) ?? byPurpose.set(s.purposeTagId, []).get(s.purposeTagId)!).push(s.activity.activity); }
+
+  const rows: PurposeRow[] = tags.map((t) => {
+    const v = t.purposeVersions[0];
+    const legalBasis = (v?.legalBasis ?? t.lawfulBasis) === "consent" ? "consent" as const : "legitimate_use" as const;
+    const legalBasisLabel = legalBasis === "consent" ? "Consent (Section 6)" : `Legitimate use${v?.legitimateUseType ? `: ${v.legitimateUseType}` : ""}`;
+    const status = STATUS_OF[v?.state ?? t.status] ?? "approved";
+    const used = [...new Set(byPurpose.get(t.id) ?? [])];
+    const ret = parseRetention(t.retention);
+    return {
+      id: t.id, name: t.name, description: v?.description ?? t.description,
+      legalBasisLabel, status, statusLabel: STATUS_LABEL[status], version: v?.number ?? 1,
+      usedByCount: used.length, usedByFirst: used[0] ?? null,
+      inNotice: noticeFor(t.name), noticeRequired: legalBasis === "consent",
+      rejectionReason: status === "rejected" ? (v?.decisionComment ?? t.rejectionReason ?? null) : null,
+      linkedActivities: used,
+      edit: { name: t.name, description: v?.description ?? t.description, legalBasis, legitimateUseType: v?.legitimateUseType ?? null, amount: ret.amount, unit: ret.unit, trigger: ret.trigger, justification: v?.justification ?? "" },
+    };
+  });
+
+  const counts = {
+    needs_action: rows.filter((r) => r.status === "draft" || r.status === "rejected").length,
+    pending: rows.filter((r) => r.status === "pending").length,
+    approved: rows.filter((r) => r.status === "approved").length,
+    all: rows.length,
+  };
+  return { rows, counts };
 }
