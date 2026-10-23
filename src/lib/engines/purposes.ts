@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { purposeState, type Purpose, type PurposeVersion, type LegalBasis, type ConsentStatus, type PurposeVersionState } from "@/lib/activities/types";
-import { noticeFor } from "@/lib/activities/notices";
+import { noticeFor, MERIDIAN_PURPOSES } from "@/lib/activities/notices";
 
 /**
  * Purpose reads for the Add-purpose popover and the Purpose library. Purposes are
@@ -119,7 +119,7 @@ const STATUS_LABEL: Record<PurposeStatus, string> = { approved: "Approved", pend
  *  in approval + whether a consent purpose is in a published notice. */
 export async function getPurposesView(): Promise<PurposesView> {
   const [tags, segs] = await Promise.all([
-    db.purposeTag.findMany({ where: { name: { not: "ZZ SEED ERROR MARKER" } }, include: { purposeVersions: { orderBy: { number: "desc" } } }, orderBy: { name: "asc" } }),
+    db.purposeTag.findMany({ where: { name: { in: MERIDIAN_PURPOSES } }, include: { purposeVersions: { orderBy: { number: "desc" } } }, orderBy: { name: "asc" } }),
     db.activityPurpose.findMany({ where: { linkState: "confirmed" }, select: { purposeTagId: true, activity: { select: { activity: true } } } }),
   ]);
   const byPurpose = new Map<string, string[]>();

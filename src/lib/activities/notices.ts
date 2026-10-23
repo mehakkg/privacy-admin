@@ -20,3 +20,11 @@ export const NOTICE_BY_PURPOSE: Record<string, string> = {
 export function noticeFor(purposeName: string): string | null {
   return NOTICE_BY_PURPOSE[purposeName] ?? null;
 }
+
+/** The current register's purpose set (Meridian fixture). The Purposes page scopes
+ *  to these, so legacy demo purposes from earlier seeds don't pad the list. */
+export const MERIDIAN_PURPOSES = [
+  "KYC & identity verification", "Credit assessment", "Fraud detection", "Recovery & collections",
+  "Product marketing", "Customer support & complaints", "Investment advisory onboarding",
+  "Payroll & statutory deductions", "Pre-employment background checks", "Collections outreach via social media",
+];
