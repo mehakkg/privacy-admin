@@ -94,6 +94,11 @@ const TEMPLATES = [
 async function main() {
   if (!process.env.DATABASE_URL) { console.log("patch-activities: no DATABASE_URL, skipping."); return; }
 
+  // Ensure the noticeRef column exists even if `db push` didn't add it this build
+  // (DDL over the pooled connection is flaky on some providers). Idempotent.
+  try { await prisma.$executeRawUnsafe(`ALTER TABLE "PurposeTag" ADD COLUMN IF NOT EXISTS "noticeRef" TEXT`); }
+  catch (e) { console.log("patch-activities: noticeRef column ensure skipped:", (e as Error).message); }
+
   // Fiduciary entities.
   for (const e of ENTITIES) {
     await prisma.entity.upsert({ where: { id: e.id }, update: { name: e.name }, create: { id: e.id, name: e.name, kind: "legal_entity" } });
