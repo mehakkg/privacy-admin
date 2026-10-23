@@ -4124,6 +4124,10 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 .av-next.text { color: var(--text-4, #647388); font-weight: 400; }
 .menu-item { display: block; width: 100%; text-align: left; padding: 8px 12px; background: none; border: 0; cursor: pointer; font-size: 13px; color: var(--text-1, #0f172a); border-radius: 6px; }
 .menu-item:hover { background: var(--fill, #f3f4f6); }
+.dm-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.dm-tab { padding: 8px 14px; background: none; border: 0; border-bottom: 2px solid transparent; cursor: pointer; font-size: 13.5px; color: var(--text-2, #4b5563); margin-bottom: -1px; }
+.dm-tab:hover { color: var(--text-1, #0f172a); }
+.dm-tab.on { color: var(--accent, #2563eb); border-bottom-color: var(--accent, #2563eb); font-weight: 600; }
 
 /* Approved Policy lock marker */
 .nav-lock { margin-left: auto; display: inline-flex; color: #64748b; }

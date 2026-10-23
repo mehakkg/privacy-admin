@@ -152,6 +152,8 @@ import {
   type ChipTone, type ReadinessBucket, type PurposeApproval, type NextStep as ReadinessNextStep,
 } from "@/lib/activities/readiness";
 import { noticeFor } from "@/lib/activities/notices";
+import { kindOf, KIND_LABEL, countryName, isCrossBorder } from "@/lib/activities/systems";
+import { formatDate } from "@/lib/datamap/foundations";
 
 function approvalOf(state: string): PurposeApproval {
   return state === "approved" ? "approved" : state === "waiting_for_dpo" ? "pending" : state === "rejected" ? "rejected" : "draft";
@@ -241,6 +243,99 @@ export async function getActivitiesView(params: ActivitiesViewParams = {}, today
       departments: [...new Set(built.map((r) => r.department).filter(Boolean) as string[])].sort(),
       entities, principals: [...new Set(built.flatMap((r) => r.principals))].sort(),
     },
+  };
+}
+
+// --- Activity detail (five tabs) --------------------------------------------
+
+export interface DetailField { name: string; dataCategory: string | null; sensitivity: string; purposes: string[]; retention: string | null; collectedAs: "Required" | "Optional"; source: "Discovery" | "Manual" }
+export interface DetailPurpose { id: string; name: string; approval: PurposeApproval; legalBasisLabel: string; noticeRef: string | null; locked: boolean }
+export interface DetailSystem { purpose: string; name: string; kindLabel: string; country: string; crossBorder: boolean; contract: string; contractTone: "ok" | "warn" | "none" }
+export interface DetailVersion { number: number; state: string; activatedBy: string; activatedAt: string; hash: string; reason: string | null }
+export interface ActivityDetailView {
+  id: string; name: string; entityName: string | null; owner: string | null; department: string | null;
+  principals: string[]; lifecycle: string;
+  state: ReadinessState; chipLabel: string; chipTone: ChipTone; next: ReadinessNextStep | null;
+  version: number | null; approvedBy: string | null; approvedAt: string | null;
+  locked: boolean; waiting: boolean; reviewDue: boolean; reviewDrift: string[];
+  fields: DetailField[]; purposes: DetailPurpose[]; systems: DetailSystem[];
+  consent: { channels: string[]; noticeRefs: string[] };
+  versions: DetailVersion[];
+}
+
+export async function getActivityDetail(id: string, today: Date = new Date()): Promise<ActivityDetailView | null> {
+  const [row, tags] = await Promise.all([
+    db.processingActivity.findUnique({ where: { id }, include: { purposeSegments: { include: { elements: true, processorLinks: true } }, entity: { select: { name: true } }, reasons: true, activityVersions: { orderBy: { number: "desc" } } } }),
+    db.purposeTag.findMany({ include: { purposeVersions: { orderBy: { number: "desc" } } } }),
+  ]);
+  if (!row) return null;
+  const tagById = new Map(tags.map((t) => { const v = t.purposeVersions[0]; return [t.id, { name: t.name, approval: approvalOf(v?.state ?? t.status), legalBasis: (v?.legalBasis ?? t.lawfulBasis), legitimateUseType: v?.legitimateUseType ?? null, retention: t.retention }]; }));
+  const segs = row.purposeSegments.filter((s) => s.purposeTagId);
+
+  const vendorIds = [...new Set(segs.flatMap((s) => { const ids = s.processorLinks.filter((p) => p.linkState === "confirmed").map((p) => p.vendorId); if (s.processorId) ids.push(s.processorId); return ids; }))];
+  const vendors = vendorIds.length ? await db.dataProcessor.findMany({ where: { id: { in: vendorIds } }, select: { id: true, name: true, jurisdiction: true, dpaStatus: true, dpaExpiresAt: true } }) : [];
+  const vById = new Map(vendors.map((v) => [v.id, v]));
+  const fieldNames = [...new Set(segs.flatMap((s) => s.elements.map((e) => e.fieldName)))];
+  const cfields = fieldNames.length ? await db.classifiedField.findMany({ where: { fieldPath: { in: fieldNames } }, select: { fieldPath: true, sensitivityTier: true, dataCategory: { select: { name: true } } } }) : [];
+  const cfByPath = new Map(cfields.map((f) => [f.fieldPath, f]));
+
+  const fields: DetailField[] = [];
+  for (const s of segs) {
+    const info = tagById.get(s.purposeTagId!);
+    for (const e of s.elements.filter((x) => x.linkState === "confirmed")) {
+      const cf = cfByPath.get(e.fieldName);
+      fields.push({
+        name: e.fieldName, dataCategory: cf?.dataCategory?.name ?? null,
+        sensitivity: cf?.sensitivityTier && cf.sensitivityTier !== "Not classified" ? cf.sensitivityTier : "Not classified",
+        purposes: info ? [info.name] : [], retention: info?.retention ?? null,
+        collectedAs: "Required", source: "Manual",
+      });
+    }
+  }
+
+  const purposes: DetailPurpose[] = segs.filter((s) => s.linkState === "confirmed").map((s) => {
+    const info = tagById.get(s.purposeTagId!)!;
+    return { id: s.purposeTagId!, name: info.name, approval: info.approval, legalBasisLabel: info.legalBasis === "consent" ? "Consent (Section 6)" : `Legitimate use${info.legitimateUseType ? `: ${info.legitimateUseType}` : ""}`, noticeRef: noticeFor(info.name), locked: info.approval === "approved" };
+  });
+
+  const systems: DetailSystem[] = [];
+  for (const s of segs) {
+    const info = tagById.get(s.purposeTagId!); if (!info) continue;
+    const vids = new Set(s.processorLinks.filter((p) => p.linkState === "confirmed").map((p) => p.vendorId)); if (s.processorId) vids.add(s.processorId);
+    for (const vid of vids) {
+      const v = vById.get(vid); if (!v) continue;
+      const kind = kindOf(v.name);
+      let contract = ""; let tone: "ok" | "warn" | "none" = "none";
+      if (kind === "processor") {
+        if (v.dpaStatus === "expired" || (v.dpaExpiresAt && v.dpaExpiresAt.getTime() < today.getTime())) { contract = `Expired ${v.dpaExpiresAt ? formatDate(v.dpaExpiresAt.toISOString()) : ""}`.trim(); tone = "warn"; }
+        else if (v.dpaStatus === "active") { contract = v.dpaExpiresAt ? `Valid until ${formatDate(v.dpaExpiresAt.toISOString())}` : "Valid"; tone = "ok"; }
+        else { contract = "No contract on file"; tone = "warn"; }
+      }
+      systems.push({ purpose: info.name, name: v.name, kindLabel: KIND_LABEL[kind], country: countryName(v.jurisdiction), crossBorder: isCrossBorder(v.jurisdiction), contract, contractTone: tone });
+    }
+  }
+
+  const principals = (decodeList(row.principalsJson) as string[]) ?? [];
+  const rPurposes: ReadinessPurpose[] = segs.filter((s) => s.linkState === "confirmed").map((s) => {
+    const info = tagById.get(s.purposeTagId!)!;
+    const vids = new Set(s.processorLinks.filter((p) => p.linkState === "confirmed").map((p) => p.vendorId)); if (s.processorId) vids.add(s.processorId);
+    return { name: info.name, fieldCount: s.elements.filter((e) => e.linkState === "confirmed").length, systemCount: vids.size, approval: info.approval, legalBasis: info.legalBasis === "consent" ? "consent" : "legitimate_use", inPublishedNotice: !!noticeFor(info.name) };
+  });
+  const ra: ReadinessActivity = { ownerId: row.ownerName, department: row.department, principals, purposes: rPurposes, submitted: row.lifecycleState === "pending_dpo_review", approved: row.lifecycleState === "active" || row.lifecycleState === "under_review", lastReviewedAt: row.lastReviewedAt?.toISOString() ?? null, driftSinceApproval: row.reasons.some((rr) => rr.status === "open" && DRIFT_REASONS.has(rr.type)) };
+  const r = readiness(ra, today);
+  const active = row.activityVersions.find((v) => v.state === "active");
+
+  return {
+    id: row.id, name: row.activity, entityName: row.entity?.name ?? null, owner: row.ownerName, department: row.department,
+    principals, lifecycle: row.lifecycleState,
+    state: r.state, chipLabel: r.label, chipTone: r.tone, next: r.next,
+    version: active?.number ?? null, approvedBy: active?.activatedBy ?? null, approvedAt: active?.activatedAt.toISOString() ?? null,
+    locked: row.lifecycleState === "active" || row.lifecycleState === "under_review",
+    waiting: row.lifecycleState === "pending_dpo_review",
+    reviewDue: r.state === "review_due", reviewDrift: row.reasons.filter((rr) => rr.status === "open" && DRIFT_REASONS.has(rr.type)).map((rr) => rr.detail),
+    fields, purposes, systems,
+    consent: { channels: ["Mobile app", "Web portal", "Branch (offline)"], noticeRefs: [...new Set(purposes.map((p) => p.noticeRef).filter(Boolean) as string[])] },
+    versions: row.activityVersions.map((v) => ({ number: v.number, state: v.state, activatedBy: v.activatedBy, activatedAt: v.activatedAt.toISOString(), hash: v.hash, reason: v.reason })),
   };
 }
 
