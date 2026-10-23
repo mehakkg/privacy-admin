@@ -61,27 +61,28 @@ const APPROVAL_TO_TAG: Record<Approval, string> = { approved: "approved", pendin
 
 // --- Activities -------------------------------------------------------------
 type Seg = { purpose: string; data: string[]; processors: string[] };
-type A = { id: string; name: string; entity: string; owner: string | null; department: string; principals: string[]; lifecycle: string; lastReviewedAt?: string; submitted?: boolean; seg: Seg };
+type A = { id: string; name: string; entity: string; owner: string | null; department: string; principals: string[]; lifecycle: string; lastReviewedAt?: string; submitted?: boolean; blockedSince?: string; seg: Seg };
+// blockedSince drives the "Waiting Nd" column (days until the prototype's 23 Oct 2026).
 const ACTIVITIES: A[] = [
-  { id: "act-onboarding", name: "Customer onboarding & KYC", entity: "ent-mfs", owner: "R. Iyer", department: "Customer Operations", principals: ["Customer"], lifecycle: "active", lastReviewedAt: "2026-08-14",
+  { id: "act-onboarding", name: "Customer onboarding & KYC", entity: "ent-mfs", owner: "R. Iyer", department: "Customer Operations", principals: ["Customer"], lifecycle: "active", lastReviewedAt: "2026-08-14", blockedSince: "2026-07-01",
     seg: { purpose: "kyc", processors: ["cbs", "ckyc"], data: ["Full name", "Date of birth", "PAN", "Aadhaar number (masked)", "Address", "Mobile number", "Email", "Photograph", "Signature"] } },
-  { id: "act-credit-scoring", name: "Credit scoring", entity: "ent-mfs", owner: "P. Shah", department: "Credit", principals: ["Loan applicant"], lifecycle: "active", lastReviewedAt: "2026-09-02",
+  { id: "act-credit-scoring", name: "Credit scoring", entity: "ent-mfs", owner: "P. Shah", department: "Credit", principals: ["Loan applicant"], lifecycle: "active", lastReviewedAt: "2026-09-02", blockedSince: "2026-07-15",
     seg: { purpose: "credit", processors: ["cbs", "cibil"], data: ["PAN", "Income", "Bureau score", "Existing loans", "Employment status", "Bank statement"] } },
-  { id: "act-loan-servicing", name: "Loan servicing", entity: "ent-mfs", owner: "P. Shah", department: "Credit", principals: ["Customer"], lifecycle: "active", lastReviewedAt: "2026-06-11",
+  { id: "act-loan-servicing", name: "Loan servicing", entity: "ent-mfs", owner: "P. Shah", department: "Credit", principals: ["Customer"], lifecycle: "active", lastReviewedAt: "2026-06-11", blockedSince: "2026-06-11",
     seg: { purpose: "credit", processors: ["cbs", "snowflake"], data: ["Account number", "EMI schedule", "Outstanding balance", "Mobile number", "Email"] } },
-  { id: "act-fraud", name: "Fraud monitoring", entity: "ent-mfs", owner: "A. Menon", department: "Risk", principals: ["Customer"], lifecycle: "draft",
+  { id: "act-fraud", name: "Fraud monitoring", entity: "ent-mfs", owner: "A. Menon", department: "Risk", principals: ["Customer"], lifecycle: "draft", blockedSince: "2026-10-15",
     seg: { purpose: "fraud", processors: ["snowflake"], data: ["Device ID", "IP address", "Transaction pattern", "Account number"] } },
-  { id: "act-debt", name: "Debt collections", entity: "ent-mfs", owner: "P. Shah", department: "Credit", principals: ["Customer"], lifecycle: "draft",
+  { id: "act-debt", name: "Debt collections", entity: "ent-mfs", owner: "P. Shah", department: "Credit", principals: ["Customer"], lifecycle: "draft", blockedSince: "2026-10-09",
     seg: { purpose: "recovery", processors: [], data: ["Account number", "Outstanding amount"] } },
-  { id: "act-marketing", name: "Marketing campaigns", entity: "ent-mfs", owner: "N. Rao", department: "Marketing", principals: ["Customer", "Prospect"], lifecycle: "draft",
+  { id: "act-marketing", name: "Marketing campaigns", entity: "ent-mfs", owner: "N. Rao", department: "Marketing", principals: ["Customer", "Prospect"], lifecycle: "draft", blockedSince: "2026-10-17",
     seg: { purpose: "marketing", processors: ["mailchimp"], data: ["Email", "Mobile number", "Segment"] } },
-  { id: "act-support", name: "Customer support calls", entity: "ent-mfs", owner: "S. Pillai", department: "Customer Service", principals: ["Customer"], lifecycle: "draft",
+  { id: "act-support", name: "Customer support calls", entity: "ent-mfs", owner: "S. Pillai", department: "Customer Service", principals: ["Customer"], lifecycle: "draft", blockedSince: "2026-10-14",
     seg: { purpose: "support", processors: ["freshdesk"], data: ["Email", "Mobile number", "Ticket text"] } },
-  { id: "act-payroll", name: "Payroll", entity: "ent-mfs", owner: null, department: "HR", principals: ["Employee"], lifecycle: "draft",
+  { id: "act-payroll", name: "Payroll", entity: "ent-mfs", owner: null, department: "HR", principals: ["Employee"], lifecycle: "draft", blockedSince: "2026-10-02",
     seg: { purpose: "payroll", processors: [], data: [] } },
-  { id: "act-wealth", name: "Wealth advisory onboarding", entity: "ent-msl", owner: "K. Das", department: "Wealth", principals: ["CUSTOMER"], lifecycle: "draft",
+  { id: "act-wealth", name: "Wealth advisory onboarding", entity: "ent-msl", owner: "K. Das", department: "Wealth", principals: ["CUSTOMER"], lifecycle: "draft", blockedSince: "2026-10-21",
     seg: { purpose: "wealth", processors: [], data: [] } },
-  { id: "act-preemp", name: "Pre-employment background verification", entity: "ent-mfs", owner: "L. Joshi", department: "HR", principals: ["Employee"], lifecycle: "pending_dpo_review", submitted: true,
+  { id: "act-preemp", name: "Pre-employment background verification", entity: "ent-mfs", owner: "L. Joshi", department: "HR", principals: ["Employee"], lifecycle: "pending_dpo_review", submitted: true, blockedSince: "2026-10-20",
     seg: { purpose: "preemp", processors: ["authbridge"], data: ["Full name", "PAN", "Address", "Previous employer", "Education"] } },
 ];
 
@@ -148,7 +149,7 @@ async function main() {
   await prisma.processingActivity.deleteMany({ where: { id: { notIn: keepIds } } });
 
   for (const a of ACTIVITIES) {
-    const base = { activity: a.name, ownerName: a.owner, department: a.department, entityId: entityKeyToId[a.entity], principalsJson: J(a.principals), lifecycleState: a.lifecycle, lastReviewedAt: a.lastReviewedAt ? d(a.lastReviewedAt) : null, activatedAt: a.lifecycle === "active" && a.lastReviewedAt ? d(a.lastReviewedAt) : null, nextReviewDue: a.lastReviewedAt ? d(a.lastReviewedAt) : null, createdBy: "R. Iyer" };
+    const base = { activity: a.name, ownerName: a.owner, department: a.department, entityId: entityKeyToId[a.entity], principalsJson: J(a.principals), lifecycleState: a.lifecycle, lastReviewedAt: a.lastReviewedAt ? d(a.lastReviewedAt) : null, activatedAt: a.lifecycle === "active" && a.lastReviewedAt ? d(a.lastReviewedAt) : null, nextReviewDue: a.lastReviewedAt ? d(a.lastReviewedAt) : null, createdBy: "R. Iyer", ...(a.blockedSince ? { createdAt: d(a.blockedSince) } : {}) };
     await prisma.processingActivity.upsert({ where: { id: a.id }, update: base, create: { id: a.id, origin: "manual", ...base } });
     await prisma.activityPurpose.deleteMany({ where: { activityId: a.id } });
     await prisma.reviewReason.deleteMany({ where: { activityId: a.id } });

@@ -117,3 +117,57 @@ export function bucketOf(state: ReadinessState): ReadinessBucket {
   if (state === "waiting_for_dpo") return "waiting_for_dpo";
   return "needs_work"; // needs_* and ready_to_submit
 }
+
+/** In the register (Approved or Review due) vs in progress (everything else). */
+export function inRegister(state: ReadinessState): boolean {
+  return state === "approved" || state === "review_due";
+}
+
+// --- Who must act, and the six-check progress (Activities screen redesign) ---
+
+export type Actor = "admin" | "dpo" | "owner" | "none";
+
+/** Who has to act next, given the state. Draft/Rejected purposes → Admin; a purpose
+ *  only Pending → DPO; a submitted activity → DPO; review due → the business owner. */
+export function readinessActor(state: ReadinessState, a: ReadinessActivity): Actor {
+  switch (state) {
+    case "needs_basics": case "needs_data": case "needs_processors": case "needs_notice": case "ready_to_submit": return "admin";
+    case "needs_approval": return a.purposes.some((p) => p.approval === "draft" || p.approval === "rejected") ? "admin" : "dpo";
+    case "waiting_for_dpo": return "dpo";
+    case "review_due": return "owner";
+    case "approved": return "none";
+  }
+}
+
+export type CheckKey = "basics" | "data" | "systems" | "purpose" | "notice" | "dpo";
+export type CheckState = "pass" | "block" | "todo" | "na";
+export interface Check { key: CheckKey; label: string; state: CheckState }
+const CHECK_ORDER: CheckKey[] = ["basics", "data", "systems", "purpose", "notice", "dpo"];
+const CHECK_LABEL: Record<CheckKey, string> = { basics: "Basics", data: "Data", systems: "Systems", purpose: "Purpose", notice: "Notice", dpo: "DPO" };
+const BLOCK_OF: Record<ReadinessState, CheckKey | null> = {
+  needs_basics: "basics", needs_data: "data", needs_processors: "systems", needs_approval: "purpose",
+  needs_notice: "notice", ready_to_submit: "dpo", waiting_for_dpo: "dpo", approved: null, review_due: null,
+};
+
+/** The six checks as dot states: checks before the blocking one pass, the blocking
+ *  one is `block`, later ones are `todo`; the Notice check is `na` for a
+ *  legitimate-use-only activity. */
+export function readinessChecks(a: ReadinessActivity, today: Date = new Date()): Check[] {
+  const state = readiness(a, today).state;
+  const block = BLOCK_OF[state];
+  const noticeNa = a.purposes.length > 0 && !a.purposes.some((p) => p.legalBasis === "consent");
+  const bi = block ? CHECK_ORDER.indexOf(block) : CHECK_ORDER.length;
+  return CHECK_ORDER.map((key, i) => {
+    const label = CHECK_LABEL[key];
+    if (key === "notice" && noticeNa) return { key, label, state: "na" as CheckState };
+    if (i < bi) return { key, label, state: "pass" as CheckState };
+    if (i === bi) return { key, label, state: "block" as CheckState };
+    return { key, label, state: "todo" as CheckState };
+  });
+}
+
+export function checksAria(checks: Check[]): string {
+  const passed = checks.filter((c) => c.state === "pass").length;
+  const blocked = checks.find((c) => c.state === "block");
+  return `Readiness: ${passed} of 6 checks passed.${blocked ? ` Blocked at ${blocked.label}.` : ""}`;
+}

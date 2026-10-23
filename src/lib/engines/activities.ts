@@ -148,12 +148,14 @@ export async function getActivityCounts(): Promise<{ ready: number; needsWork: n
 // --- Activities view (Data Map redesign — nine-state readiness) --------------
 
 import {
-  readiness, bucketOf, type ReadinessActivity, type ReadinessPurpose, type ReadinessState,
+  readiness, bucketOf, inRegister, readinessActor, readinessChecks,
+  type ReadinessActivity, type ReadinessPurpose, type ReadinessState,
   type ChipTone, type ReadinessBucket, type PurposeApproval, type NextStep as ReadinessNextStep,
+  type Actor, type Check,
 } from "@/lib/activities/readiness";
 import { noticeFor } from "@/lib/activities/notices";
 import { kindOf, KIND_LABEL, countryName, isCrossBorder } from "@/lib/activities/systems";
-import { formatDate } from "@/lib/datamap/foundations";
+import { formatDate, daysBetween } from "@/lib/datamap/foundations";
 
 function approvalOf(state: string): PurposeApproval {
   return state === "approved" ? "approved" : state === "waiting_for_dpo" ? "pending" : state === "rejected" ? "rejected" : "draft";
@@ -570,5 +572,91 @@ export async function snapshotInputForActivity(activityId: string): Promise<Snap
     name: a.name, description: row.description ?? "", owner: a.ownerId, department: a.department,
     entity: row.entity?.name ?? null, principals: a.principals, reviewPeriodMonths: 12, nextReviewDue: a.nextReviewDue,
     purposes: snapPurposes,
+  };
+}
+
+// --- Activities screen (redesign: coverage + My work + Register) ------------
+
+import { getDlpHealth } from "@/lib/engines/dlp";
+
+const ENTITY_SHORT: Record<string, string> = { "Meridian Financial Services Ltd": "MFS", "Meridian Securities Ltd": "MSL" };
+
+export interface ScreenRow {
+  id: string; name: string; entityId: string | null; entityName: string | null; entityShort: string;
+  owner: string | null; department: string | null; principals: string[];
+  purposeCount: number; fieldCount: number; systemCount: number;
+  state: ReadinessState; chipLabel: string; chipTone: ChipTone; next: ReadinessNextStep | null;
+  actor: Actor; checks: Check[]; inRegister: boolean;
+  waitingDays: number; overdueDays: number | null; reviewedAt: string | null; statusActor: string | null;
+}
+export interface Coverage {
+  pct: number; registerFields: number; totalFields: number; inProgressFields: number; orphanFields: number;
+  inRegisterCount: number; inProgressCount: number; suggestions: number;
+  dlpConnected: boolean; dlpStale: boolean; lastSyncLabel: string | null; lastExported: string | null;
+}
+export interface ActivitiesScreen {
+  coverage: Coverage; rows: ScreenRow[];
+  options: { fiduciaries: { id: string; name: string }[]; principals: string[]; departments: string[]; owners: string[] };
+}
+
+export async function getActivitiesScreen(today: Date = new Date()): Promise<ActivitiesScreen> {
+  const [rows, tags, allFieldCount, usedFieldRows, ropaPending, health] = await Promise.all([
+    db.processingActivity.findMany({ include: { purposeSegments: { include: { elements: true, processorLinks: true } }, entity: { select: { id: true, name: true } }, reasons: true }, orderBy: { activity: "asc" } }),
+    db.purposeTag.findMany({ include: { purposeVersions: { orderBy: { number: "desc" } } } }),
+    db.classifiedField.count(),
+    db.activityPurposeElement.findMany({ where: { classifiedFieldId: { not: null } }, select: { classifiedFieldId: true } }),
+    db.ropaSuggestion.count({ where: { status: "pending" } }).catch(() => 0),
+    getDlpHealth(),
+  ]);
+  const tagInfo = new Map(tags.map((t) => { const v = t.purposeVersions[0]; return [t.id, { name: t.name, approval: approvalOf(v?.state ?? t.status), legalBasis: (v?.legalBasis ?? t.lawfulBasis) === "consent" ? "consent" as const : "legitimate_use" as const }]; }));
+
+  const built: ScreenRow[] = rows.map((row) => {
+    const principals = (decodeList(row.principalsJson) as string[]) ?? [];
+    const segs = row.purposeSegments.filter((s) => s.purposeTagId && s.linkState === "confirmed");
+    const purposes: ReadinessPurpose[] = segs.map((s) => {
+      const info = tagInfo.get(s.purposeTagId!);
+      const vids = new Set(s.processorLinks.filter((p) => p.linkState === "confirmed").map((p) => p.vendorId)); if (s.processorId) vids.add(s.processorId);
+      return { name: info?.name ?? "Purpose", fieldCount: s.elements.filter((e) => e.linkState === "confirmed").length, systemCount: vids.size, approval: info?.approval ?? "approved", legalBasis: info?.legalBasis ?? "consent", inPublishedNotice: !!noticeFor(info?.name ?? "") };
+    });
+    const lifecycle = row.lifecycleState;
+    const ra: ReadinessActivity = { ownerId: row.ownerName, department: row.department, principals, purposes, submitted: lifecycle === "pending_dpo_review", approved: lifecycle === "active" || lifecycle === "under_review", lastReviewedAt: row.lastReviewedAt?.toISOString() ?? null, driftSinceApproval: row.reasons.some((r) => r.status === "open" && DRIFT_REASONS.has(r.type)) };
+    const r = readiness(ra, today);
+    const actor = readinessActor(r.state, ra);
+    const reg = inRegister(r.state);
+    const reviewDueDate = row.lastReviewedAt ? new Date(row.lastReviewedAt.getTime() + 90 * 86_400_000) : null;
+    const overdueDays = r.state === "review_due" && reviewDueDate ? Math.max(0, daysBetween(reviewDueDate, today)) : null;
+    const statusActor = actor === "admin" ? `You: ${r.next?.text ?? "act"}`
+      : actor === "dpo" ? (r.state === "waiting_for_dpo" ? "Kavita Menon: approve activity" : "Kavita Menon: approve purpose")
+      : actor === "owner" ? `${row.ownerName ?? "Owner"}: confirm review` : null;
+    return {
+      id: row.id, name: row.activity, entityId: row.entityId, entityName: row.entity?.name ?? null, entityShort: ENTITY_SHORT[row.entity?.name ?? ""] ?? (row.entity?.name ?? "—"),
+      owner: row.ownerName, department: row.department, principals,
+      purposeCount: purposes.length, fieldCount: purposes.reduce((n, p) => n + p.fieldCount, 0), systemCount: purposes.reduce((n, p) => n + p.systemCount, 0),
+      state: r.state, chipLabel: r.label, chipTone: r.tone, next: r.next, actor, checks: readinessChecks(ra, today), inRegister: reg,
+      waitingDays: Math.max(0, daysBetween(row.createdAt, today)), overdueDays, reviewedAt: row.lastReviewedAt?.toISOString() ?? null, statusActor,
+    };
+  });
+
+  const registerFields = built.filter((r) => r.inRegister).reduce((n, r) => n + r.fieldCount, 0);
+  const totalActivityFields = built.reduce((n, r) => n + r.fieldCount, 0);
+  const usedIds = new Set(usedFieldRows.map((u) => u.classifiedFieldId));
+  const orphanFields = Math.max(0, allFieldCount - usedIds.size);
+  const totalFields = totalActivityFields + orphanFields;
+  const pct = totalFields ? Math.round((registerFields / totalFields) * 100) : 0;
+
+  return {
+    coverage: {
+      pct, registerFields, totalFields, inProgressFields: totalActivityFields - registerFields, orphanFields,
+      inRegisterCount: built.filter((r) => r.inRegister).length, inProgressCount: built.filter((r) => !r.inRegister).length,
+      suggestions: ropaPending, dlpConnected: health.state !== "not_connected", dlpStale: health.state === "stale",
+      lastSyncLabel: health.state === "stale" ? (health.lastSyncAgo ?? null) : null, lastExported: null,
+    },
+    rows: built,
+    options: {
+      fiduciaries: [...new Map(built.filter((r) => r.entityId).map((r) => [r.entityId!, { id: r.entityId!, name: r.entityName! }])).values()],
+      principals: [...new Set(built.flatMap((r) => r.principals))].sort(),
+      departments: [...new Set(built.map((r) => r.department).filter(Boolean) as string[])].sort(),
+      owners: [...new Set(built.map((r) => r.owner).filter(Boolean) as string[])].sort(),
+    },
   };
 }

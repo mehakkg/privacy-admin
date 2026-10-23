@@ -1,30 +1,27 @@
 import { Shell } from "@/components/Shell";
-import { getActivitiesView, type ActivitiesViewParams } from "@/lib/engines/activities";
-import { ActivitiesList } from "@/components/activities/ActivitiesList";
-import type { ReadinessBucket } from "@/lib/activities/readiness";
+import { getCurrentRole } from "@/lib/session";
+import { getActivitiesScreen } from "@/lib/engines/activities";
+import { ActivitiesScreen } from "@/components/activities/ActivitiesScreen";
 
 export const dynamic = "force-dynamic";
 
-const BUCKETS = ["needs_work", "waiting_for_dpo", "review_due", "approved", "all"];
-
 /**
- * Activities — the register of how personal data is processed (Data Map redesign).
- * Nine-state readiness drives every count; nothing is hard-coded. Title = nav label.
+ * Activities (redesign) — a coverage strip + two tabs: "My work" (what I must do)
+ * and "Register" (the full record list). Keeps the ?bucket= param: bucket=all →
+ * tab=register, any other bucket → tab=work.
  */
 export default async function ActivitiesPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  const sp = await searchParams;
-  const params: ActivitiesViewParams = {
-    bucket: BUCKETS.includes(sp.bucket ?? "") ? (sp.bucket as ReadinessBucket | "all") : undefined,
-    q: sp.q, entityId: sp.entityId, principal: sp.principal, department: sp.department,
-  };
-  const view = await getActivitiesView(params);
+  const [sp, role] = await Promise.all([searchParams, getCurrentRole()]);
+  let tab = sp.tab === "work" || sp.tab === "register" ? sp.tab : "";
+  if (!tab && sp.bucket) tab = sp.bucket === "all" ? "register" : "work";
+  const screen = await getActivitiesScreen();
   return (
     <Shell active="/data-map/processing-activities" title="Activities">
-      <ActivitiesList view={view} params={params} />
+      <ActivitiesScreen screen={screen} role={role} tab={tab} />
     </Shell>
   );
 }
