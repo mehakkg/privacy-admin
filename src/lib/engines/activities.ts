@@ -151,6 +151,7 @@ import {
   readiness, bucketOf, type ReadinessActivity, type ReadinessPurpose, type ReadinessState,
   type ChipTone, type ReadinessBucket, type PurposeApproval, type NextStep as ReadinessNextStep,
 } from "@/lib/activities/readiness";
+import { noticeFor } from "@/lib/activities/notices";
 
 function approvalOf(state: string): PurposeApproval {
   return state === "approved" ? "approved" : state === "waiting_for_dpo" ? "pending" : state === "rejected" ? "rejected" : "draft";
@@ -178,7 +179,7 @@ export async function getActivitiesView(params: ActivitiesViewParams = {}, today
   ]);
   const tagInfo = new Map(tags.map((t) => {
     const v = t.purposeVersions[0];
-    return [t.id, { name: t.name, noticeRef: (t as { noticeRef?: string | null }).noticeRef ?? null, approval: approvalOf(v?.state ?? t.status), legalBasis: (v?.legalBasis ?? t.lawfulBasis) === "consent" ? "consent" as const : "legitimate_use" as const }];
+    return [t.id, { name: t.name, noticeRef: noticeFor(t.name), approval: approvalOf(v?.state ?? t.status), legalBasis: (v?.legalBasis ?? t.lawfulBasis) === "consent" ? "consent" as const : "legitimate_use" as const }];
   }));
 
   const built = rows.map((row): ActivitiesViewRow => {

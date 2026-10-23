@@ -94,11 +94,6 @@ const TEMPLATES = [
 async function main() {
   if (!process.env.DATABASE_URL) { console.log("patch-activities: no DATABASE_URL, skipping."); return; }
 
-  // Ensure the noticeRef column exists even if `db push` didn't add it this build
-  // (DDL over the pooled connection is flaky on some providers). Idempotent.
-  try { await prisma.$executeRawUnsafe(`ALTER TABLE "PurposeTag" ADD COLUMN IF NOT EXISTS "noticeRef" TEXT`); }
-  catch (e) { console.log("patch-activities: noticeRef column ensure skipped:", (e as Error).message); }
-
   // Fiduciary entities.
   for (const e of ENTITIES) {
     await prisma.entity.upsert({ where: { id: e.id }, update: { name: e.name }, create: { id: e.id, name: e.name, kind: "legal_entity" } });
@@ -120,8 +115,8 @@ async function main() {
   for (const p of PURPOSES) {
     const tag = await prisma.purposeTag.upsert({
       where: { name: p.name },
-      update: { status: APPROVAL_TO_TAG[p.approval], description: p.description, lawfulBasis: p.legalBasis, retention: p.retention, noticeRef: p.noticeRef ?? null, rejectionReason: p.rejectionReason ?? null },
-      create: { name: p.name, description: p.description, status: APPROVAL_TO_TAG[p.approval], lawfulBasis: p.legalBasis, retention: p.retention, noticeRef: p.noticeRef ?? null, rejectionReason: p.rejectionReason ?? null, approvedBy: p.approval === "approved" ? "Kavita Menon" : "", approvedAt: p.decidedAt ? d(p.decidedAt) : new Date(0) },
+      update: { status: APPROVAL_TO_TAG[p.approval], description: p.description, lawfulBasis: p.legalBasis, retention: p.retention, rejectionReason: p.rejectionReason ?? null },
+      create: { name: p.name, description: p.description, status: APPROVAL_TO_TAG[p.approval], lawfulBasis: p.legalBasis, retention: p.retention, rejectionReason: p.rejectionReason ?? null, approvedBy: p.approval === "approved" ? "Kavita Menon" : "", approvedAt: p.decidedAt ? d(p.decidedAt) : new Date(0) },
     });
     purposeId[p.key] = tag.id;
     await prisma.purposeVersion.upsert({

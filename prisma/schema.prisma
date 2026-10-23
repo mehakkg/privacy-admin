@@ -759,11 +759,6 @@ model PurposeTag {
   /// Recorded when the DPO rejects the proposal; the purpose is not shown in
   /// Approved Policy in that state.
   rejectionReason String?
-
-  /// The published notice this purpose appears in, e.g. "Account opening notice v3"
-  /// (Data Map redesign). Null = not in any notice. A consent-based purpose not in a
-  /// notice drives the "Needs a notice" readiness state and the Purposes warning.
-  noticeRef String?
   /// True when approved under combined_admin_dpo governance (the requester and the
   /// approver are the same person). System-computed at approval, never user-set,
   /// and never relabelled if the org later designates a dedicated DPO.
