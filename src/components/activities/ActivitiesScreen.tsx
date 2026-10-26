@@ -8,7 +8,7 @@ import type { ActivitiesScreen as Screen, ScreenRow } from "@/lib/engines/activi
 import type { Check } from "@/lib/activities/readiness";
 import { formatDate } from "@/lib/datamap/foundations";
 import { ActivityPane } from "./ActivityPane";
-import { AddActivityModal } from "./AddActivityModal";
+import { ActivityComposer } from "./ActivityComposer";
 
 const BASE = "/data-map/processing-activities";
 
@@ -71,7 +71,7 @@ export function ActivitiesScreen({ screen, role, tab, initialActivity }: { scree
         </div>
         {selectedId && <ActivityPane id={selectedId} role={role} onClose={closePane} onChanged={refresh} />}
       </div>
-      {addOpen && <AddActivityModal onClose={() => setAddOpen(false)} onCreated={(id) => { setAddOpen(false); openPane(id); router.refresh(); }} />}
+      {addOpen && <ActivityComposer pending={screen.coverage.suggestions} onClose={() => setAddOpen(false)} onCreated={(id) => { setAddOpen(false); router.refresh(); openPane(id); }} />}
     </div>
   );
 }

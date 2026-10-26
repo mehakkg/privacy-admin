@@ -116,6 +116,52 @@ export async function createActivityFromStartAction(input: StartInput): Promise<
   return { ok: true, id: activity.id };
 }
 
+// --- Composer (Part M): create an activity with all its links in one go -------
+
+export async function getComposerDataAction() {
+  const { getComposerData } = await import("@/lib/engines/composer");
+  return getComposerData();
+}
+
+
+export interface ComposerInput {
+  name: string; ownerName: string; department?: string | null; entityId?: string;
+  principalIds: string[];
+  purposeIds: string[];
+  fieldIds: string[];      // DLP field ids
+  manualFields: string[];  // manual field names (source: Manual)
+  vendorIds: string[];     // systems / processors / recipients
+  submit: boolean;
+}
+
+export async function createActivityFromComposerAction(input: ComposerInput): Promise<ActResult> {
+  const { actor } = await getSession();
+  const n = input.name.trim();
+  if (n.length < 3 || n.length > 80) return { ok: false, error: "Use a name of 3 to 80 characters." };
+  const cfg = await db.integrationConfig.findUnique({ where: { id: "singleton" }, select: { paMultiEntity: true } });
+  if ((cfg?.paMultiEntity ?? false) && !input.entityId) return { ok: false, error: "Choose a fiduciary." };
+  if (await nameClash(n, input.entityId ?? null)) return { ok: false, error: `An activity named ${n} already exists.` };
+
+  const activity = await db.processingActivity.create({ data: {
+    activity: n, origin: "manual", lifecycleState: input.submit ? "pending_dpo_review" : "draft",
+    ownerName: input.ownerName || actor.label, department: input.department ?? null, createdBy: actor.label,
+    entityId: input.entityId ?? null, principalsJson: JSON.stringify(input.principalIds ?? []),
+  } });
+
+  const fieldRows = input.fieldIds.length ? await db.classifiedField.findMany({ where: { id: { in: input.fieldIds } }, select: { id: true, fieldPath: true } }) : [];
+  const pathById = new Map(fieldRows.map((f) => [f.id, f.fieldPath]));
+
+  // By default every field and system applies to every purpose (Part M4).
+  for (const purposeTagId of input.purposeIds) {
+    const seg = await db.activityPurpose.create({ data: { activityId: activity.id, purposeTagId, linkState: "confirmed", processorMode: input.vendorIds.length ? "uses_processors" : "unanswered", addedBy: actor.label } });
+    for (const fid of input.fieldIds) await db.activityPurposeElement.create({ data: { activityPurposeId: seg.id, fieldName: pathById.get(fid) ?? fid, classifiedFieldId: fid, linkState: "confirmed", addedBy: actor.label } });
+    for (const name of input.manualFields) await db.activityPurposeElement.create({ data: { activityPurposeId: seg.id, fieldName: name, classifiedFieldId: null, linkState: "confirmed", addedBy: actor.label } });
+    for (const vid of input.vendorIds) await db.activityPurposeProcessor.create({ data: { activityPurposeId: seg.id, vendorId: vid, linkState: "confirmed", addedBy: actor.label } });
+  }
+  touch(activity.id);
+  return { ok: true, id: activity.id };
+}
+
 // --- Basics (autosave, optimistic locking) ----------------------------------
 
 export interface BasicsPatch { name?: string; description?: string; ownerName?: string | null; department?: string | null; entityId?: string | null; principals?: Principal[] }
