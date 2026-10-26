@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Search, X, ChevronDown, ChevronRight, MoreHorizontal, Lock } from "lucide-react";
 import type { PurposesView, PurposeRow, PurposeStatus } from "@/lib/engines/purposes";
 import { formatDate } from "@/lib/datamap/foundations";
-import { submitPurposeAction, approvePurposeAction, decidePurposeAction, createPurposeAction, type PurposeInput } from "@/app/actions/purposes";
+import { submitPurposeAction, approvePurposeAction, decidePurposeAction } from "@/app/actions/purposes";
+import { PurposeDrawer } from "./PurposeDrawer";
 
 const BASE = "/data-map/purposes";
 
@@ -33,6 +33,8 @@ export function PurposesScreen({ view, role, tab, initialPurpose }: { view: Purp
   const [basis, setBasis] = useState<string>("");
   const [selectedId, setSelectedId] = useState<string | null>(initialPurpose ?? null);
   const [addOpen, setAddOpen] = useState(false);
+  const [toast, setToast] = useState<{ msg: string; id?: string } | null>(null);
+  const showToast = (msg: string, id?: string) => { setToast({ msg, id }); setTimeout(() => setToast(null), 6000); };
 
   const active = tab === "all" || tab === "work" ? tab : (myActor === "none" ? "all" : "work");
   useEffect(() => { try { localStorage.setItem("purposes.tab", active); } catch { /* fine */ } }, [active]);
@@ -60,7 +62,16 @@ export function PurposesScreen({ view, role, tab, initialPurpose }: { view: Purp
         </div>
         <button className="btn primary" onClick={() => setAddOpen(true)}>+ Add purpose</button>
       </div>
-      {addOpen && <AddPurposeDrawer onClose={() => setAddOpen(false)} onCreated={(id) => { setAddOpen(false); openPane(id); router.refresh(); }} />}
+      {addOpen && <PurposeDrawer
+        existing={view.rows.map((r) => ({ id: r.id, name: r.name }))}
+        onClose={() => setAddOpen(false)}
+        onUse={(id) => { setAddOpen(false); openPane(id); }}
+        onSaved={(id, status, name) => { setAddOpen(false); router.refresh(); showToast(status === "pending" ? `Submitted: ${name}` : `Draft saved: ${name}`, id); }}
+      />}
+      {toast && <div className="toast" role="status" style={{ position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", zIndex: 60, background: "var(--text, #0f172a)", color: "#fff", padding: "10px 16px", borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,0.25)", display: "flex", gap: 12, alignItems: "center" }}>
+        <span>{toast.msg}</span>
+        {toast.id && <button className="link-btn" style={{ color: "#93c5fd" }} onClick={() => { const id = toast.id!; setToast(null); openPane(id); }}>Open →</button>}
+      </div>}
 
       <SummaryStrip c={view.counts} onNotice={() => { setTab("work"); }} />
 
@@ -266,68 +277,6 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
       {hint && <span className="cell-sub">{hint}</span>}
     </div>
   );
-}
-
-const LEGIT_TYPES = [
-  "Voluntarily provided for a specified purpose (7(a))",
-  "Disclosure required by law (7(d))",
-  "Compliance with a court order (7(e))",
-  "Purposes of employment (7(i))",
-];
-const TRIGGERS = ["after account closure", "after the purpose is served", "after last interaction", "as required by law"];
-
-/** Add purpose — name-first. Save as draft needs only a name; Submit for approval
- *  validates everything and sends it to the DPO. Creates a standalone purpose
- *  (not linked to an activity). */
-function AddPurposeDrawer({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [legalBasis, setLegalBasis] = useState<"consent" | "legitimate_use">("consent");
-  const [legitimateUseType, setLegitType] = useState(LEGIT_TYPES[3]);
-  const [amount, setAmount] = useState(5);
-  const [unit, setUnit] = useState<"months" | "years">("years");
-  const [trigger, setTrigger] = useState(TRIGGERS[0]);
-  const [justification, setJustification] = useState("");
-  const [err, setErr] = useState<string | null>(null);
-  const [pending, start] = useTransition();
-  const nameRef = useRef<HTMLInputElement>(null);
-  useEffect(() => { nameRef.current?.focus(); }, []);
-
-  const input = (): PurposeInput => ({ name, description, legalBasis, legitimateUseType: legalBasis === "legitimate_use" ? legitimateUseType : undefined, amount, unit, trigger, justification });
-  const save = (submit: boolean) => start(async () => { const r = await createPurposeAction(null, input(), submit); if (r.ok && r.purposeId) onCreated(r.purposeId); else setErr(r.error ?? "Couldn’t save."); });
-
-  return createPortal(
-    <div className="modal-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="mp-drawer" role="dialog" aria-modal="true" aria-label="Add purpose" style={{ width: 460 }}>
-        <div className="mp-drawer-head"><strong>Add a purpose</strong><button className="icon-btn" onClick={onClose}><X size={16} /></button></div>
-        <div className="mp-drawer-body stack" style={{ gap: 12, overflow: "auto", padding: 16 }}>
-          <label className="fld"><span>Name</span><input ref={nameRef} className="input" value={name} maxLength={80} onChange={(e) => { setName(e.target.value); setErr(null); }} placeholder="e.g. Credit assessment" /></label>
-          <label className="fld"><span>Description</span><textarea className="input" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What it’s used for, in plain language" /><span className="cell-sub">This is the text Data Principals see in the notice.</span></label>
-          <label className="fld"><span>Legal basis</span>
-            <select className="input" value={legalBasis} onChange={(e) => setLegalBasis(e.target.value as "consent" | "legitimate_use")}>
-              <option value="consent">Consent (Section 6)</option>
-              <option value="legitimate_use">Legitimate use (Section 7)</option>
-            </select>
-          </label>
-          {legalBasis === "legitimate_use" && (
-            <label className="fld"><span>Legitimate-use type</span><select className="input" value={legitimateUseType} onChange={(e) => setLegitType(e.target.value)}>{LEGIT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select></label>
-          )}
-          <div className="fld"><span>Retention</span>
-            <div className="row" style={{ gap: 8 }}>
-              <input className="input" type="number" min={1} max={99} value={amount} onChange={(e) => setAmount(Number(e.target.value))} style={{ width: 72 }} />
-              <select className="input" value={unit} onChange={(e) => setUnit(e.target.value as "months" | "years")} style={{ width: 110 }}><option value="months">months</option><option value="years">years</option></select>
-              <select className="input" value={trigger} onChange={(e) => setTrigger(e.target.value)} style={{ flex: 1 }}>{TRIGGERS.map((t) => <option key={t} value={t}>{t}</option>)}</select>
-            </div>
-          </div>
-          <label className="fld"><span>Note for your DPO</span><textarea className="input" rows={2} value={justification} onChange={(e) => setJustification(e.target.value)} placeholder="Why this purpose is needed" /></label>
-          {err && <div className="notice warn" style={{ margin: 0 }}>{err}</div>}
-        </div>
-        <div className="mp-drawer-foot row" style={{ justifyContent: "space-between", gap: 8, padding: 12, borderTop: "1px solid var(--border)" }}>
-          <button className="btn" disabled={pending} onClick={() => save(false)}>Save as draft</button>
-          <button className="btn primary" disabled={pending} onClick={() => save(true)}>Submit for approval</button>
-        </div>
-      </div>
-    </div>, document.body);
 }
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
