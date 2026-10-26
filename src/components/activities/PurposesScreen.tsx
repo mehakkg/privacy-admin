@@ -70,8 +70,8 @@ export function PurposesScreen({ view, role, tab, initialPurpose }: { view: Purp
 
           <div className="row" style={{ gap: 8, marginTop: 14, flexWrap: "wrap" }}>
             <div className="inv-search" style={{ flex: "0 0 auto", maxWidth: 280 }}><Search size={14} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search purpose or activity" aria-label="Search" /></div>
-            <select className="input sm" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status"><option value="">Status</option><option value="approved">Approved</option><option value="pending">Pending DPO</option><option value="draft">Draft</option><option value="rejected">Rejected</option></select>
-            <select className="input sm" value={basis} onChange={(e) => setBasis(e.target.value)} aria-label="Legal basis"><option value="">Legal basis</option><option value="consent">Consent</option><option value="legitimate">Legitimate use</option></select>
+            <select className="input sm" style={{ flex: "0 0 auto", width: "auto", minWidth: 120 }} value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status"><option value="">Status</option><option value="approved">Approved</option><option value="pending">Pending DPO</option><option value="draft">Draft</option><option value="rejected">Rejected</option></select>
+            <select className="input sm" style={{ flex: "0 0 auto", width: "auto", minWidth: 130 }} value={basis} onChange={(e) => setBasis(e.target.value)} aria-label="Legal basis"><option value="">Legal basis</option><option value="consent">Consent</option><option value="legitimate">Legitimate use</option></select>
             {(q || status || basis) && <button className="btn ghost sm" onClick={() => { setQ(""); setStatus(""); setBasis(""); }}>Clear all</button>}
           </div>
 
