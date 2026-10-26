@@ -104,13 +104,21 @@ export async function getPurposeLibrary(): Promise<PurposeLibraryView> {
 export type PurposeStatus = "approved" | "pending" | "draft" | "rejected";
 export interface PurposeRow {
   id: string; name: string; description: string;
-  legalBasisLabel: string; status: PurposeStatus; statusLabel: string; version: number;
+  legalBasisLabel: string; legalBasisShort: string; status: PurposeStatus; statusLabel: string; version: number;
   usedByCount: number; usedByFirst: string | null;
-  inNotice: string | null; noticeRequired: boolean; rejectionReason: string | null;
-  linkedActivities: string[];
+  inNotice: string | null; noticeRequired: boolean; notInNotice: boolean; rejectionReason: string | null;
+  linkedActivities: { id: string; name: string }[];
+  approvedBy: string | null; approvedAt: string | null;
   edit: { name: string; description: string; legalBasis: "consent" | "legitimate_use"; legitimateUseType: string | null; amount: number; unit: "months" | "years"; trigger: string; justification: string };
 }
-export interface PurposesView { rows: PurposeRow[]; counts: { needs_action: number; pending: number; approved: number; all: number } }
+export interface PurposesView { rows: PurposeRow[]; counts: { needs_action: number; pending: number; approved: number; draft: number; rejected: number; notInNotice: number; all: number } }
+
+/** Short legal-basis form for the table, e.g. "Consent · S.6" / "Legitimate use · 7(i)". */
+function basisShort(basis: "consent" | "legitimate_use", legitimateUseType: string | null): string {
+  if (basis === "consent") return "Consent · S.6";
+  if (legitimateUseType && /employ/i.test(legitimateUseType)) return "Legitimate use · 7(i)";
+  return "Legitimate use · S.7";
+}
 
 const STATUS_OF: Record<string, PurposeStatus> = { approved: "approved", waiting_for_dpo: "pending", draft: "draft", changes_requested: "draft", rejected: "rejected" };
 const STATUS_LABEL: Record<PurposeStatus, string> = { approved: "Approved", pending: "Pending DPO approval", draft: "Draft", rejected: "Rejected" };
@@ -120,25 +128,28 @@ const STATUS_LABEL: Record<PurposeStatus, string> = { approved: "Approved", pend
 export async function getPurposesView(): Promise<PurposesView> {
   const [tags, segs] = await Promise.all([
     db.purposeTag.findMany({ where: { name: { in: MERIDIAN_PURPOSES } }, include: { purposeVersions: { orderBy: { number: "desc" } } }, orderBy: { name: "asc" } }),
-    db.activityPurpose.findMany({ where: { linkState: "confirmed" }, select: { purposeTagId: true, activity: { select: { activity: true } } } }),
+    db.activityPurpose.findMany({ where: { linkState: "confirmed" }, select: { purposeTagId: true, activity: { select: { id: true, activity: true } } } }),
   ]);
-  const byPurpose = new Map<string, string[]>();
-  for (const s of segs) { if (!s.purposeTagId) continue; (byPurpose.get(s.purposeTagId) ?? byPurpose.set(s.purposeTagId, []).get(s.purposeTagId)!).push(s.activity.activity); }
+  const byPurpose = new Map<string, { id: string; name: string }[]>();
+  for (const s of segs) { if (!s.purposeTagId) continue; (byPurpose.get(s.purposeTagId) ?? byPurpose.set(s.purposeTagId, []).get(s.purposeTagId)!).push({ id: s.activity.id, name: s.activity.activity }); }
 
   const rows: PurposeRow[] = tags.map((t) => {
     const v = t.purposeVersions[0];
     const legalBasis = (v?.legalBasis ?? t.lawfulBasis) === "consent" ? "consent" as const : "legitimate_use" as const;
     const legalBasisLabel = legalBasis === "consent" ? "Consent (Section 6)" : `Legitimate use${v?.legitimateUseType ? `: ${v.legitimateUseType}` : ""}`;
     const status = STATUS_OF[v?.state ?? t.status] ?? "approved";
-    const used = [...new Set(byPurpose.get(t.id) ?? [])];
+    const used = [...new Map((byPurpose.get(t.id) ?? []).map((a) => [a.id, a])).values()];
     const ret = parseRetention(t.retention);
+    const inNotice = noticeFor(t.name);
     return {
       id: t.id, name: t.name, description: v?.description ?? t.description,
-      legalBasisLabel, status, statusLabel: STATUS_LABEL[status], version: v?.number ?? 1,
-      usedByCount: used.length, usedByFirst: used[0] ?? null,
-      inNotice: noticeFor(t.name), noticeRequired: legalBasis === "consent",
+      legalBasisLabel, legalBasisShort: basisShort(legalBasis, v?.legitimateUseType ?? null), status, statusLabel: STATUS_LABEL[status], version: v?.number ?? 1,
+      usedByCount: used.length, usedByFirst: used[0]?.name ?? null,
+      inNotice, noticeRequired: legalBasis === "consent", notInNotice: status === "approved" && legalBasis === "consent" && !inNotice,
       rejectionReason: status === "rejected" ? (v?.decisionComment ?? t.rejectionReason ?? null) : null,
       linkedActivities: used,
+      approvedBy: status === "approved" ? (v?.decidedBy ?? t.approvedBy ?? "Kavita Menon") : null,
+      approvedAt: status === "approved" ? (v?.decidedAt?.toISOString() ?? t.approvedAt?.toISOString() ?? null) : null,
       edit: { name: t.name, description: v?.description ?? t.description, legalBasis, legitimateUseType: v?.legitimateUseType ?? null, amount: ret.amount, unit: ret.unit, trigger: ret.trigger, justification: v?.justification ?? "" },
     };
   });
@@ -147,6 +158,9 @@ export async function getPurposesView(): Promise<PurposesView> {
     needs_action: rows.filter((r) => r.status === "draft" || r.status === "rejected").length,
     pending: rows.filter((r) => r.status === "pending").length,
     approved: rows.filter((r) => r.status === "approved").length,
+    draft: rows.filter((r) => r.status === "draft").length,
+    rejected: rows.filter((r) => r.status === "rejected").length,
+    notInNotice: rows.filter((r) => r.notInNotice).length,
     all: rows.length,
   };
   return { rows, counts };
