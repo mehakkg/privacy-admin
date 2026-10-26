@@ -1,15 +1,20 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
 import { PageHead } from "@/components/ui";
 import { OrgProfileForm, type EntityProfile } from "@/components/settings/OrgProfileForm";
 import { OrgBrandingForm, type EntityBranding, type BrandingValue } from "@/components/settings/OrgBrandingForm";
+import { FiduciariesManager, type FiduciaryRow } from "@/components/settings/FiduciariesManager";
+import { detailFor } from "@/lib/activities/fiduciaries";
+import { getCurrentRole } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 const TABS = [
   { key: "profile", label: "Profile" },
   { key: "branding", label: "Branding" },
+  { key: "fiduciaries", label: "Fiduciaries" },
 ] as const;
 type Tab = (typeof TABS)[number]["key"];
 
@@ -23,16 +28,30 @@ type Tab = (typeof TABS)[number]["key"];
 export default async function OrganizationSettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; action?: string }>;
 }) {
   const params = await searchParams;
-  const tab: Tab = params.tab === "branding" ? "branding" : "profile";
+  // B2 redirect: the old "Entities" tab/route is now "Fiduciaries".
+  if (params.tab === "entities") redirect("/settings/organization?tab=fiduciaries");
+  const tab: Tab = params.tab === "branding" ? "branding" : params.tab === "fiduciaries" ? "fiduciaries" : "profile";
 
-  const [org, entities, brandingRows] = await Promise.all([
+  const [org, entities, brandingRows, actCounts, role] = await Promise.all([
     db.orgSettings.findUnique({ where: { id: "org" } }),
-    db.entity.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, legalName: true } }),
+    db.entity.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, legalName: true, sdfStatus: true } }),
     db.organizationBranding.findMany(),
+    db.processingActivity.groupBy({ by: ["entityId"], _count: true }),
+    getCurrentRole(),
   ]);
+  const usedBy = new Map(actCounts.map((c) => [c.entityId, c._count] as [string | null, number]));
+  const fiduciaryRows: FiduciaryRow[] = entities.map((e) => {
+    const d = detailFor(e.name);
+    return {
+      id: e.id, name: e.name, legalName: e.legalName, usedBy: usedBy.get(e.id) ?? 0,
+      short: d.shortName, cin: d.cin, officeCity: d.officeCity, officeState: d.officeState, website: d.website,
+      dpo: d.dpo, grievanceContact: d.grievanceContact, publishedEmail: d.publishedEmail,
+      sdfNotified: e.sdfStatus === "sdf" || d.sdfStatus === "notified", sdfNotifiedOn: d.sdfNotifiedOn, notificationRef: d.notificationRef,
+    };
+  });
 
   const orgDefaultRow = brandingRows.find((r) => !r.entityId) ?? null;
   let orgSurfaces: string[] = ["notices", "preference_center"];
@@ -78,8 +97,10 @@ export default async function OrganizationSettingsPage({
           }}
           entities={entityProfiles}
         />
-      ) : (
+      ) : tab === "branding" ? (
         <OrgBrandingForm orgName={orgName} initial={orgDefault} entities={entityBranding} />
+      ) : (
+        <FiduciariesManager rows={fiduciaryRows} role={role} openAdd={params.action === "add"} />
       )}
     </Shell>
   );
