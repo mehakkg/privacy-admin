@@ -83,12 +83,17 @@ export async function getComposerData(): Promise<ComposerData> {
     fieldIds: [...new Set(a.purposeSegments.flatMap((s) => s.elements.map((e) => e.classifiedFieldId).filter(Boolean) as string[]))],
   }));
 
+  // Who options = the principals actually used across the register, plus the DPDP
+  // base categories — so names like "Loan applicant" and "Visitor" are offered.
+  const regPrincipals = [...new Set(acts.flatMap((a) => { try { return JSON.parse(a.principalsJson || "[]") as string[]; } catch { return []; } }))];
+  const principalNames = [...new Set([...regPrincipals, ...PRINCIPAL_OPTIONS.map((p) => p.label)])].filter(Boolean).sort();
+
   return {
     currentUser: actor.label,
     multiEntity: cfg?.paMultiEntity ?? false,
     entities,
     owners: USERS.filter((u) => u.roles.includes("admin")).map((u) => ({ name: u.name, department: u.department })),
-    principals: PRINCIPAL_OPTIONS.map((p) => ({ id: p.id, label: p.label })),
+    principals: principalNames.map((n) => ({ id: n, label: n })),
     channels: [...DECLARED_CHANNELS],
     purposes,
     fields,

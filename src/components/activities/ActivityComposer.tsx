@@ -110,14 +110,21 @@ export function ActivityComposer({ onClose, onCreated, sourceLine, pending: pend
 
   const parseDescribe = (text: string) => {
     if (!data) return;
-    const lc = text.toLowerCase();
-    const has = (s: string) => lc.includes(s.toLowerCase());
-    setWho(data.principals.filter((p) => has(p.label) || has(p.label.replace(/s$/, ""))).map((p) => p.id));
-    setWhat(data.fields.filter((f) => has(f.path) || has(f.path.replace(/_/g, " "))).map((f) => f.id));
-    const ch = data.channels.find((c) => has(c)); setHow(ch ?? null);
-    setWhy(data.purposes.filter((p) => has(p.name)).map((p) => p.id));
-    setWhere(data.systems.filter((s) => has(s.name)).map((s) => s.id));
-    setWhom(data.recipients.filter((s) => has(s.name)).map((s) => s.id));
+    const lc = ` ${text.toLowerCase()} `;
+    const STOP = new Set(["the", "and", "for", "with", "data", "personal", "information", "activity", "system", "that", "they", "their", "from", "into", "when", "where"]);
+    // Match an option if the text contains its full label, or a significant word of
+    // it (≥4 chars, not a stopword). Deterministic vocabulary matching (M3).
+    const hit = (label: string) => {
+      if (lc.includes(` ${label.toLowerCase()} `) || lc.includes(label.toLowerCase())) return true;
+      const words = label.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((w) => w.length >= 4 && !STOP.has(w));
+      return words.some((w) => lc.includes(w));
+    };
+    setWho(data.principals.filter((p) => hit(p.label)).map((p) => p.id));
+    setWhat(data.fields.filter((f) => hit(f.path.replace(/[_.]/g, " "))).map((f) => f.id));
+    const ch = data.channels.find((c) => hit(c)); setHow(ch ?? null);
+    setWhy(data.purposes.filter((p) => hit(p.name)).map((p) => p.id));
+    setWhere(data.systems.filter((s) => hit(s.name)).map((s) => s.id));
+    setWhom(data.recipients.filter((s) => hit(s.name)).map((s) => s.id));
     setStep("compose");
   };
 
