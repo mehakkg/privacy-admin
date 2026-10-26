@@ -730,7 +730,7 @@ export async function getActivityPane(id: string, today: Date = new Date()): Pro
     noticeTarget: block === "notice" && blocking ? blocking.name : null,
     ownerOptions: USERS.map((u) => ({ name: u.name, department: u.department })), principalOptions: PRINCIPAL_OPTIONS.map((p) => ({ id: p.id, label: p.label })),
     purposeOptions: approvedTags.map((t) => ({ id: t.id, name: t.name })), currentPrincipals: principals,
-    canSubmit: checks.slice(0, 5).every((c) => c.state === "pass" || c.state === "na") && !ra.submitted && !ra.approved,
+    canSubmit: checks.slice(0, 4).every((c) => c.state === "pass" || c.state === "na") && !ra.submitted && !ra.approved,
     nextVersion: (active?.number ?? 0) + 1,
   };
 }

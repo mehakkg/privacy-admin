@@ -177,13 +177,13 @@ function shortVerb(r: ScreenRow): string {
     case "needs_processors": return "Choose systems";
     case "needs_approval": return r.next?.text.startsWith("Resubmit") ? "Resubmit purpose" : "Submit purpose";
     case "needs_notice": return "Add to notice";
-    case "ready_to_submit": return "Submit for DPO review";
+    case "ready_to_submit": return r.next?.text ?? "Submit for DPO review";
     default: return "Open";
   }
 }
 
 // --- Register ---------------------------------------------------------------
-const URGENCY: Record<string, number> = { review_due: 0, needs_basics: 1, needs_data: 1, needs_processors: 1, needs_approval: 1, needs_notice: 1, ready_to_submit: 1, waiting_for_dpo: 2, approved: 3 };
+const URGENCY: Record<string, number> = { review_due: 0, needs_basics: 1, needs_data: 1, needs_processors: 1, needs_approval: 1, ready_to_submit: 1, waiting_for_dpo: 2, needs_notice: 2, approved: 3 };
 function Register({ rows, onOpen, selectedId, compact }: { rows: ScreenRow[]; onOpen: (id: string) => void; selectedId: string | null; compact: boolean }) {
   const [chip, setChip] = useState<"all" | "register" | "progress">("all");
   const multiFiduciary = new Set(rows.map((r) => r.entityId)).size > 1;

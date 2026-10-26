@@ -8,22 +8,28 @@
  * ./readiness.test.ts.
  */
 
+// State keys are kept stable across the Part N reorder, but two change meaning:
+//  - needs_approval  → "Needs a purpose decision" (a Draft purpose no longer
+//    blocks; it is bundled with the activity's submission). Only Pending or
+//    Rejected purposes block here.
+//  - needs_notice    → "Approved · needs a notice": the DPO has now approved the
+//    activity, and the notice is the LAST step before the register.
+// New check order: Basics · Data · Systems · Purposes · DPO · Notice.
 export type ReadinessState =
   | "needs_basics" | "needs_data" | "needs_processors" | "needs_approval"
-  | "needs_notice" | "ready_to_submit" | "waiting_for_dpo" | "approved" | "review_due";
+  | "ready_to_submit" | "waiting_for_dpo" | "needs_notice" | "approved" | "review_due";
 
-/** Chip styling token per state (see spec). 1–5 amber outline, 6 primary outline,
- *  7 info, 8 success, 9 amber fill. */
+/** Chip styling token per state. */
 export type ChipTone = "amber-outline" | "primary-outline" | "info" | "success" | "amber-fill";
 
 export const READINESS_META: Record<ReadinessState, { label: string; tone: ChipTone }> = {
   needs_basics:    { label: "Needs the basics",         tone: "amber-outline" },
   needs_data:      { label: "Needs data",               tone: "amber-outline" },
   needs_processors:{ label: "Needs processors",         tone: "amber-outline" },
-  needs_approval:  { label: "Needs a purpose approval", tone: "amber-outline" },
-  needs_notice:    { label: "Needs a notice",           tone: "amber-outline" },
+  needs_approval:  { label: "Needs a purpose decision", tone: "amber-outline" },
   ready_to_submit: { label: "Ready to submit",          tone: "primary-outline" },
   waiting_for_dpo: { label: "Waiting for DPO",          tone: "info" },
+  needs_notice:    { label: "Approved · needs a notice", tone: "primary-outline" },
   approved:        { label: "Approved",                 tone: "success" },
   review_due:      { label: "Review due",               tone: "amber-fill" },
 };
@@ -83,30 +89,33 @@ export function readiness(a: ReadinessActivity, today: Date = new Date()): Readi
   const noProc = a.purposes.filter((p) => p.fieldCount > 0 && p.systemCount === 0).length;
   if (noProc > 0) return mk("needs_processors", { text: `Choose systems for ${plural(noProc, "purpose")}`, isLink: true });
 
-  // 4 — Needs a purpose approval: any linked purpose Draft/Pending/Rejected.
-  const unapproved = a.purposes.filter((p) => p.approval !== "approved");
-  if (unapproved.length > 0) {
-    // Prefer an actionable one (draft/rejected) for the link; else the pending one (text).
-    const actionable = unapproved.find((p) => p.approval === "draft" || p.approval === "rejected") ?? unapproved[0];
-    const next: NextStep = actionable.approval === "draft" ? { text: `Submit '${actionable.name}'`, isLink: true }
-      : actionable.approval === "rejected" ? { text: `Resubmit '${actionable.name}'`, isLink: true }
-      : { text: `Waiting on '${actionable.name}'`, isLink: false };
+  // 4 — Needs a purpose decision: a Pending (submitted separately) or Rejected
+  //     purpose blocks. A Draft purpose does NOT block — it is bundled with this
+  //     activity's submission and reviewed together (Part N2).
+  const blocking = a.purposes.filter((p) => p.approval === "pending" || p.approval === "rejected");
+  if (blocking.length > 0) {
+    const rejected = blocking.find((p) => p.approval === "rejected");
+    const next: NextStep = rejected
+      ? { text: `Resubmit '${rejected.name}'`, isLink: true }
+      : { text: `Waiting on '${blocking[0].name}'`, isLink: false };
     return mk("needs_approval", next);
   }
-  // 5 — Needs a notice: any consent-based purpose not in a published notice.
-  const noNotice = a.purposes.find((p) => p.legalBasis === "consent" && !p.inPublishedNotice);
-  if (noNotice) return mk("needs_notice", { text: `Add '${noNotice.name}' to a notice`, isLink: true });
 
-  // Past all gaps. Distinguish review-due (more specific) from plain approved.
+  // Checks 1–4 pass (every purpose is Approved or a bundled Draft).
   if (a.approved) {
+    // 6 — Notice is the last step before the register (now AFTER DPO approval).
+    const noNotice = a.purposes.find((p) => p.legalBasis === "consent" && !p.inPublishedNotice);
+    if (noNotice) return mk("needs_notice", { text: `Add '${noNotice.name}' to a notice`, isLink: true });
     const stale = a.lastReviewedAt != null && today.getTime() - new Date(a.lastReviewedAt).getTime() > REVIEW_DUE_DAYS * DAY;
     if (stale || a.driftSinceApproval) return mk("review_due", { text: "Review this activity", isLink: true });
     return mk("approved", null);
   }
-  // 7 — Waiting for DPO (submitted, not yet approved).
+  // 5 — Waiting for DPO (submitted, not yet approved).
   if (a.submitted) return mk("waiting_for_dpo", null);
-  // 6 — Ready to submit.
-  return mk("ready_to_submit", { text: "Submit for DPO review", isLink: true });
+  // 5 — Ready to submit. Draft purposes travel with the submission.
+  const draftCount = a.purposes.filter((p) => p.approval === "draft").length;
+  const text = draftCount > 0 ? `Submit with ${plural(draftCount, "new purpose")}` : "Submit for DPO review";
+  return mk("ready_to_submit", { text, isLink: true });
 }
 
 /** Buckets for the list filter chips + summary line. */
@@ -132,21 +141,23 @@ export type Actor = "admin" | "dpo" | "owner" | "none";
 export function readinessActor(state: ReadinessState, a: ReadinessActivity): Actor {
   switch (state) {
     case "needs_basics": case "needs_data": case "needs_processors": case "needs_notice": case "ready_to_submit": return "admin";
-    case "needs_approval": return a.purposes.some((p) => p.approval === "draft" || p.approval === "rejected") ? "admin" : "dpo";
+    // A Rejected purpose is the Admin's to fix; a Pending-only decision is the DPO's.
+    case "needs_approval": return a.purposes.some((p) => p.approval === "rejected") ? "admin" : "dpo";
     case "waiting_for_dpo": return "dpo";
     case "review_due": return "owner";
     case "approved": return "none";
   }
 }
 
-export type CheckKey = "basics" | "data" | "systems" | "purpose" | "notice" | "dpo";
+export type CheckKey = "basics" | "data" | "systems" | "purpose" | "dpo" | "notice";
 export type CheckState = "pass" | "block" | "todo" | "na";
 export interface Check { key: CheckKey; label: string; state: CheckState }
-const CHECK_ORDER: CheckKey[] = ["basics", "data", "systems", "purpose", "notice", "dpo"];
-const CHECK_LABEL: Record<CheckKey, string> = { basics: "Basics", data: "Data", systems: "Systems", purpose: "Purpose", notice: "Notice", dpo: "DPO" };
+// Progress-dot order (Part N1): Basics · Data · Systems · Purposes · DPO · Notice.
+const CHECK_ORDER: CheckKey[] = ["basics", "data", "systems", "purpose", "dpo", "notice"];
+const CHECK_LABEL: Record<CheckKey, string> = { basics: "Basics", data: "Data", systems: "Systems", purpose: "Purposes", dpo: "DPO", notice: "Notice" };
 const BLOCK_OF: Record<ReadinessState, CheckKey | null> = {
   needs_basics: "basics", needs_data: "data", needs_processors: "systems", needs_approval: "purpose",
-  needs_notice: "notice", ready_to_submit: "dpo", waiting_for_dpo: "dpo", approved: null, review_due: null,
+  ready_to_submit: "dpo", waiting_for_dpo: "dpo", needs_notice: "notice", approved: null, review_due: null,
 };
 
 /** The six checks as dot states: checks before the blocking one pass, the blocking

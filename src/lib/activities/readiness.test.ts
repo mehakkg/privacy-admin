@@ -32,9 +32,12 @@ const fixtures: { name: string; a: ReadinessActivity; state: ReadinessState; nex
     a: A({ purposes: [P({ name: "Fraud detection", fieldCount: 4, systemCount: 1, approval: "pending" })] }) },
   { name: "Debt collections", state: "needs_processors", next: "Choose systems for 1 purpose",
     a: A({ purposes: [P({ name: "Recovery & collections", fieldCount: 2, systemCount: 0 })] }) },
-  { name: "Marketing campaigns", state: "needs_approval", next: "Submit 'Product marketing'",
+  // Part N: a Draft purpose is bundled, so this is Ready to submit, not blocked.
+  { name: "Marketing campaigns", state: "ready_to_submit", next: "Submit with 1 new purpose",
     a: A({ principals: ["Customer", "Prospect"], purposes: [P({ name: "Product marketing", fieldCount: 3, systemCount: 1, approval: "draft", inPublishedNotice: false })] }) },
-  { name: "Customer support calls", state: "needs_notice", next: "Add 'Customer support & complaints' to a notice",
+  // Part N: the notice comes after DPO approval, so an approved purpose that isn't
+  // yet submitted is Ready to submit (notice is a later step).
+  { name: "Customer support calls", state: "ready_to_submit", next: "Submit for DPO review",
     a: A({ purposes: [P({ name: "Customer support & complaints", fieldCount: 3, systemCount: 1, inPublishedNotice: false })] }) },
   { name: "Payroll", state: "needs_basics", next: "Add an owner",
     a: A({ ownerId: null, department: "HR", principals: ["Employee"], purposes: [P({ name: "Payroll & statutory deductions", fieldCount: 0, systemCount: 0, legalBasis: "legitimate_use" })] }) },
@@ -71,6 +74,10 @@ eq("rejected -> resubmit link", readiness(A({ purposes: [P({ name: "X", approval
 
 // --- review-due via drift (not just age) -----------------------------------
 eq("drift -> review_due", readiness(A({ approved: true, submitted: true, lastReviewedAt: "2026-10-20", driftSinceApproval: true }), TODAY).state, "review_due");
+
+// --- Part N: notice is the last step, AFTER DPO approval -------------------
+eq("approved + consent not in a notice -> needs_notice (not in register yet)",
+  readiness(A({ approved: true, submitted: true, purposes: [P({ inPublishedNotice: false })] }), TODAY).state, "needs_notice");
 
 console.log(`\nActivity readiness: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);
