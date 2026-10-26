@@ -95,8 +95,9 @@ function navGroups(counts: NavCounts, role: ActorRole): NavEntry[] {
       children: [
         { href: "/data-map/inventory", label: "Data inventory", ready: true, badge: counts.inventoryGaps || undefined, badgeLabel: `${counts.inventoryGaps} inventory gaps`, warn: counts.dlpWarn },
         { href: "/data-map/processing-activities", label: "Activities", ready: true, badge: counts.activitiesNeedsWork || undefined, badgeLabel: `${counts.activitiesNeedsWork} activities need work` },
+        { href: "/data-map/purposes", label: "Purposes", ready: true },
         { href: "/data-flow/map", label: "Data flow", ready: true },
-        { href: "/discovery/ropa", label: "ROPA recommendations", ready: true, badge: counts.ropaPending || undefined, badgeLabel: `${counts.ropaPending} pending recommendations` },
+        { href: "/data-map/suggested-activities", label: "Suggested activities", ready: true, badge: counts.ropaPending || undefined, badgeLabel: `${counts.ropaPending} pending suggestions` },
       ],
     },
     {

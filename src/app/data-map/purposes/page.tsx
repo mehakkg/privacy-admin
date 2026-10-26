@@ -10,7 +10,7 @@ export default async function PurposesPage({ searchParams }: { searchParams: Pro
   const sp = await searchParams;
   const view = await getPurposesView();
   return (
-    <Shell active="/data-map/processing-activities" title="Purposes">
+    <Shell active="/data-map/purposes" title="Purposes">
       <PurposesView view={view} segment={sp.segment ?? "needs_action"} />
     </Shell>
   );

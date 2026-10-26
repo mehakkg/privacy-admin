@@ -298,12 +298,12 @@ textarea {
 .nav::-webkit-scrollbar-thumb { background: #334155; border-radius: 8px; border: 2px solid #0f172a; }
 .nav::-webkit-scrollbar-thumb:hover { background: #475569; }
 
-/* Group header (uppercase section label + chevron) */
+/* Module row (sentence case, icon + label + chevron) — NOT a section label. */
 .nav-group-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 18px 26px 8px;
+  gap: 14px;
+  padding: 11px 14px 11px 22px;
   cursor: pointer;
   user-select: none;
   background: none;
@@ -311,12 +311,15 @@ textarea {
   width: 100%;
 }
 .nav-group-header .label {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #64748b;
+  flex: 1;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: #cbd5e1;
 }
+.nav-group-header .nav-group-ico { width: 20px; height: 20px; color: inherit; flex-shrink: 0; }
 .nav-group-header svg { width: 14px; height: 14px; color: #64748b; transition: transform 0.15s ease; flex-shrink: 0; }
 .nav-group.closed .nav-group-header svg { transform: rotate(180deg); }
 .nav-group.closed .nav-group-items { display: none; }
@@ -340,6 +343,8 @@ textarea {
   text-decoration: none;
 }
 .nav-item svg { width: 20px; height: 20px; flex-shrink: 0; }
+/* Leaf labels wrap to two lines instead of truncating (e.g. "Notifications & Board reporting"). */
+.nav-item .label { white-space: normal; overflow-wrap: anywhere; line-height: 1.25; }
 .nav-item:hover { background: #1b2942; color: #cbd5e1; }
 .nav-item.active {
   border-left-color: #2563eb;

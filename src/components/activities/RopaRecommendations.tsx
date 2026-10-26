@@ -115,11 +115,11 @@ function Header({ view, refreshing, onRefresh }: { view: RopaRecsView; refreshin
   return (
     <div className="pa-head">
       <div className="stack" style={{ gap: 4 }}>
-        <h1 className="inv-title">ROPA recommendations</h1>
-        <p className="cell-sub" style={{ margin: 0, maxWidth: 720 }}>Suggested activities generated from data DLP has classified. Nothing enters the register until you accept it and Kavita Menon approves it.</p>
+        <h1 className="inv-title">Suggested activities</h1>
+        <p className="cell-sub" style={{ margin: 0, maxWidth: 720 }}>Activities suggested from data DLP has classified. Accepting one creates a draft activity. It enters the register only after its checks pass and Kavita Menon approves it.</p>
       </div>
       <div className="stack" style={{ gap: 4, alignItems: "flex-end" }}>
-        <button className="btn sec" onClick={onRefresh} disabled={refreshing}><RefreshCw size={13} className={refreshing ? "spin" : ""} /> Refresh recommendations</button>
+        <button className="btn sec" onClick={onRefresh} disabled={refreshing}><RefreshCw size={13} className={refreshing ? "spin" : ""} /> Refresh</button>
         <span className="cell-sub">{view.generatedAt}</span>
       </div>
     </div>

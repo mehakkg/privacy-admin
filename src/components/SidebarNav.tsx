@@ -247,9 +247,11 @@ export function SidebarNav({
     const headerBadgeText = headerBadge !== undefined ? (headerBadge > 99 ? "99+" : String(headerBadge)) : "";
     // §2: when a child is active, the parent gets a 2px left accent but no fill.
     const ownsActive = groupOwnsActive(group);
+    const GroupIcon = GROUP_ICON[group.key] ?? childIcon(group.label);
     return (
       <div key={group.key} className={`nav-group${isOpen ? "" : " closed"}${ownsActive ? " owns-active" : ""}`}>
         <button type="button" className="nav-group-header" aria-expanded={isOpen} onClick={() => toggle(group.key)}>
+          <GroupIcon className="nav-group-ico" strokeWidth={1.6} />
           <span className="label">{group.label}</span>
           {!isOpen && headerWarn && <span className="nav-warn" role="img" aria-label={headerWarn}><AlertTriangle strokeWidth={1.9} /></span>}
           {!isOpen && headerBadge !== undefined && headerBadge > 0 && <span className="count" aria-label={`${headerBadge} items need attention`}>{headerBadgeText}</span>}
