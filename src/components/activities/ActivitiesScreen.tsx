@@ -7,8 +7,8 @@ import { Search, Download, ChevronDown, ChevronRight, MoreHorizontal } from "luc
 import type { ActivitiesScreen as Screen, ScreenRow } from "@/lib/engines/activities";
 import type { Check } from "@/lib/activities/readiness";
 import { formatDate } from "@/lib/datamap/foundations";
-import { createDraftActivityAction } from "@/app/actions/activities";
 import { ActivityPane } from "./ActivityPane";
+import { AddActivityModal } from "./AddActivityModal";
 
 const BASE = "/data-map/processing-activities";
 
@@ -23,7 +23,7 @@ export function ActivitiesScreen({ screen, role, tab, initialActivity }: { scree
   const myActor = role === "dpo" ? "dpo" : role === "ciso" || role === "legal" ? "none" : "admin";
   const [q, setQ] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(initialActivity ?? null);
-  const addActivity = () => start(async () => { const r = await createDraftActivityAction("New activity"); if (r.ok && r.id) router.push(`${BASE}/${r.id}/edit?pane=basics`); });
+  const [addOpen, setAddOpen] = useState(false);
   const active = tab === "register" || tab === "work" ? tab : (myActor === "admin" ? "work" : "register");
 
   useEffect(() => { try { localStorage.setItem("activities.tab", active); } catch { /* fine */ } }, [active]);
@@ -48,7 +48,7 @@ export function ActivitiesScreen({ screen, role, tab, initialActivity }: { scree
         </div>
         <div className="row" style={{ gap: 8, whiteSpace: "nowrap" }}>
           <a href="/api/discovery/export" className="btn sec inv-nowrap" style={{ whiteSpace: "nowrap" }}><Download size={13} /> Export register</a>
-          <button className="btn primary" onClick={addActivity}>+ Add activity</button>
+          <button className="btn primary" onClick={() => setAddOpen(true)}>+ Add activity</button>
         </div>
       </div>
 
@@ -71,6 +71,7 @@ export function ActivitiesScreen({ screen, role, tab, initialActivity }: { scree
         </div>
         {selectedId && <ActivityPane id={selectedId} role={role} onClose={closePane} onChanged={refresh} />}
       </div>
+      {addOpen && <AddActivityModal onClose={() => setAddOpen(false)} onCreated={(id) => { setAddOpen(false); openPane(id); router.refresh(); }} />}
     </div>
   );
 }
