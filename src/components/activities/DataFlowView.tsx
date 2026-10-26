@@ -50,7 +50,7 @@ export function DataFlowView({ view }: { view: View }) {
       )}
       {view.notOnMap.length > 0 && (
         <p className="cell-sub" style={{ marginTop: 14 }}>
-          {view.notOnMap.length} {view.notOnMap.length === 1 ? "activity isn’t" : "activities aren’t"} on the map because they have no data mapped: {view.notOnMap.map((a, i) => <span key={a.id}>{i > 0 ? ", " : ""}<Link href={`/data-map/processing-activities/${a.id}`} className="link-btn">{a.name}</Link></span>)}
+          {view.notOnMap.length} {view.notOnMap.length === 1 ? "activity isn’t" : "activities aren’t"} on the map because they have no data mapped: {view.notOnMap.map((a, i) => <span key={a.id}>{i > 0 ? ", " : ""}<Link href={`/data-map/processing-activities?activity=${a.id}`} className="link-btn">{a.name}</Link></span>)}
         </p>
       )}
     </Container>
@@ -143,26 +143,33 @@ function Diagram({ view, activeFlows, onSelect, selected }: { view: View; active
   return (
     <div className="df-canvas" ref={wrapRef} style={{ position: "relative", flex: 1, minWidth: 0, overflowX: "auto" }}>
       <svg width={dims.w} height={dims.h} style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 0 }}>
-        {edges.map((e) => (
-          <path key={e.id} d={e.d} fill="none"
-            stroke={e.active ? (e.blocking ? "var(--red, #dc2626)" : selected || activeFlows ? "var(--accent, #2563eb)" : "var(--border, #cbd5e1)") : "var(--border-soft, #e5e7eb)"}
-            strokeWidth={e.blocking ? 2 : e.count > 5 ? 3 : e.count > 1 ? 2 : 1}
-            strokeDasharray={e.crossBorder ? "5 4" : undefined}
-            opacity={e.active ? 1 : 0.15} />
-        ))}
+        {edges.map((e) => {
+          const tracing = !!activeFlows; // a node/finding is focused → trace mode
+          const stroke = !e.active
+            ? "var(--border-soft, #e5e7eb)"
+            : tracing
+              ? (e.blocking ? "var(--red, #dc2626)" : "var(--accent, #2563eb)")
+              : (e.blocking ? "rgba(220,38,38,0.5)" : "var(--border, #cbd5e1)");
+          const width = e.blocking ? 1.75 : e.count > 5 ? 2.25 : e.count > 1 ? 1.5 : 1.25;
+          const opacity = !e.active ? 0.1 : tracing ? 1 : e.blocking ? 0.7 : 0.38;
+          return (
+            <path key={e.id} d={e.d} fill="none" stroke={stroke} strokeWidth={width}
+              strokeDasharray={e.crossBorder ? "5 4" : undefined} opacity={opacity} strokeLinecap="round" />
+          );
+        })}
       </svg>
-      <div className="df-cols" style={{ position: "relative", zIndex: 1, display: "flex", gap: 28, alignItems: "flex-start" }}>
+      <div className="df-cols" style={{ position: "relative", zIndex: 1, display: "flex", gap: 24, alignItems: "flex-start" }}>
         {view.columns.map((c) => (
-          <div key={c.key} className="df-col" style={{ flex: "0 0 180px", minWidth: 180 }}>
-            <div className="cell-sub" style={{ fontWeight: 700, fontSize: 10.5, letterSpacing: ".06em", textTransform: "uppercase", marginBottom: 8 }}>{c.label} · {c.nodes.length}</div>
+          <div key={c.key} className="df-col" style={{ flex: "0 0 164px", minWidth: 164 }}>
+            <div className="cell-sub" style={{ fontWeight: 700, fontSize: 10.5, letterSpacing: ".06em", textTransform: "uppercase", marginBottom: 10, color: "var(--text-3)" }}>{c.label} · {c.nodes.length}</div>
             <div className="stack" style={{ gap: 10 }}>
               {c.nodes.map((n) => (
                 <button key={n.id} ref={(el) => { if (el) nodeRefs.current.set(n.id, el); }}
                   className={`df-card${selected === n.id ? " on" : ""}`} onClick={() => onSelect(n.id)}
-                  style={{ textAlign: "left", width: "100%", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 11px", background: "var(--surface, #fff)", cursor: "pointer", opacity: nodeActive(n) ? 1 : 0.3, borderColor: selected === n.id ? "var(--accent, #2563eb)" : n.finding ? "var(--red, #dc2626)" : "var(--border)" }}>
-                  <div style={{ fontWeight: 600, fontSize: 13 }}>{n.label}</div>
-                  {n.sub && <div className="cell-sub" style={{ fontSize: 11.5 }}>{n.sub}{n.crossBorder ? " · outside India" : ""}</div>}
-                  {n.finding && <span className="rchip amber-fill" style={{ marginTop: 6, fontSize: 10.5, padding: "1px 7px" }}>{n.finding}</span>}
+                  style={{ textAlign: "left", width: "100%", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px", background: "var(--surface, #fff)", cursor: "pointer", opacity: nodeActive(n) ? 1 : 0.28, borderColor: selected === n.id ? "var(--accent, #2563eb)" : "var(--border)", borderLeft: n.finding ? "3px solid var(--red, #dc2626)" : undefined, boxShadow: "0 1px 2px rgba(16,24,40,0.04)", transition: "opacity .15s ease" }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, lineHeight: 1.25 }}>{n.label}</div>
+                  {n.sub && <div className="cell-sub" style={{ fontSize: 11.5, marginTop: 2 }}>{n.sub}{n.crossBorder ? " · outside India" : ""}</div>}
+                  {n.finding && <span className="rchip amber-fill" style={{ marginTop: 7, fontSize: 10.5, padding: "1px 7px" }}>{n.finding}</span>}
                 </button>
               ))}
             </div>
@@ -175,7 +182,7 @@ function Diagram({ view, activeFlows, onSelect, selected }: { view: View; active
 
 function DetailPanel({ node, flows, onClose, router }: { node: FlowNode; flows: Flow[]; onClose: () => void; router: ReturnType<typeof useRouter> }) {
   return (
-    <aside className="df-detail" style={{ flex: "0 0 320px", borderLeft: "1px solid var(--border)", paddingLeft: 16, marginLeft: 16 }}>
+    <aside className="df-detail" style={{ flex: "0 0 300px", borderLeft: "1px solid var(--border)", paddingLeft: 14, marginLeft: 14 }}>
       <div className="row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <strong>{node.label}</strong>
         <button className="icon-btn" onClick={onClose}><X size={15} /></button>
@@ -187,12 +194,12 @@ function DetailPanel({ node, flows, onClose, router }: { node: FlowNode; flows: 
             {f.fields.length > 0 && <div className="cell-sub">Fields: {f.fields.slice(0, 6).join(", ")}{f.fields.length > 6 ? ` +${f.fields.length - 6}` : ""}</div>}
             {f.findings.filter((k) => k === "no_notice" || k === "undeclared" || k === "contract").length > 0 && (
               <div className="stack" style={{ gap: 4 }}>
-                {f.noticeMissing && <div className="sev-warning">No notice — <Link href="/consent/notices" className="link-btn">Add to a notice →</Link></div>}
+                {f.noticeMissing && <div className="sev-warning">No notice — <Link href="/data-map/purposes" className="link-btn">Add to a notice →</Link></div>}
                 {f.findings.includes("undeclared") && <div className="sev-warning">Undeclared channel ({f.channel}) — <Link href="/consent/platform" className="link-btn">Configure in Consent collection →</Link></div>}
                 {f.systems.some((s) => s.contractExpired) && <div className="sev-warning">Contract expired — <Link href="/vendor-risk/register" className="link-btn">Renew in Vendor Risk →</Link></div>}
               </div>
             )}
-            <button className="link-btn" onClick={() => router.push(`/data-map/processing-activities/${f.activityId}`)}>Open activity →</button>
+            <button className="link-btn" onClick={() => router.push(`/data-map/processing-activities?activity=${f.activityId}`)}>Open activity →</button>
           </div>
         ))}
       </div>
