@@ -26,7 +26,8 @@ async function main() {
     try {
       await prisma.entityUserMapping.deleteMany({ where: { entityId: e.id } });
       await prisma.roleAssignment.deleteMany({ where: { entityId: e.id } });
-      await prisma.notice.deleteMany({ where: { entityId: e.id } });
+      // Notice has two FKs to Entity — entityId and fiduciaryId — so clear both.
+      await prisma.notice.deleteMany({ where: { OR: [{ entityId: e.id }, { fiduciaryId: e.id }] } });
       await prisma.breachIncident.deleteMany({ where: { entityId: e.id } });
       await prisma.organizationBranding.deleteMany({ where: { entityId: e.id } });
       await prisma.entity.delete({ where: { id: e.id } });
