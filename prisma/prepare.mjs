@@ -135,4 +135,7 @@ if (!POOLED) {
   // versioned purposes, processors, templates). Runs LAST — it makes the activity
   // set deterministic by removing any activity that isn't one of the seeded 8.
   run("Seeding Processing Activities", "npx tsx prisma/patch-activities.ts", POOLED);
+  // Idempotent: removes stray orphan Entity rows left from manual testing so the
+  // Fiduciaries register stays clean (A3 fixture hygiene).
+  run("Cleaning fiduciary register", "npx tsx prisma/patch-fiduciaries.ts", POOLED);
 }

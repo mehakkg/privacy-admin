@@ -1,0 +1,46 @@
+/**
+ * Fiduciary hygiene (idempotent, every deploy).
+ *
+ * Removes stray orphan Entity rows left from manual testing — anything that is
+ * not a Meridian fiduciary or an "(acquired)" acquisition-demo entity and has no
+ * activities, user mappings, notices, role assignments or breach incidents — so
+ * the Fiduciaries register stays clean (Master spec A3 fixture hygiene). Also
+ * clears any stray SDF flag off the two Meridian fiduciaries (fixture: 0 notified
+ * as a Significant Data Fiduciary).
+ */
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
+
+async function main() {
+  const entities = await prisma.entity.findMany({
+    select: {
+      id: true,
+      name: true,
+      _count: { select: { activities: true, userMappings: true, notices: true, roleAssignments: true, breachIncidents: true } },
+    },
+  });
+  const keep = (n: string) => /^meridian/i.test(n) || /\(acquired\)/i.test(n);
+  const junk = entities.filter(
+    (e) => !keep(e.name) && e._count.activities === 0 && e._count.userMappings === 0 && e._count.notices === 0 && e._count.roleAssignments === 0 && e._count.breachIncidents === 0,
+  );
+  let removed = 0;
+  for (const e of junk) {
+    try {
+      await prisma.organizationBranding.deleteMany({ where: { entityId: e.id } });
+      await prisma.entity.delete({ where: { id: e.id } });
+      removed++;
+    } catch {
+      console.log(`[patch-fiduciaries] kept ${e.name} (still referenced elsewhere)`);
+    }
+  }
+  await prisma.entity.updateMany({
+    where: { name: { in: ["Meridian Financial Services Ltd", "Meridian Securities Ltd"] }, sdfStatus: "sdf" },
+    data: { sdfStatus: "not_assessed" },
+  });
+  console.log(`[patch-fiduciaries] removed ${removed} orphan entit${removed === 1 ? "y" : "ies"}`);
+}
+
+main()
+  .catch((e) => { console.error("[patch-fiduciaries] failed:", e); })
+  .finally(() => prisma.$disconnect());
