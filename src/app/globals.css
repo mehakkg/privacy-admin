@@ -319,7 +319,7 @@ textarea {
   text-transform: none;
   color: #cbd5e1;
 }
-.nav-group-header .nav-group-ico { width: 20px; height: 20px; color: inherit; flex-shrink: 0; }
+.nav-group-header .nav-group-ico { width: 20px; height: 20px; color: #94a3b8; flex-shrink: 0; }
 .nav-group-header svg { width: 14px; height: 14px; color: #64748b; transition: transform 0.15s ease; flex-shrink: 0; }
 .nav-group.closed .nav-group-header svg { transform: rotate(180deg); }
 .nav-group.closed .nav-group-items { display: none; }
