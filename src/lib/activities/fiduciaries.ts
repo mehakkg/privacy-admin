@@ -56,8 +56,14 @@ export const FIDUCIARY_DETAILS: Record<string, FiduciaryDetail> = {
 /** Fallback short name from a legal name, e.g. "Acme Health Pvt Ltd" → "AHP". */
 export function deriveShort(name: string): string {
   const stop = new Set(["ltd", "limited", "pvt", "private", "llp", "inc", "co", "company", "and", "the", "&"]);
-  const letters = name.split(/\s+/).filter((w) => w && !stop.has(w.toLowerCase().replace(/[^a-z]/g, ""))).map((w) => w[0]?.toUpperCase() ?? "").join("");
-  return (letters || name.slice(0, 3)).slice(0, 5).toUpperCase();
+  const letters = name
+    .replace(/\([^)]*\)/g, " ") // drop parentheticals like "(acquired)"
+    .replace(/[^a-zA-Z\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w && !stop.has(w.toLowerCase()))
+    .map((w) => w[0]!.toUpperCase())
+    .join("");
+  return (letters || name.replace(/[^a-zA-Z]/g, "").slice(0, 3)).slice(0, 5).toUpperCase();
 }
 
 export function detailFor(name: string): FiduciaryDetail {

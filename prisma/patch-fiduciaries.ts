@@ -14,19 +14,20 @@ const prisma = new PrismaClient();
 
 async function main() {
   const entities = await prisma.entity.findMany({
-    select: {
-      id: true,
-      name: true,
-      _count: { select: { activities: true, userMappings: true, notices: true, roleAssignments: true, breachIncidents: true } },
-    },
+    select: { id: true, name: true, _count: { select: { activities: true } } },
   });
+  // Keep the Meridian fiduciaries and the acquisition-demo entities. Remove any
+  // other entity that no activity points at, clearing its stray dependent rows
+  // first (they belong to the same junk and would otherwise block the delete).
   const keep = (n: string) => /^meridian/i.test(n) || /\(acquired\)/i.test(n);
-  const junk = entities.filter(
-    (e) => !keep(e.name) && e._count.activities === 0 && e._count.userMappings === 0 && e._count.notices === 0 && e._count.roleAssignments === 0 && e._count.breachIncidents === 0,
-  );
+  const junk = entities.filter((e) => !keep(e.name) && e._count.activities === 0);
   let removed = 0;
   for (const e of junk) {
     try {
+      await prisma.entityUserMapping.deleteMany({ where: { entityId: e.id } });
+      await prisma.roleAssignment.deleteMany({ where: { entityId: e.id } });
+      await prisma.notice.deleteMany({ where: { entityId: e.id } });
+      await prisma.breachIncident.deleteMany({ where: { entityId: e.id } });
       await prisma.organizationBranding.deleteMany({ where: { entityId: e.id } });
       await prisma.entity.delete({ where: { id: e.id } });
       removed++;
