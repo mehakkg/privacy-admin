@@ -8,6 +8,7 @@ import type { ActivitiesScreen as Screen, ScreenRow } from "@/lib/engines/activi
 import type { Check } from "@/lib/activities/readiness";
 import { formatDate } from "@/lib/datamap/foundations";
 import { createDraftActivityAction } from "@/app/actions/activities";
+import { ActivityPane } from "./ActivityPane";
 
 const BASE = "/data-map/processing-activities";
 
@@ -16,16 +17,23 @@ const BASE = "/data-map/processing-activities";
  * grouped by who must act) and "Register" (the full record list). Every number is
  * computed from the fixture store.
  */
-export function ActivitiesScreen({ screen, role, tab }: { screen: Screen; role: string; tab: string }) {
+export function ActivitiesScreen({ screen, role, tab, initialActivity }: { screen: Screen; role: string; tab: string; initialActivity?: string }) {
   const router = useRouter();
   const [, start] = useTransition();
   const myActor = role === "dpo" ? "dpo" : role === "ciso" || role === "legal" ? "none" : "admin";
   const [q, setQ] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(initialActivity ?? null);
   const addActivity = () => start(async () => { const r = await createDraftActivityAction("New activity"); if (r.ok && r.id) router.push(`${BASE}/${r.id}/edit?pane=basics`); });
   const active = tab === "register" || tab === "work" ? tab : (myActor === "admin" ? "work" : "register");
 
   useEffect(() => { try { localStorage.setItem("activities.tab", active); } catch { /* fine */ } }, [active]);
   const setTab = (t: string) => router.push(`${BASE}?tab=${t}`);
+
+  // Deep link ?activity= without a route change, so the list keeps its scroll/state.
+  const syncUrl = (id: string | null) => { try { const u = new URL(window.location.href); if (id) u.searchParams.set("activity", id); else u.searchParams.delete("activity"); window.history.replaceState(null, "", u.toString()); } catch { /* fine */ } };
+  const openPane = (id: string) => { setSelectedId(id); syncUrl(id); };
+  const closePane = () => { setSelectedId(null); syncUrl(null); };
+  const refresh = () => router.refresh();
 
   const myWorkCount = screen.rows.filter((r) => r.actor !== "none" && r.actor === myActor).length;
   const filtered = screen.rows.filter((r) => !q || `${r.name} ${r.owner ?? ""} ${r.principals.join(" ")}`.toLowerCase().includes(q.toLowerCase()));
@@ -46,16 +54,23 @@ export function ActivitiesScreen({ screen, role, tab }: { screen: Screen; role: 
 
       <CoverageStrip c={screen.coverage} />
 
-      <div className="dm-tabs" style={{ marginTop: 14 }}>
-        <button className={`dm-tab${active === "work" ? " on" : ""}`} onClick={() => setTab("work")}>My work {myWorkCount}</button>
-        <button className={`dm-tab${active === "register" ? " on" : ""}`} onClick={() => setTab("register")}>Register {screen.rows.length}</button>
-      </div>
+      <div className="row" style={{ alignItems: "flex-start", gap: 0 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="dm-tabs" style={{ marginTop: 14 }}>
+            <button className={`dm-tab${active === "work" ? " on" : ""}`} onClick={() => setTab("work")}>My work {myWorkCount}</button>
+            <button className={`dm-tab${active === "register" ? " on" : ""}`} onClick={() => setTab("register")}>Register {screen.rows.length}</button>
+          </div>
 
-      <div className="inv-search" style={{ maxWidth: 320, marginTop: 14 }}>
-        <Search size={14} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search activity, owner or field" aria-label="Search" />
-      </div>
+          <div className="inv-search" style={{ maxWidth: 320, marginTop: 14 }}>
+            <Search size={14} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search activity, owner or field" aria-label="Search" />
+          </div>
 
-      {active === "work" ? <MyWork rows={filtered} myActor={myActor} /> : <Register rows={filtered} />}
+          {active === "work"
+            ? <MyWork rows={filtered} myActor={myActor} onOpen={openPane} />
+            : <Register rows={filtered} onOpen={openPane} selectedId={selectedId} compact={!!selectedId} />}
+        </div>
+        {selectedId && <ActivityPane id={selectedId} role={role} onClose={closePane} onChanged={refresh} />}
+      </div>
     </div>
   );
 }
@@ -99,7 +114,7 @@ function Dots({ checks }: { checks: Check[] }) {
 }
 
 // --- My work ----------------------------------------------------------------
-function MyWork({ rows, myActor }: { rows: ScreenRow[]; myActor: string }) {
+function MyWork({ rows, myActor, onOpen }: { rows: ScreenRow[]; myActor: string; onOpen: (id: string) => void }) {
   const you = rows.filter((r) => r.actor === myActor);
   const otherAdmin = rows.filter((r) => r.actor === "admin" && myActor !== "admin");
   const otherDpo = rows.filter((r) => r.actor === "dpo" && myActor !== "dpo");
@@ -111,12 +126,12 @@ function MyWork({ rows, myActor }: { rows: ScreenRow[]; myActor: string }) {
   ];
   return (
     <div className="stack" style={{ gap: 18, marginTop: 14 }}>
-      {groups.map((g) => <WorkGroup key={g.label} label={g.label} rows={g.rows} canAct={g.kind === "you"} youGroup={g.label === "You"} />)}
+      {groups.map((g) => <WorkGroup key={g.label} label={g.label} rows={g.rows} canAct={g.kind === "you"} youGroup={g.label === "You"} onOpen={onOpen} />)}
     </div>
   );
 }
 
-function WorkGroup({ label, rows, canAct, youGroup }: { label: string; rows: ScreenRow[]; canAct: boolean; youGroup: boolean }) {
+function WorkGroup({ label, rows, canAct, youGroup, onOpen }: { label: string; rows: ScreenRow[]; canAct: boolean; youGroup: boolean; onOpen: (id: string) => void }) {
   const [open, setOpen] = useState(true);
   const oldest = rows.reduce((m, r) => Math.max(m, r.overdueDays ?? r.waitingDays), 0);
   if (rows.length === 0 && youGroup) return <div><div className="cell-sub" style={{ fontWeight: 600, marginBottom: 6 }}>{label} · 0</div><div className="inv-noresult">You’re clear. Nothing needs you right now. <Link href={`${BASE}?tab=register`} className="link-btn">View register →</Link></div></div>;
@@ -126,23 +141,25 @@ function WorkGroup({ label, rows, canAct, youGroup }: { label: string; rows: Scr
       <button className="row" style={{ gap: 8, alignItems: "center", background: "none", border: 0, cursor: "pointer", padding: 0, fontWeight: 600 }} onClick={() => setOpen((o) => !o)}>
         {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}{label} · {rows.length}{oldest > 0 ? <span className="cell-sub" style={{ fontWeight: 400 }}>: oldest waiting {oldest}d</span> : ""}
       </button>
-      {open && <div className="stack" style={{ gap: 0, marginTop: 6 }}>{rows.slice().sort((a, b) => (b.overdueDays ?? b.waitingDays) - (a.overdueDays ?? a.waitingDays)).map((r) => <WorkRow key={r.id} r={r} canAct={canAct} />)}</div>}
+      {open && <div className="stack" style={{ gap: 0, marginTop: 6 }}>{rows.slice().sort((a, b) => (b.overdueDays ?? b.waitingDays) - (a.overdueDays ?? a.waitingDays)).map((r) => <WorkRow key={r.id} r={r} canAct={canAct} onOpen={onOpen} />)}</div>}
     </div>
   );
 }
 
-function WorkRow({ r, canAct }: { r: ScreenRow; canAct: boolean }) {
+function WorkRow({ r, canAct, onOpen }: { r: ScreenRow; canAct: boolean; onOpen: (id: string) => void }) {
   const router = useRouter();
   const [, start] = useTransition();
   const [reminded, setReminded] = useState(false);
   const waitLabel = r.overdueDays != null ? `Overdue ${r.overdueDays}d` : `Waiting ${r.waitingDays}d`;
+  // Add to notice is the only inline fix that leaves the list; everything else opens the pane.
+  const act = () => { if (r.state === "needs_notice") router.push("/consent/notices"); else onOpen(r.id); };
   const btn = canAct
-    ? <button className="btn sm primary" onClick={() => router.push(`${BASE}/${r.id}?tab=fields`)}>{shortVerb(r)}</button>
+    ? <button className="btn sm primary" onClick={act}>{shortVerb(r)}</button>
     : reminded ? <button className="btn sm" disabled>Reminded just now</button>
     : <button className="btn sm ghost" onClick={() => start(() => { setReminded(true); })}>{r.actor === "owner" ? "Remind owner" : "Remind"}</button>;
   return (
     <div className="row" style={{ justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderTop: "1px solid var(--border-soft)", gap: 12 }}>
-      <div className="stack" style={{ gap: 2, minWidth: 0 }} role="button" onClick={() => router.push(`${BASE}/${r.id}`)}>
+      <div className="stack" style={{ gap: 2, minWidth: 0 }} role="button" onClick={() => onOpen(r.id)}>
         <div className="av-name" style={{ cursor: "pointer" }}>{r.name}</div>
         <div className="cell-sub">{r.owner ?? "No owner"}{r.department ? ` · ${r.department}` : ""}</div>
       </div>
@@ -166,8 +183,7 @@ function shortVerb(r: ScreenRow): string {
 
 // --- Register ---------------------------------------------------------------
 const URGENCY: Record<string, number> = { review_due: 0, needs_basics: 1, needs_data: 1, needs_processors: 1, needs_approval: 1, needs_notice: 1, ready_to_submit: 1, waiting_for_dpo: 2, approved: 3 };
-function Register({ rows }: { rows: ScreenRow[] }) {
-  const router = useRouter();
+function Register({ rows, onOpen, selectedId, compact }: { rows: ScreenRow[]; onOpen: (id: string) => void; selectedId: string | null; compact: boolean }) {
   const [chip, setChip] = useState<"all" | "register" | "progress">("all");
   const multiFiduciary = new Set(rows.map((r) => r.entityId)).size > 1;
   const shown = rows.filter((r) => chip === "all" ? true : chip === "register" ? r.inRegister : !r.inRegister);
@@ -186,18 +202,20 @@ function Register({ rows }: { rows: ScreenRow[] }) {
         <button className={chip === "progress" ? "on" : ""} onClick={() => setChip("progress")}>In progress <span className="tnum">{counts.progress}</span></button>
       </div>
       <table className="av-table">
-        <thead><tr><th></th><th>Activity</th><th>Owner</th><th>Data principals</th><th>Contents</th><th>Status</th><th>Age</th><th></th></tr></thead>
+        <thead><tr><th></th><th>Activity</th>{!compact && <><th>Owner</th><th>Data principals</th><th>Contents</th></>}<th>Status</th>{!compact && <th>Age</th>}<th></th></tr></thead>
         <tbody>
           {sorted.map((r) => (
-            <tr key={r.id} className="av-row" onClick={(e) => { if ((e.target as HTMLElement).closest("button,a,input")) return; router.push(`${BASE}/${r.id}`); }}>
+            <tr key={r.id} className={`av-row${r.id === selectedId ? " on" : ""}`} aria-selected={r.id === selectedId} onClick={(e) => { if ((e.target as HTMLElement).closest("button,a,input")) return; onOpen(r.id); }}>
               <td className="inv-check"><input type="checkbox" aria-label={`Select ${r.name}`} /></td>
               <td><span className="av-name">{r.name}</span>{multiFiduciary && r.entityShort !== "—" && <span className="chip" style={{ marginLeft: 6, fontSize: 10.5 }} title={r.entityName ?? ""}>{r.entityShort}</span>}</td>
-              <td>{r.owner ?? <span className="sev-warning">No owner</span>}<div className="cell-sub">{r.department ?? "—"}</div></td>
-              <td className="cell-sub">{r.principals.slice(0, 2).join(", ")}{r.principals.length > 2 ? ` +${r.principals.length - 2}` : ""}</td>
-              <td className="cell-sub">{r.purposeCount} purpose{r.purposeCount === 1 ? "" : "s"} · {r.fieldCount} field{r.fieldCount === 1 ? "" : "s"} · {r.systemCount} system{r.systemCount === 1 ? "" : "s"}</td>
+              {!compact && <>
+                <td>{r.owner ?? <span className="sev-warning">No owner</span>}<div className="cell-sub">{r.department ?? "—"}</div></td>
+                <td className="cell-sub">{r.principals.slice(0, 2).join(", ")}{r.principals.length > 2 ? ` +${r.principals.length - 2}` : ""}</td>
+                <td className="cell-sub">{r.purposeCount} purpose{r.purposeCount === 1 ? "" : "s"} · {r.fieldCount} field{r.fieldCount === 1 ? "" : "s"} · {r.systemCount} system{r.systemCount === 1 ? "" : "s"}</td>
+              </>}
               <td><div className="stack" style={{ gap: 3 }}><span className={`rchip ${r.chipTone}`}>{r.chipLabel}</span>{r.statusActor && <span className="row" style={{ gap: 6, alignItems: "center" }}><Dots checks={r.checks} /><span className="cell-sub">{r.statusActor}</span></span>}</div></td>
-              <td className="cell-sub">{r.inRegister && r.state === "approved" ? `Reviewed ${r.reviewedAt ? formatDate(r.reviewedAt) : "—"}` : r.overdueDays != null ? <span className="sev-warning">Overdue {r.overdueDays}d</span> : <span className={r.waitingDays > 14 ? "sev-warning" : ""}>Waiting {r.waitingDays}d</span>}</td>
-              <td><button className="icon-btn" aria-label="Actions" onClick={() => router.push(`${BASE}/${r.id}`)}><MoreHorizontal size={16} /></button></td>
+              {!compact && <td className="cell-sub">{r.inRegister && r.state === "approved" ? `Reviewed ${r.reviewedAt ? formatDate(r.reviewedAt) : "—"}` : r.overdueDays != null ? <span className="sev-warning">Overdue {r.overdueDays}d</span> : <span className={r.waitingDays > 14 ? "sev-warning" : ""}>Waiting {r.waitingDays}d</span>}</td>}
+              <td><button className="icon-btn" aria-label="Open" onClick={() => onOpen(r.id)}><MoreHorizontal size={16} /></button></td>
             </tr>
           ))}
         </tbody>

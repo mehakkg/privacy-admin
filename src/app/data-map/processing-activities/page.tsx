@@ -21,7 +21,7 @@ export default async function ActivitiesPage({
   const screen = await getActivitiesScreen();
   return (
     <Shell active="/data-map/processing-activities" title="Activities">
-      <ActivitiesScreen screen={screen} role={role} tab={tab} />
+      <ActivitiesScreen screen={screen} role={role} tab={tab} initialActivity={sp.activity} />
     </Shell>
   );
 }

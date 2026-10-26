@@ -660,3 +660,79 @@ export async function getActivitiesScreen(today: Date = new Date()): Promise<Act
     },
   };
 }
+
+// --- Activity detail pane (slide-in with inline fixes) ----------------------
+
+import { USERS, PRINCIPAL_OPTIONS } from "@/lib/activities/org";
+import { checksAria } from "@/lib/activities/readiness";
+
+export interface PaneView {
+  id: string; name: string; chipLabel: string; chipTone: ChipTone; owner: string | null; department: string | null;
+  entityName: string | null; versionLabel: string; locked: boolean; waiting: boolean; baseRev: number;
+  state: ReadinessState; actor: Actor; checks: Check[]; aria: string;
+  summaries: Record<string, string>;
+  blockingPurposeId: string | null; blockingPurposeName: string | null; rejectedReason: string | null;
+  noticeTarget: string | null;
+  ownerOptions: { name: string; department: string }[]; principalOptions: { id: string; label: string }[];
+  purposeOptions: { id: string; name: string }[]; currentPrincipals: string[];
+  canSubmit: boolean; nextVersion: number;
+}
+
+export async function getActivityPane(id: string, today: Date = new Date()): Promise<PaneView | null> {
+  const [row, tags] = await Promise.all([
+    db.processingActivity.findUnique({ where: { id }, include: { purposeSegments: { include: { elements: true, processorLinks: true } }, entity: { select: { name: true } }, activityVersions: { where: { state: "active" }, orderBy: { number: "desc" }, take: 1 } } }),
+    db.purposeTag.findMany({ include: { purposeVersions: { orderBy: { number: "desc" } } } }),
+  ]);
+  if (!row) return null;
+  const tagInfo = new Map(tags.map((t) => { const v = t.purposeVersions[0]; return [t.id, { name: t.name, approval: approvalOf(v?.state ?? t.status), legalBasis: (v?.legalBasis ?? t.lawfulBasis) === "consent" ? "consent" as const : "legitimate_use" as const, rejectedReason: v?.decisionComment ?? t.rejectionReason ?? null }]; }));
+  const segs = row.purposeSegments.filter((s) => s.purposeTagId && s.linkState === "confirmed");
+  const principals = (decodeList(row.principalsJson) as string[]) ?? [];
+  const purposes: ReadinessPurpose[] = segs.map((s) => {
+    const info = tagInfo.get(s.purposeTagId!);
+    const vids = new Set(s.processorLinks.filter((p) => p.linkState === "confirmed").map((p) => p.vendorId)); if (s.processorId) vids.add(s.processorId);
+    return { name: info?.name ?? "Purpose", fieldCount: s.elements.filter((e) => e.linkState === "confirmed").length, systemCount: vids.size, approval: info?.approval ?? "approved", legalBasis: info?.legalBasis ?? "consent", inPublishedNotice: !!noticeFor(info?.name ?? "") };
+  });
+  const lifecycle = row.lifecycleState;
+  const ra: ReadinessActivity = { ownerId: row.ownerName, department: row.department, principals, purposes, submitted: lifecycle === "pending_dpo_review", approved: lifecycle === "active" || lifecycle === "under_review", lastReviewedAt: row.lastReviewedAt?.toISOString() ?? null, driftSinceApproval: false };
+  const r = readiness(ra, today);
+  const checks = readinessChecks(ra, today);
+  const actor = readinessActor(r.state, ra);
+  const locked = inRegister(r.state);
+
+  // Blocking purpose for data/systems/purpose fixes.
+  const segInfo = segs.map((s) => ({ seg: s, info: tagInfo.get(s.purposeTagId!)!, fields: s.elements.filter((e) => e.linkState === "confirmed").length, systems: (() => { const v = new Set(s.processorLinks.filter((p) => p.linkState === "confirmed").map((p) => p.vendorId)); if (s.processorId) v.add(s.processorId); return v.size; })() }));
+  let blocking: { id: string; name: string } | null = null;
+  const block = checks.find((c) => c.state === "block")?.key;
+  if (block === "data") { const s = segInfo.find((x) => x.fields === 0); if (s) blocking = { id: s.seg.purposeTagId!, name: s.info.name }; }
+  else if (block === "systems") { const s = segInfo.find((x) => x.fields > 0 && x.systems === 0); if (s) blocking = { id: s.seg.purposeTagId!, name: s.info.name }; }
+  else if (block === "purpose") { const s = segInfo.find((x) => x.info.approval !== "approved"); if (s) blocking = { id: s.seg.purposeTagId!, name: s.info.name }; }
+  else if (block === "notice") { const s = segInfo.find((x) => x.info.legalBasis === "consent" && !noticeFor(x.info.name)); if (s) blocking = { id: s.seg.purposeTagId!, name: s.info.name }; }
+  const rejectedReason = block === "purpose" && blocking ? (tagInfo.get(blocking.id)?.rejectedReason ?? null) : null;
+
+  const active = row.activityVersions[0];
+  const versionLabel = active ? `v${active.number} · In the register since ${formatDate(active.activatedAt.toISOString())}` : `v1 · ${lifecycle === "pending_dpo_review" ? "Waiting for DPO" : "Draft"}`;
+
+  const summaries: Record<string, string> = {
+    basics: `${row.ownerName ?? "No owner"}${row.department ? ` · ${row.department}` : ""} · ${plural(principals.length, "principal")} · ${plural(purposes.length, "purpose")}`,
+    data: `${purposes.reduce((n, p) => n + p.fieldCount, 0)} fields across ${plural(purposes.length, "purpose")}`,
+    systems: `${purposes.reduce((n, p) => n + p.systemCount, 0)} systems or processors`,
+    purpose: "Every linked purpose is approved",
+    notice: purposes.some((p) => p.legalBasis === "consent") ? "Consent purposes are in a published notice" : "n/a — legitimate use",
+    dpo: active ? `Approved by ${active.activatedBy} on ${formatDate(active.activatedAt.toISOString())}` : "Not yet approved",
+  };
+  const approvedTags = tags.filter((t) => tagInfo.get(t.id)?.approval === "approved");
+
+  return {
+    id: row.id, name: row.activity, chipLabel: r.label, chipTone: r.tone, owner: row.ownerName, department: row.department,
+    entityName: row.entity?.name ?? null, versionLabel, locked, waiting: lifecycle === "pending_dpo_review", baseRev: row.version,
+    state: r.state, actor, checks, aria: checksAria(checks), summaries,
+    blockingPurposeId: blocking?.id ?? null, blockingPurposeName: blocking?.name ?? null, rejectedReason,
+    noticeTarget: block === "notice" && blocking ? blocking.name : null,
+    ownerOptions: USERS.map((u) => ({ name: u.name, department: u.department })), principalOptions: PRINCIPAL_OPTIONS.map((p) => ({ id: p.id, label: p.label })),
+    purposeOptions: approvedTags.map((t) => ({ id: t.id, name: t.name })), currentPrincipals: principals,
+    canSubmit: checks.slice(0, 5).every((c) => c.state === "pass" || c.state === "na") && !ra.submitted && !ra.approved,
+    nextVersion: (active?.number ?? 0) + 1,
+  };
+}
+
+function plural(n: number, noun: string): string { return `${n} ${noun}${n === 1 ? "" : "s"}`; }

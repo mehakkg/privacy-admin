@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/session";
-import { getReview, snapshotInputForActivity, type ReviewView } from "@/lib/engines/activities";
+import { getReview, snapshotInputForActivity, getActivityPane, type ReviewView, type PaneView } from "@/lib/engines/activities";
 import { isCombinedGovernance } from "@/lib/governance";
 import { buildSnapshot, sha256Hex8, diffSnapshots, resolveWrite, type LastWriter } from "@/lib/activities/versions";
 import type { Principal } from "@/lib/activities/types";
@@ -193,6 +193,7 @@ export async function simulateAnotherEditorAction(id: string, field: string): Pr
 // --- Activate / DPO review of the activity ----------------------------------
 
 export async function getReviewAction(activityId: string): Promise<ReviewView | null> { return getReview(activityId); }
+export async function getActivityPaneAction(activityId: string): Promise<PaneView | null> { return getActivityPane(activityId); }
 
 export async function activateActivityAction(activityId: string, opts?: ActivateOpts): Promise<ActResult> {
   const { actor } = await getSession();
