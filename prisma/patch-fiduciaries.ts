@@ -40,6 +40,20 @@ async function main() {
     data: { sdfStatus: "not_assessed" },
   });
   console.log(`[patch-fiduciaries] removed ${removed} orphan entit${removed === 1 ? "y" : "ies"}`);
+
+  // Data inventory hygiene (Part J): remove the stray "kjnjn" DLP source + its
+  // field left from manual testing. Guarded — if the field is somehow referenced,
+  // the delete is skipped rather than failing the deploy.
+  const junkSources = await prisma.discoverySource.findMany({ where: { name: { in: ["kjnjn"] } }, select: { id: true, name: true } });
+  for (const s of junkSources) {
+    try {
+      await prisma.classifiedField.deleteMany({ where: { sourceId: s.id } });
+      await prisma.discoverySource.delete({ where: { id: s.id } });
+      console.log(`[patch-fiduciaries] removed stray source "${s.name}"`);
+    } catch {
+      console.log(`[patch-fiduciaries] kept source "${s.name}" (still referenced)`);
+    }
+  }
 }
 
 main()

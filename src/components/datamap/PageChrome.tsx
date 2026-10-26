@@ -2,7 +2,6 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { DATAMAP_ROUTES, type DataMapStage } from "@/lib/datamap/routes";
 import type { ReadinessStripData } from "@/lib/engines/datamap";
-import { plural } from "@/lib/datamap/foundations";
 
 /**
  * Shared chrome for the four Data map pages (M1). One container width, one header
@@ -26,17 +25,17 @@ export function PageHeader({ title, status, actions }: { title: string; status?:
   );
 }
 
-/** The 44px band under every Data map header. Three stages, three units; the
- *  current page's stage is bold. "ready" is used for activities only. */
+/** The 44px band under the Data inventory header. Three stages toward a complete
+ *  register; the current page's stage is bold. Every number is computed. */
 export function ReadinessStrip({ data, current }: { data: ReadinessStripData; current: DataMapStage }) {
   const stages: { key: DataMapStage; href: string; text: string }[] = [
-    { key: "fields", href: DATAMAP_ROUTES.inventory, text: `Fields: ${data.fields.complete} of ${data.fields.total} complete` },
-    { key: "activities", href: DATAMAP_ROUTES.activities, text: `Activities: ${data.activities.ready} of ${data.activities.total} ready` },
-    { key: "ropa", href: DATAMAP_ROUTES.ropa, text: `ROPA: ${plural(data.ropa.entries, "entry", "entries")}` },
+    { key: "fields", href: DATAMAP_ROUTES.inventory, text: `Fields: ${data.fields.classified} of ${data.fields.total} classified` },
+    { key: "activities", href: DATAMAP_ROUTES.activities, text: `Activities: ${data.activities.inRegister} of ${data.activities.total} in the register` },
+    { key: "ropa", href: `${DATAMAP_ROUTES.activities}?tab=register`, text: `Register coverage ${data.coverage.pct}%` },
   ];
   return (
-    <nav className="dm-strip" aria-label="Path to ROPA">
-      <span className="dm-strip-label">Path to ROPA</span>
+    <nav className="dm-strip" aria-label="Path to register">
+      <span className="dm-strip-label">Path to register</span>
       {stages.map((s, i) => (
         <span key={s.key} className="dm-strip-stage">
           {i > 0 && <span className="dm-strip-arrow" aria-hidden="true">→</span>}

@@ -49,12 +49,7 @@ export function FiduciariesManager({ rows, role, openAdd }: { rows: FiduciaryRow
         <button className="btn primary" onClick={() => setAdd(true)}>Add fiduciary</button>
       </div>
 
-      {rows.length >= 10 && (
-        <div className="inv-search" style={{ maxWidth: 320 }}><Search size={14} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search fiduciary" aria-label="Search fiduciary" /></div>
-      )}
-      {rows.length < 10 && (
-        <div className="inv-search" style={{ maxWidth: 280 }}><Search size={14} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search fiduciary" aria-label="Search fiduciary" /></div>
-      )}
+      <div className="inv-search" style={{ flex: "0 0 auto", maxWidth: 280 }}><Search size={14} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search fiduciary" aria-label="Search fiduciary" /></div>
 
       <table className="inv-table">
         <thead><tr>
