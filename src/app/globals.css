@@ -298,6 +298,26 @@ textarea {
 .nav::-webkit-scrollbar-thumb { background: #334155; border-radius: 8px; border: 2px solid #0f172a; }
 .nav::-webkit-scrollbar-thumb:hover { background: #475569; }
 
+/* Data flow canvas — node-graph aesthetic (dotted grid + card ports). */
+.df-canvas-grid {
+  background-color: var(--surface-sunken, #f8fafc);
+  background-image: radial-gradient(circle, rgba(100,116,139,0.22) 1px, transparent 1px);
+  background-size: 20px 20px;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 14px;
+  padding: 22px 24px;
+}
+.df-card { position: relative; transition: box-shadow .15s ease, border-color .15s ease; }
+.df-card:hover { box-shadow: 0 4px 14px rgba(16,24,40,0.10); }
+.df-port {
+  position: absolute; width: 9px; height: 9px; border-radius: 50%;
+  background: var(--surface, #fff); border: 2px solid var(--border-strong, #94a3b8);
+  top: 50%; transform: translateY(-50%); z-index: 2; pointer-events: none;
+}
+.df-port.in { left: -5px; }
+.df-port.out { right: -5px; }
+.df-card.on .df-port { border-color: var(--accent, #2563eb); }
+
 /* Module row (sentence case, icon + label + chevron) — NOT a section label. */
 .nav-group-header {
   display: flex;

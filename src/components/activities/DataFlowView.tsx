@@ -140,36 +140,41 @@ function Diagram({ view, activeFlows, onSelect, selected }: { view: View; active
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, activeFlows]);
 
+  const nCols = view.columns.length;
   return (
-    <div className="df-canvas" ref={wrapRef} style={{ position: "relative", flex: 1, minWidth: 0, overflowX: "auto" }}>
+    <div className="df-canvas df-canvas-grid" ref={wrapRef} style={{ position: "relative", flex: 1, minWidth: 0, overflowX: "auto" }}>
       <svg width={dims.w} height={dims.h} style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 0 }}>
         {edges.map((e) => {
           const tracing = !!activeFlows; // a node/finding is focused → trace mode
+          // Calm neutral connectors by default; a finding is shown ON its card, not
+          // as a red line. Red/blue only appear while tracing a selected path.
           const stroke = !e.active
-            ? "var(--border-soft, #e5e7eb)"
+            ? "var(--border, #cbd5e1)"
             : tracing
               ? (e.blocking ? "var(--red, #dc2626)" : "var(--accent, #2563eb)")
-              : (e.blocking ? "rgba(220,38,38,0.5)" : "var(--border, #cbd5e1)");
-          const width = e.blocking ? 1.75 : e.count > 5 ? 2.25 : e.count > 1 ? 1.5 : 1.25;
-          const opacity = !e.active ? 0.1 : tracing ? 1 : e.blocking ? 0.7 : 0.38;
+              : "var(--border-strong, #94a3b8)";
+          const width = e.count > 5 ? 2.25 : e.count > 1 ? 1.75 : 1.5;
+          const opacity = !e.active ? 0.12 : tracing ? 1 : 0.5;
           return (
             <path key={e.id} d={e.d} fill="none" stroke={stroke} strokeWidth={width}
               strokeDasharray={e.crossBorder ? "5 4" : undefined} opacity={opacity} strokeLinecap="round" />
           );
         })}
       </svg>
-      <div className="df-cols" style={{ position: "relative", zIndex: 1, display: "flex", gap: 24, alignItems: "flex-start" }}>
-        {view.columns.map((c) => (
-          <div key={c.key} className="df-col" style={{ flex: "0 0 164px", minWidth: 164 }}>
-            <div className="cell-sub" style={{ fontWeight: 700, fontSize: 10.5, letterSpacing: ".06em", textTransform: "uppercase", marginBottom: 10, color: "var(--text-3)" }}>{c.label} · {c.nodes.length}</div>
-            <div className="stack" style={{ gap: 10 }}>
+      <div className="df-cols" style={{ position: "relative", zIndex: 1, display: "flex", gap: 44, alignItems: "flex-start" }}>
+        {view.columns.map((c, ci) => (
+          <div key={c.key} className="df-col" style={{ flex: "0 0 170px", minWidth: 170 }}>
+            <div className="cell-sub" style={{ fontWeight: 700, fontSize: 10, letterSpacing: ".07em", textTransform: "uppercase", marginBottom: 12, color: "var(--text-3)" }}>{c.label} · {c.nodes.length}</div>
+            <div className="stack" style={{ gap: 14 }}>
               {c.nodes.map((n) => (
                 <button key={n.id} ref={(el) => { if (el) nodeRefs.current.set(n.id, el); }}
                   className={`df-card${selected === n.id ? " on" : ""}`} onClick={() => onSelect(n.id)}
-                  style={{ textAlign: "left", width: "100%", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px", background: "var(--surface, #fff)", cursor: "pointer", opacity: nodeActive(n) ? 1 : 0.28, borderColor: selected === n.id ? "var(--accent, #2563eb)" : "var(--border)", borderLeft: n.finding ? "3px solid var(--red, #dc2626)" : undefined, boxShadow: "0 1px 2px rgba(16,24,40,0.04)", transition: "opacity .15s ease" }}>
-                  <div style={{ fontWeight: 600, fontSize: 13, lineHeight: 1.25 }}>{n.label}</div>
-                  {n.sub && <div className="cell-sub" style={{ fontSize: 11.5, marginTop: 2 }}>{n.sub}{n.crossBorder ? " · outside India" : ""}</div>}
-                  {n.finding && <span className="rchip amber-fill" style={{ marginTop: 7, fontSize: 10.5, padding: "1px 7px" }}>{n.finding}</span>}
+                  style={{ textAlign: "left", width: "100%", border: "1px solid var(--border)", borderRadius: 12, padding: "11px 13px", background: "var(--surface, #fff)", cursor: "pointer", opacity: nodeActive(n) ? 1 : 0.3, borderColor: selected === n.id ? "var(--accent, #2563eb)" : "var(--border)", boxShadow: selected === n.id ? "0 0 0 3px rgba(37,99,235,0.12)" : "0 1px 2px rgba(16,24,40,0.05)" }}>
+                  {ci > 0 && <span className="df-port in" aria-hidden />}
+                  {ci < nCols - 1 && <span className="df-port out" aria-hidden />}
+                  <div style={{ fontWeight: 600, fontSize: 13, lineHeight: 1.3 }}>{n.label}</div>
+                  {n.sub && <div className="cell-sub" style={{ fontSize: 11.5, marginTop: 3 }}>{n.sub}{n.crossBorder ? " · outside India" : ""}</div>}
+                  {n.finding && <span className="rchip amber-fill" style={{ marginTop: 8, fontSize: 10.5, padding: "2px 8px" }}>{n.finding}</span>}
                 </button>
               ))}
             </div>
