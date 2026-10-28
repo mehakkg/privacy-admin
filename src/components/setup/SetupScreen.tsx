@@ -17,6 +17,7 @@ export function SetupScreen({ state, role, facts, days }: { state: SetupState; r
   const [invite, setInvite] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [confirmCap, setConfirmCap] = useState<Capability | null>(null);
+  const [preflight, setPreflight] = useState<Capability | null>(null);
 
   const myRole = role as SetupRole;
   const c = counts(state);
@@ -84,13 +85,14 @@ export function SetupScreen({ state, role, facts, days }: { state: SetupState; r
 
         <aside style={{ flex: "0 0 34%", minWidth: 280 }} className="stack">
           <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}><strong>Go-live readiness</strong><span className="cell-sub">{live} of 3 live</span></div>
-          {caps.map((cap) => <GoLiveCard key={cap.key} cap={cap} isAdmin={role === "admin"} onEnable={() => (cap.actionHref ? router.push(cap.actionHref) : setConfirmCap(cap))} />)}
+          {caps.map((cap) => <GoLiveCard key={cap.key} cap={cap} isAdmin={role === "admin"} onEnable={() => (cap.actionHref ? router.push(cap.actionHref) : setConfirmCap(cap))} onPreflight={() => setPreflight(cap)} />)}
         </aside>
       </div>
 
       {drawer && <TaskDrawer t={drawer} state={state} role={role} onClose={() => setDrawer(null)} onComplete={() => complete(drawer.id)} />}
       {invite && <InviteModal state={state} onClose={() => setInvite(false)} onInvited={(roles) => start(async () => { await inviteRolesAction(roles); setInvite(false); refresh(); notify(`${roles.length} invite${roles.length === 1 ? "" : "s"} sent. They’ll see their own setup tasks when they sign in.`); })} />}
       {confirmCap && <ConfirmCapModal cap={confirmCap} onClose={() => setConfirmCap(null)} onConfirm={() => start(async () => { await enableCapabilityAction(confirmCap.key); setConfirmCap(null); refresh(); notify(`${confirmCap.title} is live.`); })} />}
+      {preflight && <PreflightModal cap={preflight} onClose={() => setPreflight(null)} />}
       {toast && <div className="toast" role="status" style={{ position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", zIndex: 60, background: "var(--text, #0f172a)", color: "#fff", padding: "10px 16px", borderRadius: 10, boxShadow: "0 6px 20px rgba(0,0,0,0.25)" }}>{toast}</div>}
     </div>
   );
@@ -117,7 +119,7 @@ function TaskCard({ t, state, role, onOpen, onReassign }: { t: SetupTask; state:
   );
 }
 
-function GoLiveCard({ cap, isAdmin, onEnable }: { cap: Capability; isAdmin: boolean; onEnable: () => void }) {
+function GoLiveCard({ cap, isAdmin, onEnable, onPreflight }: { cap: Capability; isAdmin: boolean; onEnable: () => void; onPreflight: () => void }) {
   const tone = cap.status === "Live" ? "success" : cap.status === "Ready" ? "info" : "neutral";
   return (
     <div className="inv-card stack" style={{ gap: 8 }}>
@@ -130,7 +132,29 @@ function GoLiveCard({ cap, isAdmin, onEnable }: { cap: Capability; isAdmin: bool
           </div>
         ))}
       </div>
-      {cap.status !== "Live" && isAdmin && <button className="btn primary sm" disabled={cap.status === "Blocked"} onClick={onEnable}>{cap.action}</button>}
+      {cap.status !== "Live" && isAdmin && (
+        cap.status === "Blocked"
+          ? <div className="row" style={{ gap: 10, alignItems: "center" }}><button className="btn primary sm" disabled>{cap.action}</button><button className="link-btn" onClick={onPreflight}>What’s missing?</button></div>
+          : <button className="btn primary sm" onClick={onEnable}>{cap.action}</button>
+      )}
+    </div>
+  );
+}
+
+/** S6.3 pre-flight — the same requirement check every customer-facing publish runs,
+ *  listing what's missing and who owns it. */
+function PreflightModal({ cap, onClose }: { cap: Capability; onClose: () => void }) {
+  const missing = cap.requirements.filter((r) => !r.met);
+  return (
+    <div className="modal-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal std-modal sm" role="dialog" aria-modal="true">
+        <div className="std-modal-head"><h3 style={{ margin: 0 }}>{cap.title} isn’t ready</h3><button className="icon-btn" onClick={onClose}><X size={16} /></button></div>
+        <div className="std-modal-body stack" style={{ gap: 8 }}>
+          <p className="cell-sub" style={{ margin: 0 }}>This can’t go live until:</p>
+          {missing.map((r, i) => <div key={i} className="row" style={{ gap: 6 }}><Clock size={14} style={{ color: "var(--text-3)", flexShrink: 0, marginTop: 1 }} /><span className="cell-sub">{r.label} · <span className="sev-warning">waiting on {r.owner}</span></span></div>)}
+        </div>
+        <div className="std-modal-foot"><button className="btn primary" onClick={onClose}>Got it</button></div>
+      </div>
     </div>
   );
 }
