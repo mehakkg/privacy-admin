@@ -5,7 +5,7 @@ import { countUnread } from "@/lib/engines/notification";
 import { getDlpHealth } from "@/lib/engines/dlp";
 import { getInventoryCounts } from "@/lib/engines/inventory";
 import { getActivityCounts } from "@/lib/engines/activities";
-import { requireOnboardingGate } from "@/lib/guards/onboardingGate";
+import { requireSetupGate } from "@/lib/guards/setupGate";
 import { ShellFrame } from "@/components/ShellFrame";
 import { type NavEntry } from "@/components/SidebarNav";
 import type { ActorRole } from "@/lib/domain";
@@ -168,13 +168,10 @@ export async function Shell({
   title?: string;
   children: ReactNode;
 }) {
-  // Single chokepoint for the onboarding gate. Every page in the module renders
-  // through Shell, so guarding here covers all of them without each route
-  // remembering to. The wizard itself is the one exemption — guarding it would
-  // redirect it to itself.
-  if (!active.startsWith("/onboarding")) {
-    await requireOnboardingGate();
-  }
+  // Single chokepoint for the setup route guard. Every page renders through Shell,
+  // so guarding here covers all of them. Explore freely: only an unfinished profile
+  // (Admin/DPO) or an unseen plan redirects; the setup routes exempt themselves.
+  await requireSetupGate(active);
 
   const session = await getSession();
   const [openRequests, unread, auditOpen, maskingPending, invCounts, actCounts, ropaPending, escalationsOpen, dlpHealth] = await Promise.all([

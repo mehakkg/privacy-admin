@@ -8,8 +8,12 @@ import { WIDGET_BY_ID } from "@/lib/dashboard/widgets";
 import { MyDashboard } from "@/components/myDashboard";
 import type { SavedWidget } from "@/app/actions/dashboard";
 import { ROLE_LABEL, type ActorRole } from "@/lib/domain";
-import { getOnboardingSnapshot } from "@/lib/onboarding";
-import { OnboardingBanners, type BannerState } from "@/components/dashboard/OnboardingBanners";
+import { getSetupState } from "@/lib/setup/state";
+import { counts as setupCounts, goLive, visibleTasks, isTaskDone, effectiveOwner, setupComplete, ROLE_PERSON, type SetupRole } from "@/lib/setup/tasks";
+import { getPurposesView } from "@/lib/engines/purposes";
+import { DECLARED_CHANNELS } from "@/lib/activities/systems";
+import { daysUntil, ENFORCEMENT } from "@/lib/setup/plan";
+import { DashboardSetupStrip } from "@/components/setup/DashboardSetupStrip";
 
 export const dynamic = "force-dynamic";
 
@@ -50,28 +54,30 @@ export default async function DashboardPage({
   const tab: Tab = (TABS as readonly string[]).includes(rawTab ?? "") ? (rawTab as Tab) : "operations";
 
   const role = await getCurrentRole();
-  const [metrics, recent, layoutRow, onb, primaryEntity] = await Promise.all([
+  const [metrics, recent, layoutRow, setup, purposes, fiduciaryCount] = await Promise.all([
     computeDashboardMetrics(),
     db.auditLogEntry.findMany({ orderBy: { seq: "desc" }, take: 8 }),
     db.dashboardLayout.findUnique({ where: { role } }),
-    getOnboardingSnapshot(),
-    db.entity.findFirst({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    getSetupState(),
+    getPurposesView(),
+    db.entity.count(),
   ]);
 
-  const allGsDone = onb.sourceConnected && onb.assignmentCount > 0 && onb.entityCount > 1;
-  const banners: BannerState = {
-    showWelcome: onb.configured && !onb.provisionBannerDismissed,
-    welcomeText: onb.entityCount > 1
-      ? `We set up ${onb.entityCount} entities${onb.assignmentCount ? ` and invited ${onb.assignmentCount} team member${onb.assignmentCount === 1 ? "" : "s"}` : ""}.`
-      : `We set up ${onb.orgName ?? "your organization"} as your entity and assigned you the Admin role.`,
-    showGettingStarted: onb.configured && !onb.gettingStartedDismissed && !allGsDone,
-    showIncomplete: onb.hasGovernanceGap,
-    incompleteReason: onb.entityCount === 0
-      ? "No legal entity has been set up yet — every organization needs at least one Data Fiduciary."
-      : `${onb.entitiesMissingGovernance} entit${onb.entitiesMissingGovernance === 1 ? "y has" : "ies have"} no governance structure set.`,
-    primaryEntity: primaryEntity ?? null,
-    items: { source: onb.sourceConnected, teammates: onb.assignmentCount > 0, anotherEntity: onb.entityCount > 1 },
-  };
+  // S9 setup strip — computed; shown until all required tasks done AND all live.
+  const facts = { fiduciaryCount, approvedPurposes: purposes.counts.approved, channels: DECLARED_CHANNELS.size };
+  const sc = setupCounts(setup);
+  const caps = goLive(setup, facts);
+  const liveCount = caps.filter((c) => c.status === "Live").length;
+  const daysLeft = daysUntil(ENFORCEMENT);
+  const roleOrder: SetupRole[] = ["admin", "dpo", "ciso", "grievance"];
+  const vis = visibleTasks(setup);
+  const waiting = roleOrder
+    .filter((r) => r !== role && (r === "admin" || setup.invited.includes(r)))
+    .map((r) => { const open = vis.filter((t) => effectiveOwner(t, setup) === r && !isTaskDone(t.id, setup)).length; return open > 0 ? `${ROLE_PERSON[r]} (${open})` : null; })
+    .filter(Boolean).join(", ");
+  const myOpen = vis.filter((t) => effectiveOwner(t, setup) === role && !isTaskDone(t.id, setup)).length;
+  const showStrip = !setupComplete(setup, facts);
+  const stripAmber = daysLeft < 30 && sc.requiredDone < sc.requiredTotal;
 
   let initialWidgets: SavedWidget[] = [];
   try {
@@ -91,7 +97,7 @@ export default async function DashboardPage({
     <Shell active="/dashboard" title="Dashboard">
       <PageHead title="Dashboard" titleTip="Your landing surface — a summary of what needs attention, pulled together from across the platform." />
 
-      <OnboardingBanners state={banners} />
+      {showStrip && <DashboardSetupStrip requiredDone={sc.requiredDone} requiredTotal={sc.requiredTotal} live={liveCount} youreDone={myOpen === 0} waiting={waiting} days={daysLeft} amber={stripAmber} />}
 
       <nav className="stepper" style={{ marginBottom: 16 }}>
         {TABS.map((t) => (
