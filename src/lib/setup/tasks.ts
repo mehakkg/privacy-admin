@@ -91,26 +91,79 @@ export interface Capability { key: "portal" | "notices" | "consent"; title: stri
 
 export function goLive(s: SetupState, f: GoLiveFacts): Capability[] {
   const d2 = isTaskDone("D2", s), g1 = isTaskDone("G1", s);
+  const admin = ownerLabel("admin", s.invited);
   const portalReqs: Requirement[] = [
-    { label: "At least one fiduciary", met: f.fiduciaryCount >= 1, owner: ROLE_PERSON.admin },
-    { label: "Rule 9 published contact for every active fiduciary", met: d2, owner: ROLE_PERSON.dpo },
-    { label: "Grievance contact and response window set", met: g1, owner: ROLE_PERSON.grievance },
+    { label: "At least one fiduciary", met: f.fiduciaryCount >= 1, owner: admin },
+    { label: "Rule 9 published contact for every active fiduciary", met: d2, owner: ownerLabel("dpo", s.invited) },
+    { label: "Grievance contact and response window set", met: g1, owner: ownerLabel("grievance", s.invited) },
   ];
   const portal: Capability = { key: "portal", title: "Rights & grievance portal", requirements: portalReqs, status: s.caps.portal ? "Live" : portalReqs.every((r) => r.met) ? "Ready" : "Blocked", action: "Open portal" };
 
   const noticeReqs: Requirement[] = [
-    { label: "Rights & grievance portal ready", met: portal.status !== "Blocked", owner: ROLE_PERSON.admin },
-    { label: "At least one approved purpose", met: f.approvedPurposes >= 1, owner: ROLE_PERSON.dpo },
+    { label: "Rights & grievance portal ready", met: portal.status !== "Blocked", owner: admin },
+    { label: "At least one approved purpose", met: f.approvedPurposes >= 1, owner: ownerLabel("dpo", s.invited) },
   ];
   const notices: Capability = { key: "notices", title: "Notices", requirements: noticeReqs, status: s.caps.notices ? "Live" : noticeReqs.every((r) => r.met) ? "Ready" : "Blocked", action: "Publish first notice →", actionHref: "/consent/notices" };
 
   const consentReqs: Requirement[] = [
-    { label: "At least one published notice", met: s.caps.notices, owner: ROLE_PERSON.admin },
-    { label: "At least one collection channel configured", met: f.channels >= 1, owner: ROLE_PERSON.admin },
+    { label: "At least one published notice", met: s.caps.notices, owner: admin },
+    { label: "At least one collection channel configured", met: f.channels >= 1, owner: admin },
   ];
   const consent: Capability = { key: "consent", title: "Consent collection", requirements: consentReqs, status: s.caps.consent ? "Live" : consentReqs.every((r) => r.met) ? "Ready" : "Blocked", action: "Turn on collection →", actionHref: "/consent/platform" };
 
   return [portal, notices, consent];
+}
+
+// --- Staged path (layout revision) -----------------------------------------
+export interface Stage { n: 1 | 2; title: string; required: string[]; optional: string[] }
+export const STAGES: Stage[] = [
+  { n: 1, title: "Connect and set up the organisation", required: ["A1", "A2", "A3", "A4"], optional: ["A5"] },
+  { n: 2, title: "Governance and contacts", required: ["D1", "D2", "G1", "C1"], optional: ["D3", "D4", "C2"] },
+];
+
+export function roleAssigned(role: SetupRole, invited: SetupRole[]): boolean { return role === "admin" || invited.includes(role); }
+/** A person's name only when their role is assigned; otherwise "{Role} · not invited". */
+export function ownerLabel(role: SetupRole, invited: SetupRole[]): string {
+  return roleAssigned(role, invited) ? ROLE_PERSON[role] : `${ROLE_LABEL[role]} · not invited`;
+}
+
+export function stageState(stage: Stage, s: SetupState): { done: number; total: number; state: "Not started" | "In progress" | "Done ✓" } {
+  const req = stage.required.filter((id) => TASKS.find((t) => t.id === id));
+  const done = req.filter((id) => isTaskDone(id, s)).length;
+  const state = done === req.length ? "Done ✓" : done === 0 ? "Not started" : "In progress";
+  return { done, total: req.length, state };
+}
+
+function transitiveDependsOn(taskId: string, targetId: string, seen = new Set<string>()): boolean {
+  const t = TASKS.find((x) => x.id === taskId);
+  if (!t || seen.has(taskId)) return false;
+  seen.add(taskId);
+  if (t.dependsOn.includes(targetId)) return true;
+  return t.dependsOn.some((d) => transitiveDependsOn(d, targetId, seen));
+}
+
+/** Tasks + capabilities this task unlocks (transitively), for the Next-up card. */
+export function unlocks(id: string, s: SetupState): { count: number; label: string } {
+  const vis = visibleTasks(s).filter((t) => !isTaskDone(t.id, s));
+  const depTasks = vis.filter((t) => t.id !== id && transitiveDependsOn(t.id, id));
+  const parts: string[] = [];
+  // The first customer-facing capability gated by this task.
+  if (depTasks.some((t) => t.id === "D2" || t.id === "G1") || id === "D2" || id === "G1") parts.push("Rights portal");
+  // Optional tasks by name.
+  for (const t of depTasks.filter((t) => !t.required)) parts.push(t.id === "A5" ? "Starter pack" : t.title);
+  // Required dependents grouped by owner role.
+  const req = depTasks.filter((t) => t.required);
+  const byRole = new Map<SetupRole, number>();
+  for (const t of req) byRole.set(t.owner, (byRole.get(t.owner) ?? 0) + 1);
+  for (const [role, n] of byRole) parts.push(n === 1 ? req.find((t) => t.owner === role)!.title : `${n} ${ROLE_LABEL[role]} tasks`);
+  return { count: depTasks.length, label: parts.join(" · ") };
+}
+
+/** The current user's highest-leverage unblocked, required, not-done task. */
+export function nextUpTask(s: SetupState, role: string): SetupTask | null {
+  const cand = visibleTasks(s).filter((t) => effectiveOwner(t, s) === role && t.required && !isTaskDone(t.id, s) && taskStatus(t, s).kind === "todo");
+  cand.sort((a, b) => unlocks(b.id, s).count - unlocks(a.id, s).count || TASKS.indexOf(a) - TASKS.indexOf(b));
+  return cand[0] ?? null;
 }
 
 export function allRequiredDone(s: SetupState): boolean { const c = counts(s); return c.requiredDone === c.requiredTotal; }

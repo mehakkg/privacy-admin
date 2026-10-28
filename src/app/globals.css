@@ -298,6 +298,9 @@ textarea {
 .nav::-webkit-scrollbar-thumb { background: #334155; border-radius: 8px; border: 2px solid #0f172a; }
 .nav::-webkit-scrollbar-thumb:hover { background: #475569; }
 
+/* Setup stage number badge. */
+.stage-badge { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent, #2563eb); color: #fff; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+
 /* Data flow canvas — node-graph aesthetic (dotted grid + card ports). */
 .df-canvas-grid {
   background-color: var(--surface-sunken, #f8fafc);
