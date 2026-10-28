@@ -1,21 +1,26 @@
 import { redirect } from "next/navigation";
-import { getProfile } from "@/lib/setup/state";
-import { profileComplete } from "@/lib/setup/plan";
+import { db } from "@/lib/db";
 import { Shell } from "@/components/Shell";
+import { getProfile, getSetupState } from "@/lib/setup/state";
+import { getCurrentRole } from "@/lib/session";
+import { getPurposesView } from "@/lib/engines/purposes";
+import { profileComplete, daysUntil, ENFORCEMENT } from "@/lib/setup/plan";
+import { DECLARED_CHANNELS } from "@/lib/activities/systems";
+import { SetupScreen } from "@/components/setup/SetupScreen";
 
 export const dynamic = "force-dynamic";
 
-/** S6 — Setup (task catalogue + go-live gate). Full page lands in milestone 2;
- *  for now a placeholder so the plan's "Start setup" has a destination. */
+/** S6 — Setup: the task catalogue, role-filtered My tasks, Everyone's progress,
+ *  and the Go-live readiness gate. */
 export default async function SetupPage() {
-  const profile = await getProfile();
+  const [state, profile, role, purposes, fiduciaryCount] = await Promise.all([
+    getSetupState(), getProfile(), getCurrentRole(), getPurposesView(), db.entity.count(),
+  ]);
   if (!profileComplete(profile)) redirect("/setup/profile");
+  const facts = { fiduciaryCount, approvedPurposes: purposes.counts.approved, channels: DECLARED_CHANNELS.size };
   return (
     <Shell active="/setup" title="Setup">
-      <div className="pa-list">
-        <div className="pa-head"><div className="stack" style={{ gap: 4 }}><h1 className="inv-title">Setup</h1><p className="cell-sub" style={{ margin: 0 }}>Everything Meridian needs before going live. Each task goes to the person who owns it.</p></div></div>
-        <div className="inv-noresult" style={{ marginTop: 16 }}>The task catalogue and go-live gate are being built. Your profile and plan are saved.</div>
-      </div>
+      <SetupScreen state={state} role={role} facts={facts} days={daysUntil(ENFORCEMENT)} />
     </Shell>
   );
 }
