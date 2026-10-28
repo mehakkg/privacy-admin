@@ -208,17 +208,21 @@ function TaskRow({ t, state, role, optional, onOpen, onInvite, onRemind, onReass
   const st = taskStatus(t, state);
   const owner = effectiveOwner(t, state);
   const isMine = owner === role;
+  const done = st.kind === "done";
   const assigned = roleAssigned(owner, state.invited);
   const reassignable = (t.id === "C1" || t.id === "C2") && !state.invited.includes("ciso") && role === "admin";
-  const icon = st.kind === "done" ? <span style={{ color: "var(--green,#16a34a)" }}>✓</span>
-    : st.kind === "blocked" ? (isMine ? <span style={{ color: "var(--border,#cbd5e1)" }}>○</span> : <span style={{ color: "var(--yellow-700,#b45309)" }}>◐</span>)
-    : isMine ? <span style={{ color: "var(--accent,#2563eb)" }}>●</span> : <span style={{ color: "var(--yellow-700,#b45309)" }}>◐</span>;
+  // ✓ done · ● your turn · ◐ waiting on an assigned teammate · ○ not started / blocked.
+  const icon = done ? <span style={{ color: "var(--green,#16a34a)" }}>✓</span>
+    : isMine && st.kind === "todo" ? <span style={{ color: "var(--accent,#2563eb)" }}>●</span>
+    : !isMine && assigned ? <span style={{ color: "var(--yellow-700,#b45309)" }}>◐</span>
+    : <span style={{ color: "var(--border,#cbd5e1)" }}>○</span>;
 
+  // Action priority: your turn (verb / After) → unassigned owner (Invite) → assigned (Remind).
   let action: React.ReactNode = null;
-  if (st.kind === "done") action = <span className="cell-sub" title={"Completed"}>Done</span>;
-  else if (st.kind === "blocked") action = isMine ? <span className="cell-sub">After {st.dep}</span> : reassignable ? <button className="btn sec sm" onClick={() => onReassign(t.id)}>Assign to me</button> : <span className="cell-sub">After {st.dep}</span>;
-  else if (isMine) action = <button className="btn sec sm" onClick={() => onOpen(t)}>{VERB[t.id] ?? "Open"}</button>;
-  else if (!assigned) action = reassignable ? <button className="btn sec sm" onClick={() => onReassign(t.id)}>Assign to me</button> : <button className="link-btn" onClick={onInvite}>Invite {ROLE_LABEL[owner]}</button>;
+  if (done) action = <span className="cell-sub">Done</span>;
+  else if (isMine) action = st.kind === "blocked" ? <span className="cell-sub">After {st.dep}</span> : <button className="btn sec sm" onClick={() => onOpen(t)}>{VERB[t.id] ?? "Open"}</button>;
+  else if (reassignable) action = <button className="btn sec sm" onClick={() => onReassign(t.id)}>Assign to me</button>;
+  else if (!assigned) action = <button className="link-btn" onClick={onInvite}>Invite {ROLE_LABEL[owner]}</button>;
   else action = <button className="btn ghost sm" onClick={onRemind}>Remind</button>;
 
   return (

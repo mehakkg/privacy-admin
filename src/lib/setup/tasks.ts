@@ -159,10 +159,11 @@ export function unlocks(id: string, s: SetupState): { count: number; label: stri
   return { count: depTasks.length, label: parts.join(" · ") };
 }
 
-/** The current user's highest-leverage unblocked, required, not-done task. */
+/** The current user's next actionable required task — the earliest in catalogue
+ *  order that is unblocked and not done (so foundational steps come first). */
 export function nextUpTask(s: SetupState, role: string): SetupTask | null {
   const cand = visibleTasks(s).filter((t) => effectiveOwner(t, s) === role && t.required && !isTaskDone(t.id, s) && taskStatus(t, s).kind === "todo");
-  cand.sort((a, b) => unlocks(b.id, s).count - unlocks(a.id, s).count || TASKS.indexOf(a) - TASKS.indexOf(b));
+  cand.sort((a, b) => TASKS.indexOf(a) - TASKS.indexOf(b));
   return cand[0] ?? null;
 }
 
