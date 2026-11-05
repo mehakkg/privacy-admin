@@ -6,6 +6,7 @@ import { PageHead } from "@/components/ui";
 import { OrgProfileForm, type EntityProfile } from "@/components/settings/OrgProfileForm";
 import { OrgBrandingForm, type EntityBranding, type BrandingValue } from "@/components/settings/OrgBrandingForm";
 import { FiduciariesManager, type FiduciaryRow } from "@/components/settings/FiduciariesManager";
+import { OrgConnectors, OrgUsersRoles } from "@/components/settings/OrgConnectors";
 import { detailFor } from "@/lib/activities/fiduciaries";
 import { getCurrentRole } from "@/lib/session";
 
@@ -15,6 +16,8 @@ const TABS = [
   { key: "profile", label: "Profile" },
   { key: "branding", label: "Branding" },
   { key: "fiduciaries", label: "Fiduciaries" },
+  { key: "connectors", label: "Connectors" },
+  { key: "users", label: "Users & roles" },
 ] as const;
 type Tab = (typeof TABS)[number]["key"];
 
@@ -33,7 +36,8 @@ export default async function OrganizationSettingsPage({
   const params = await searchParams;
   // B2 redirect: the old "Entities" tab/route is now "Fiduciaries".
   if (params.tab === "entities") redirect("/settings/organization?tab=fiduciaries");
-  const tab: Tab = params.tab === "branding" ? "branding" : params.tab === "fiduciaries" ? "fiduciaries" : "profile";
+  const tab: Tab = params.tab === "branding" ? "branding" : params.tab === "fiduciaries" ? "fiduciaries" : params.tab === "connectors" ? "connectors" : params.tab === "users" ? "users" : "profile";
+  const connectorsSubtab = params.action === "health" ? "health" : "connectors";
 
   const [org, entities, brandingRows, actCounts, role] = await Promise.all([
     db.orgSettings.findUnique({ where: { id: "org" } }),
@@ -99,6 +103,16 @@ export default async function OrganizationSettingsPage({
         />
       ) : tab === "branding" ? (
         <OrgBrandingForm orgName={orgName} initial={orgDefault} entities={entityBranding} />
+      ) : tab === "connectors" ? (
+        <div className="stack" style={{ gap: 12 }}>
+          <nav className="mp-segment" style={{ width: "fit-content" }}>
+            <Link href="/settings/organization?tab=connectors" className={connectorsSubtab === "connectors" ? "on" : ""}>Connectors</Link>
+            <Link href="/settings/organization?tab=connectors&action=health" className={connectorsSubtab === "health" ? "on" : ""}>Health</Link>
+          </nav>
+          <OrgConnectors tab={connectorsSubtab} />
+        </div>
+      ) : tab === "users" ? (
+        <OrgUsersRoles />
       ) : (
         <FiduciariesManager rows={fiduciaryRows} role={role} openAdd={params.action === "add"} />
       )}
