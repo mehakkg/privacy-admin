@@ -558,6 +558,40 @@ textarea {
 .inv-group-head { display: flex; align-items: center; gap: 10px; padding: 8px 4px; }
 .inv-group-name { min-width: 160px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
+/* TPRM navigation prototype (tprm-nav). */
+.tn-page { max-width: 1040px; margin: 0 auto; padding: 24px 16px; }
+.tn-page-head { margin-bottom: 16px; }
+.tn-controls { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; padding: 12px 14px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--surface-sunken, #f8fafc); }
+.tn-ctl { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-3); }
+.tn-ctl-check { flex-direction: row; align-items: center; gap: 6px; }
+.tn-count { margin-left: auto; font-weight: 700; font-size: 13px; }
+.tn-shell { display: grid; grid-template-columns: 248px 1fr; min-height: 460px; border: 1px solid var(--border-soft); border-radius: 12px; overflow: hidden; }
+.tn-side { background: #0f1a2e; color: #cdd6e6; padding: 12px 0; overflow-y: auto; }
+.tn-side-portal { background: #10233a; }
+.tn-brand { display: flex; align-items: center; gap: 8px; padding: 4px 16px 14px; color: #fff; font-size: 14px; }
+.tn-logo { width: 26px; height: 26px; border-radius: 7px; background: #2563eb; display: grid; place-items: center; color: #fff; flex-shrink: 0; }
+.tn-logo-portal { background: #ea580c; }
+.tn-switch { margin-left: 2px; opacity: 0.7; cursor: default; }
+.tn-nav { display: flex; flex-direction: column; }
+.tn-group { padding: 6px 0; }
+.tn-group-head { display: flex; align-items: center; gap: 4px; width: 100%; padding: 4px 16px; background: none; border: 0; color: #7f8ba3; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; }
+.tn-row { display: flex; align-items: center; gap: 8px; padding: 0 16px; height: 36px; font-size: 13.5px; color: #cdd6e6; }
+.tn-row-label { flex: 1; min-width: 0; }
+.tn-row.active { background: rgba(37,99,235,0.18); color: #fff; box-shadow: inset 3px 0 0 #2563eb; }
+.tn-badge { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #2563eb; color: #fff; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.tn-main { display: flex; flex-direction: column; background: var(--surface, #fff); min-width: 0; }
+.tn-top { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid var(--border-soft); }
+.tn-top-left { display: inline-flex; align-items: center; gap: 6px; color: var(--text-3); }
+.tn-top-right { display: inline-flex; align-items: center; gap: 12px; color: var(--text-3); }
+.tn-gear { background: none; border: 0; cursor: pointer; color: var(--text-3); display: inline-flex; }
+.tn-gear.on { color: var(--blue, #2563eb); }
+.tn-avatar { width: 28px; height: 28px; border-radius: 50%; background: #2563eb; color: #fff; display: grid; place-items: center; font-size: 11px; }
+.tn-body { padding: 20px; overflow-y: auto; }
+.tn-noaccess { max-width: 420px; margin: 32px auto; text-align: center; }
+.tn-noaccess-icon { width: 48px; height: 48px; border-radius: 12px; background: var(--surface-sunken, #f1f5f9); display: grid; place-items: center; margin: 0 auto 10px; color: var(--text-3); }
+.tn-banner { padding: 10px 12px; border: 1px solid var(--border-soft); border-left: 3px solid var(--yellow-700, #b45309); border-radius: 8px; background: var(--yellow-100, #fef3c7); font-size: 13px; color: var(--yellow-700, #b45309); }
+@media (max-width: 720px) { .tn-shell { grid-template-columns: 1fr; } .tn-side { max-height: 240px; } }
+
 /* Organisation › Connectors / Users & roles (reach-products §8). */
 .or-table th, .or-table td { padding: 10px 12px; text-align: left; vertical-align: top; }
 .or-table thead th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-3); border-bottom: 1px solid var(--border-soft); }
