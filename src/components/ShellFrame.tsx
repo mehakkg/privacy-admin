@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { Menu, ShieldCheck, Settings } from "lucide-react";
+import Link from "next/link";
+import { Menu, Search, Bell, Settings } from "lucide-react";
 import { SidebarNav, type NavEntry } from "@/components/SidebarNav";
 import { ProfileMenu } from "@/components/ProfileMenu";
 import { ProductSwitcher } from "@/components/shell/ProductSwitcher";
@@ -11,30 +12,31 @@ import type { ActorRole } from "@/lib/domain";
 const COLLAPSE_KEY = "privacy-admin.sidebar.collapsed";
 
 /**
- * The app shell frame (app-shell-ui-spec). Owns the sidebar-collapse state so the
- * header hamburger and the sidebar share it. Renders the navy sidebar (brand +
- * nav), the two-control header (hamburger + avatar), and the white page canvas —
- * the only scroll container. Content, nav config and handlers are unchanged.
+ * The app shell frame. Owns the sidebar-collapse state so the header hamburger
+ * and the sidebar share it. The product identity now lives entirely in the
+ * header switcher — the sidebar has no brand block and starts straight at the
+ * nav (switcher-revision §4.1). Header order (§4.8):
+ *   [≡] [Switcher] … [Search] [Acting as ▾] [🔔] [⚙] [Avatar]
  */
 export function ShellFrame({
   nav,
   active,
-  brandName,
-  brandCaption,
   initials,
   name,
   email,
+  signedInName,
+  signedInEmail,
   currentRole,
   unread,
   children,
 }: {
   nav: NavEntry[];
   active: string;
-  brandName: string;
-  brandCaption: string;
   initials: string;
   name: string;
   email: string;
+  signedInName: string;
+  signedInEmail: string;
   currentRole: ActorRole;
   unread: number;
   children: ReactNode;
@@ -55,13 +57,6 @@ export function ShellFrame({
   return (
     <div className="app">
       <aside className={`sidebar${collapsed ? " collapsed" : ""}`}>
-        <div className="brand">
-          <span className="mark"><ShieldCheck strokeWidth={2} /></span>
-          <div className="txt">
-            <span className="name">{brandName}</span>
-            <span className="caption">{brandCaption}</span>
-          </div>
-        </div>
         <SidebarNav groups={nav} active={active} collapsed={collapsed} />
       </aside>
 
@@ -74,9 +69,17 @@ export function ShellFrame({
             <ProductSwitcher role={currentRole} />
           </div>
           <div className="topbar-right" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button className="shell-search" aria-label="Search" title="Search across products">
+              <Search size={15} strokeWidth={1.8} />
+              <span className="shell-search-text">Search</span>
+            </button>
             <ActingAsSwitcher role={currentRole} />
+            <Link href="/notifications" className="icon-btn shell-bell" aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"} title="Notifications">
+              <Bell strokeWidth={1.7} />
+              {unread > 0 && <span className="shell-bell-dot" aria-hidden />}
+            </Link>
             <a href="/settings/organization" className="icon-btn" aria-label="Settings" title="Settings"><Settings strokeWidth={1.7} /></a>
-            <ProfileMenu initials={initials} name={name} email={email} currentRole={currentRole} unread={unread} />
+            <ProfileMenu initials={initials} name={name} email={email} signedInName={signedInName} signedInEmail={signedInEmail} currentRole={currentRole} unread={unread} />
           </div>
         </header>
         <div className="page">{children}</div>

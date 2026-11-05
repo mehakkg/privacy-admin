@@ -19,12 +19,16 @@ export function ProfileMenu({
   initials,
   name,
   email,
+  signedInName,
+  signedInEmail,
   currentRole,
   unread,
 }: {
   initials: string;
   name: string;
   email: string;
+  signedInName: string;
+  signedInEmail: string;
   currentRole: ActorRole;
   unread: number;
 }) {
@@ -70,6 +74,13 @@ export function ProfileMenu({
               <div className="pi-email">{email}</div>
             </div>
           </div>
+
+          {signedInName !== name && (
+            <div className="popover-signedin">
+              Signed in as <strong>{signedInName}</strong>
+              <span className="pi-email">{signedInEmail}</span>
+            </div>
+          )}
 
           <div className="popover-divider" />
           <div className="popover-label">Switch role</div>

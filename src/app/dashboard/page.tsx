@@ -17,13 +17,14 @@ import { DashboardSetupStrip } from "@/components/setup/DashboardSetupStrip";
 
 export const dynamic = "force-dynamic";
 
-const TABS = ["operations", "data-health", "compliance", "my-dashboard"] as const;
+// Home tabs (switcher-revision §4.4): three only, sentence case. Personal work
+// lives in "My work", not a dashboard tab.
+const TABS = ["operations", "data-health", "compliance"] as const;
 type Tab = (typeof TABS)[number];
 const TAB_LABEL: Record<Tab, string> = {
   operations: "Operations",
-  "data-health": "Data Health",
-  compliance: "Compliance & Audit",
-  "my-dashboard": "My Dashboard",
+  "data-health": "Data health",
+  compliance: "Compliance & audit",
 };
 
 function prettyAction(a: string): string {
@@ -94,8 +95,8 @@ export default async function DashboardPage({
   if (metrics.ropaDrift.total) alerts.push({ severity: "yellow", text: `${metrics.ropaDrift.total} field(s) drift from the RoPA register`, href: "/discovery/ropa", cta: "Open ROPA" });
 
   return (
-    <Shell active="/dashboard" title="Dashboard">
-      <PageHead title="Dashboard" titleTip="Your landing surface — a summary of what needs attention, pulled together from across the platform." />
+    <Shell active="/dashboard" title="Home">
+      <PageHead title="Home" titleTip="Your landing surface — a summary of what needs attention, pulled together from across the platform." />
 
       {showStrip && <DashboardSetupStrip requiredDone={sc.requiredDone} requiredTotal={sc.requiredTotal} live={liveCount} youreDone={myOpen === 0} waiting={waiting} days={daysLeft} amber={stripAmber} />}
 
@@ -188,10 +189,6 @@ export default async function DashboardPage({
           <WidgetCard id="over_broad_access" metrics={metrics} />
           <WidgetCard id="audit_log_volume" metrics={metrics} />
         </div>
-      )}
-
-      {tab === "my-dashboard" && (
-        <MyDashboard metrics={metrics} initial={initialWidgets} role={role} />
       )}
     </Shell>
   );

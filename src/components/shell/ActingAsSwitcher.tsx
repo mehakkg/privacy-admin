@@ -5,20 +5,17 @@ import { useRouter } from "next/navigation";
 import { ChevronDown, Check } from "lucide-react";
 import { switchRole } from "@/app/actions/session";
 import type { ActorRole } from "@/lib/domain";
+import { PERSONAS, productsLabel, type Persona } from "@/lib/products/people";
 
 /**
  * Acting-as (reach-products §2.2) — the demo person switcher. It switches the
- * internal person (fixture §10), who carries roles across products; since each
- * person maps to one Privacy role, switching here sets that role. The current
- * person is derived from the current Privacy role.
+ * internal person (switcher-revision §1.2), who carries roles across products;
+ * since each person maps to one Privacy role, switching here sets that role. The
+ * current person is derived from the current Privacy role. Personas and the
+ * products each can open come from one source (@/lib/products/people).
  */
-interface Person { name: string; role: ActorRole; roleLabel: string; products: string }
-const PEOPLE: Person[] = [
-  { name: "Ritu Nair", role: "admin", roleLabel: "Admin", products: "Privacy · IAM · DLP · TPRM" },
-  { name: "Kavita Menon", role: "dpo", roleLabel: "DPO", products: "Privacy · TPRM" },
-  { name: "Arvind Rao", role: "ciso", roleLabel: "CISO", products: "Privacy · TPRM" },
-  { name: "Neha Kapoor", role: "legal", roleLabel: "Legal", products: "Privacy" },
-];
+type Person = Persona;
+const PEOPLE: Person[] = PERSONAS;
 
 export function ActingAsSwitcher({ role }: { role: ActorRole }) {
   const router = useRouter();
@@ -41,7 +38,7 @@ export function ActingAsSwitcher({ role }: { role: ActorRole }) {
           {PEOPLE.map((p) => (
             <button key={p.name} className={`popover-row${p.role === role ? " selected" : ""}`} role="menuitemradio" aria-checked={p.role === role} onClick={() => pick(p)} style={{ display: "flex", gap: 8, alignItems: "center", width: "100%", textAlign: "left" }}>
               <span style={{ width: 26, height: 26, borderRadius: "50%", background: "var(--accent,#2563eb)", color: "#fff", display: "grid", placeItems: "center", fontSize: 11, flexShrink: 0 }}>{p.name.split(" ").map((w) => w[0]).join("")}</span>
-              <span className="stack" style={{ gap: 0, minWidth: 0, flex: 1 }}><span style={{ fontWeight: 600, fontSize: 13 }}>{p.name}</span><span className="cell-sub">{p.roleLabel} · {p.products}</span></span>
+              <span className="stack" style={{ gap: 0, minWidth: 0, flex: 1 }}><span style={{ fontWeight: 600, fontSize: 13 }}>{p.name}</span><span className="cell-sub">{p.roleLabel} · {productsLabel(p.role)}</span></span>
               {p.role === role && <span className="check"><Check size={15} /></span>}
             </button>
           ))}

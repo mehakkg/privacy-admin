@@ -12,6 +12,7 @@ import { allRequiredDone } from "@/lib/setup/tasks";
 import { ShellFrame } from "@/components/ShellFrame";
 import { type NavEntry } from "@/components/SidebarNav";
 import type { ActorRole } from "@/lib/domain";
+import { personaFor, initialsOf, emailFor, SIGNED_IN_AS } from "@/lib/products/people";
 
 /**
  * Admin module navigation — organised into three macro groups by dependency
@@ -62,7 +63,7 @@ function navGroups(counts: NavCounts, role: ActorRole, showSetup: boolean): NavE
     {
       key: "data-map", label: "Data Map", href: "/data-map/inventory", ready: true,
       children: [
-        { href: "/data-map/inventory", label: "Data inventory", ready: true, badge: counts.inventoryGaps || undefined, badgeLabel: `${counts.inventoryGaps} inventory gaps`, warn: counts.dlpWarn },
+        { href: "/data-map/inventory", label: "Data inventory", ready: true, badge: counts.inventoryGaps || undefined, badgeLabel: `${counts.inventoryGaps} inventory gaps` },
         { href: "/data-map/activities", label: "Activities", ready: true, badge: counts.activitiesNeedsWork || undefined, badgeLabel: `${counts.activitiesNeedsWork} activities need work` },
         { href: "/data-map/purposes", label: "Purposes", ready: true },
         { href: "/data-map/processors", label: "Processors", ready: true },
@@ -91,23 +92,6 @@ function navGroups(counts: NavCounts, role: ActorRole, showSetup: boolean): NavE
     { key: "audit", label: "Audit log", href: "/audit", ready: true },
     { key: "reports", label: "Reports", href: "/reports", ready: true },
   ];
-}
-
-/**
- * "R. Iyer" -> "RI", "P. Deshmukh" -> "PD". Takes the first letter of each
- * word, so an initialled first name contributes its initial rather than a
- * stray full stop.
- */
-function initialsOf(name: string): string {
-  return (
-    name
-      .split(/\s+/)
-      .map((part) => part.replace(/[^A-Za-z]/g, "").charAt(0))
-      .filter(Boolean)
-      .slice(0, 2)
-      .join("")
-      .toUpperCase() || "?"
-  );
 }
 
 export async function Shell({
@@ -153,18 +137,23 @@ export async function Shell({
   const [setupProfile, setupState] = await Promise.all([getProfile(), getSetupState()]);
   const showSetup = profileComplete(setupProfile) && !allRequiredDone(setupState);
 
-  const name = session.actor.label;
-  const email = `${name.toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/(^\.|\.$)/g, "")}@privacyconsole.in`;
+  // Avatar + identity follow the Acting-as persona (switcher-revision §4.3); the
+  // account menu shows the real signed-in user separately. dlpHealth drives the
+  // on-page banner on Data inventory only — no second sidebar icon.
+  const persona = personaFor(session.role);
+  const name = persona.name;
+  const email = emailFor(name);
+  void dlpHealth;
 
   return (
     <ShellFrame
-      nav={navGroups({ openRequests, auditOpen, maskingPending, inventoryGaps, activitiesNeedsWork, ropaPending, escalationsOpen, dlpWarn: dlpHealth.warnText }, session.role, showSetup)}
+      nav={navGroups({ openRequests, auditOpen, maskingPending, inventoryGaps, activitiesNeedsWork, ropaPending, escalationsOpen, dlpWarn: null }, session.role, showSetup)}
       active={active}
-      brandName="Privacy Admin"
-      brandCaption="PRIVACY CONSOLE"
       initials={initialsOf(name)}
       name={name}
       email={email}
+      signedInName={SIGNED_IN_AS.name}
+      signedInEmail={SIGNED_IN_AS.email}
       currentRole={session.role}
       unread={unread}
     >

@@ -569,7 +569,8 @@ textarea {
 .tn-side { background: #0f1a2e; color: #cdd6e6; padding: 12px 0; overflow-y: auto; }
 .tn-side-portal { background: #10233a; }
 .tn-brand { display: flex; align-items: center; gap: 8px; padding: 4px 16px 14px; color: #fff; font-size: 14px; }
-.tn-logo { width: 26px; height: 26px; border-radius: 7px; background: #2563eb; display: grid; place-items: center; color: #fff; flex-shrink: 0; }
+/* TPRM's mark is orange, matching the switcher's TPRM row (switcher-revision §4.6). */
+.tn-logo { width: 26px; height: 26px; border-radius: 7px; background: #ea580c; display: grid; place-items: center; color: #fff; flex-shrink: 0; }
 .tn-logo-portal { background: #ea580c; }
 .tn-ps { position: relative; padding: 0 8px 8px; }
 .tn-brand-btn { width: 100%; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 9px; cursor: pointer; padding: 8px 10px; }
@@ -1004,6 +1005,33 @@ a.tn-ps-row:hover { background: var(--surface-sunken, #f1f5f9); }
 }
 .icon-btn:hover { background: #f3f4f6; }
 .icon-btn svg { width: 20px; height: 20px; }
+
+/* Shared header search (switcher-revision §4.8) — a quiet pill before Acting as. */
+.shell-search {
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 34px; padding: 0 12px; border-radius: 8px;
+  border: 1px solid var(--border, #e5e7eb); background: var(--surface, #fff);
+  color: #6b7280; font-size: 13px; cursor: pointer;
+}
+.shell-search:hover { background: #f9fafb; color: #374151; }
+.shell-search-text { color: inherit; }
+@media (max-width: 860px) { .shell-search-text { display: none; } .shell-search { padding: 0 9px; } }
+
+/* Header notification bell with an unread dot. */
+.shell-bell { position: relative; }
+.shell-bell-dot {
+  position: absolute; top: 7px; right: 8px;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #dc2626; border: 1.5px solid var(--bg, #fff);
+}
+
+/* "Signed in as" line in the account menu (switcher-revision §4.3). */
+.popover-signedin {
+  padding: 6px 14px 2px; font-size: 12px; color: #6b7280;
+  display: flex; flex-direction: column; gap: 1px;
+}
+.popover-signedin strong { color: #374151; font-weight: 600; }
+.popover-signedin .pi-email { font-size: 11px; color: #9ca3af; }
 
 .avatar-btn {
   width: 32px;

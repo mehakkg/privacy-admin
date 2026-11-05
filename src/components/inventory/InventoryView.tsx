@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -25,8 +25,13 @@ type Opt = { id: string; name: string };
 // return context back to the Data inventory (reach-products §2.3).
 const INV_FROM = { label: "Data inventory", href: "/data-map/inventory" };
 
-export function InventoryView({ view, params, moved, categories, subjectTypes, strip }: {
-  view: View; params: InventoryParams; moved?: string; categories: Opt[]; subjectTypes: string[]; strip: ReadinessStripData;
+// Whether the acting-as person can open DLP. The contextual DLP links render
+// only when true (switcher-revision §3); provided at the view root, read by the
+// sub-components that carry a link.
+const DlpAccess = createContext(true);
+
+export function InventoryView({ view, params, moved, categories, subjectTypes, strip, canOpenDlp = true }: {
+  view: View; params: InventoryParams; moved?: string; categories: Opt[]; subjectTypes: string[]; strip: ReadinessStripData; canOpenDlp?: boolean;
 }) {
   const router = useRouter();
   const [, start] = useTransition();
@@ -165,6 +170,7 @@ export function InventoryView({ view, params, moved, categories, subjectTypes, s
   const act = cardAction(counts);
 
   return (
+    <DlpAccess.Provider value={canOpenDlp}>
     <div className="inv">
       <div aria-live="polite" className="sr-only">{live}</div>
 
@@ -175,7 +181,7 @@ export function InventoryView({ view, params, moved, categories, subjectTypes, s
           <SyncLine view={view} onSync={() => start(async () => { await syncNowAction(); router.refresh(); })} />
         </div>
         <div className="row inv-headlinks">
-          <a href={dlpLink("Source list", INV_FROM)} className="row-link inv-nowrap" aria-label="Open source list in DLP">Open in DLP <ExternalLink size={13} /></a>
+          {canOpenDlp && <a href={dlpLink("Source list", INV_FROM)} className="row-link inv-nowrap" aria-label="Open source list in DLP">Open in DLP <ExternalLink size={13} /></a>}
           <a href="/api/discovery/export" className="row-link inv-nowrap">Export <Download size={13} /></a>
         </div>
       </div>
@@ -184,7 +190,7 @@ export function InventoryView({ view, params, moved, categories, subjectTypes, s
 
       {/* DLP findings strip (reach-products §4.1/§4.2) — policy violations and
           user-directory findings are owned by DLP, counted here with a link. */}
-      {DLP_SIGNALS.policyViolations > 0 && (
+      {canOpenDlp && DLP_SIGNALS.policyViolations > 0 && (
         <a href={dlpLink("Policy violations", INV_FROM)} className="inv-dlp-strip" aria-label={`${DLP_SIGNALS.policyViolations} policy violations in DLP`}>
           <ProductChip product="dlp" />
           <span><span className="tnum">{DLP_SIGNALS.policyViolations}</span> policy violations on these sources</span>
@@ -273,6 +279,7 @@ export function InventoryView({ view, params, moved, categories, subjectTypes, s
       />}
       {toast && <Toast msg={toast.msg} onUndo={toast.undo} onClose={() => setToast(null)} />}
     </div>
+    </DlpAccess.Provider>
   );
 }
 
@@ -309,6 +316,7 @@ function GroupBlock({ g, grouping, open, onToggle, sel, setSel, onOpen, onAssign
   sel: Set<string>; setSel: React.Dispatch<React.SetStateAction<Set<string>>>; onOpen: (id: string) => void;
   onAssign: (ids: string[], e: React.MouseEvent) => void; onAssignSuggestion: (g: GroupView & { rows: InventoryRow[] }, e: React.MouseEvent) => void;
 }) {
+  const canOpenDlp = useContext(DlpAccess);
   const allSel = g.rows.length > 0 && g.rows.every((r) => sel.has(r.id));
   return (
     <div className="inv-group">
@@ -317,9 +325,9 @@ function GroupBlock({ g, grouping, open, onToggle, sel, setSel, onOpen, onAssign
         <input type="checkbox" checked={allSel} aria-label={`Select all in ${g.name}`} onChange={(e) => setSel((s) => { const n = new Set(s); for (const r of g.rows) e.target.checked ? n.add(r.id) : n.delete(r.id); return n; })} />
         <div className="inv-group-name">
           <strong>{g.name}</strong>
-          {grouping === "system" && <ProductChip product="dlp" />}
+          {grouping === "system" && canOpenDlp && <ProductChip product="dlp" />}
           <span className="cell-sub">{plural(g.fieldCount, "field")}{g.newCount > 0 ? <span className="sev-accent"> · {g.newCount} new</span> : ""}</span>
-          {grouping === "system" && <a href={dlpLink(`Source · ${g.name}`, INV_FROM)} className="row-link inv-nowrap" style={{ fontSize: 12 }} onClick={(e) => e.stopPropagation()}>Open source in DLP <ExternalLink size={11} /></a>}
+          {grouping === "system" && canOpenDlp && <a href={dlpLink(`Source · ${g.name}`, INV_FROM)} className="row-link inv-nowrap" style={{ fontSize: 12 }} onClick={(e) => e.stopPropagation()}>Open source in DLP <ExternalLink size={11} /></a>}
         </div>
         <div className="inv-group-mid">
           <MixBar mix={g.mix} />
@@ -359,6 +367,7 @@ function FlatTable({ rows, sel, setSel, grouping, onOpen, onAssign }: { rows: In
 
 // --- Row --------------------------------------------------------------------
 function Row({ r, grouping, selected, onToggle, onOpen, onAssign }: { r: InventoryRow; grouping: Grouping; selected: boolean; onToggle: () => void; onOpen: () => void; onAssign: (e: React.MouseEvent) => void }) {
+  const canOpenDlp = useContext(DlpAccess);
   const tone = SENS_TONE[r.sensitivity] ?? SENS_TONE["Not classified"];
   const meta = READINESS_META[r.status];
   return (
@@ -374,7 +383,7 @@ function Row({ r, grouping, selected, onToggle, onOpen, onAssign }: { r: Invento
       <td>{r.purposes.length === 0 ? <span className="cell-sub">—</span> : <span className="inv-purposes" title={r.purposes.map((p) => p.name).join(", ")}>{r.purposes[0].name}{r.purposes.length > 1 && <span className="cell-sub"> +{r.purposes.length - 1}</span>}</span>}</td>
       <td>
         <span className={`inv-status ${meta.cls}`}><span className="dot" style={{ background: meta.dot }} />{meta.label}</span>
-        {meta.action && <span className="inv-rowaction">{meta.kind === "assign" ? <button className="link-btn" onClick={onAssign}>{meta.action}</button> : meta.kind === "classify" ? <a href={dlpLink(`Classify · ${r.fieldPath}`, INV_FROM)} className="link-btn">{meta.action}</a> : <button className="link-btn" onClick={onOpen}>{meta.action}</button>}</span>}
+        {meta.action && <span className="inv-rowaction">{meta.kind === "assign" ? <button className="link-btn" onClick={onAssign}>{meta.action}</button> : meta.kind === "classify" ? (canOpenDlp ? <a href={dlpLink(`Classify · ${r.fieldPath}`, INV_FROM)} className="link-btn">{meta.action}</a> : <span className="cell-sub">{meta.action}</span>) : <button className="link-btn" onClick={onOpen}>{meta.action}</button>}</span>}
       </td>
     </tr>
   );
@@ -467,6 +476,7 @@ function FieldDrawer({ row, categories, subjectTypes, onClose, onAssign, onRemov
   row: InventoryRow; categories: Opt[]; subjectTypes: string[];
   onClose: () => void; onAssign: (e: React.MouseEvent) => void; onRemove: (purposeId: string) => void; onSetAttr: (attr: "dataCategoryId" | "dataSubjectType", value: string | null) => void;
 }) {
+  const canOpenDlp = useContext(DlpAccess);
   const meta = READINESS_META[row.status];
   return createPortal(
     <div className="mp-drawer-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -477,13 +487,13 @@ function FieldDrawer({ row, categories, subjectTypes, onClose, onAssign, onRemov
         </div>
         <div className="mp-drawer-body stack" style={{ gap: 16 }}>
           <section>
-            <div className="inv-sec-h" style={{ display: "flex", alignItems: "center", gap: 6 }}>Managed in DLP <ProductChip product="dlp" syncedAgo={row.lastScanned ?? undefined} /></div>
+            <div className="inv-sec-h" style={{ display: "flex", alignItems: "center", gap: 6 }}>Managed in DLP {canOpenDlp && <ProductChip product="dlp" syncedAgo={row.lastScanned ?? undefined} />}</div>
             <KV k="System" v={row.system} /><KV k="Data type" v={row.dataType} />
             <KV k="Sensitivity" v={`${row.sensitivity}, from DLP`} /><KV k="Last scanned" v={row.lastScanned ?? "—"} />
             {row.provenance !== "discovered" && <KV k="Provenance" v={row.provenance === "declared" ? "Declared, not discovered" : "Unknown to DLP"} />}
             {row.isChanged && row.changeSummary && <div className="inv-changed"><AlertTriangle size={12} /> Changed since your last visit: {row.changeSummary}</div>}
-            <a href={dlpLink(`Field · ${row.fieldPath}`, INV_FROM)} className="row-link">Open in DLP <ExternalLink size={12} /></a>
-            {row.sensitivity === "Not classified" && <a href={dlpLink(`Classify · ${row.fieldPath}`, INV_FROM)} className="row-link">Classify in DLP <ExternalLink size={12} /></a>}
+            {canOpenDlp && <a href={dlpLink(`Field · ${row.fieldPath}`, INV_FROM)} className="row-link">Open in DLP <ExternalLink size={12} /></a>}
+            {canOpenDlp && row.sensitivity === "Not classified" && <a href={dlpLink(`Classify · ${row.fieldPath}`, INV_FROM)} className="row-link">Classify in DLP <ExternalLink size={12} /></a>}
           </section>
           <section>
             <div className="inv-sec-h">Added in Privacy Admin</div>
@@ -507,7 +517,7 @@ function FieldDrawer({ row, categories, subjectTypes, onClose, onAssign, onRemov
           <section>
             <div className="inv-sec-h">Readiness</div>
             {row.status === "ready" ? <div className="inv-status sev-success"><Check size={13} /> Ready</div> : (
-              <ul className="inv-gaplist"><li>{meta.label}.{meta.action ? (meta.kind === "assign" ? <button className="link-btn" onClick={onAssign}> {meta.action}</button> : meta.kind === "classify" ? <a href={dlpLink(`Classify · ${row.fieldPath}`, INV_FROM)} className="link-btn"> {meta.action}</a> : <span> {meta.action}</span>) : ""}</li></ul>
+              <ul className="inv-gaplist"><li>{meta.label}.{meta.action ? (meta.kind === "assign" ? <button className="link-btn" onClick={onAssign}> {meta.action}</button> : meta.kind === "classify" ? (canOpenDlp ? <a href={dlpLink(`Classify · ${row.fieldPath}`, INV_FROM)} className="link-btn"> {meta.action}</a> : <span> {meta.action}</span>) : <span> {meta.action}</span>) : ""}</li></ul>
             )}
           </section>
           <Link href={`/audit?search=${row.id}`} className="row-link">View history</Link>

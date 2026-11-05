@@ -19,7 +19,7 @@ const STATE_META: Record<RowState, { label: string; tone: string; icon: typeof C
   manual: { label: "Manually verified", tone: "sev-accent", icon: FileCheck },
 };
 
-export function AccessChangesView({ initial }: { initial: AccessChange[] }) {
+export function AccessChangesView({ initial, canOpenIam = true }: { initial: AccessChange[]; canOpenIam?: boolean }) {
   const [changes, setChanges] = useState(initial);
   const [openId, setOpenId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -40,8 +40,8 @@ export function AccessChangesView({ initial }: { initial: AccessChange[] }) {
     <div className="stack" style={{ gap: 16 }}>
       {/* Entry points into IAM (§5.2) */}
       <div className="row" style={{ gap: 16, flexWrap: "wrap" }}>
-        <a href={iamLink("Access review campaigns", { label: "Access changes", href: "/access/changes" })} className="row-link">Access reviews <ExternalLink size={13} /></a>
-        <a href={iamLink("Dormant accounts", { label: "Access changes", href: "/access/changes" })} className="row-link">Dormant accounts <ExternalLink size={13} /></a>
+        {canOpenIam && <a href={iamLink("Access review campaigns", { label: "Access changes", href: "/access/changes" })} className="row-link">Access reviews <ExternalLink size={13} /></a>}
+        {canOpenIam && <a href={iamLink("Dormant accounts", { label: "Access changes", href: "/access/changes" })} className="row-link">Dormant accounts <ExternalLink size={13} /></a>}
         <span className="cell-sub" style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
           Executed in <ProductChip product="iam" /> · verified by receipt
         </span>
@@ -79,7 +79,7 @@ export function AccessChangesView({ initial }: { initial: AccessChange[] }) {
                 <div className="row" style={{ gap: 8, alignItems: "center" }}>
                   <span className="mono" style={{ fontSize: 12.5 }}>{open.id}</span>
                   <strong>{open.subject}</strong>
-                  <a href={iamLink(`Person · ${open.subject}`, { label: open.id, href: "/access/changes" })} className="row-link" style={{ fontSize: 12 }}>View in IAM <ExternalLink size={11} /></a>
+                  {canOpenIam && <a href={iamLink(`Person · ${open.subject}`, { label: open.id, href: "/access/changes" })} className="row-link" style={{ fontSize: 12 }}>View in IAM <ExternalLink size={11} /></a>}
                 </div>
                 <span className="cell-sub">{TRIGGER_LABEL[open.trigger]} · {open.createdAgo}</span>
               </div>
@@ -118,7 +118,7 @@ export function AccessChangesView({ initial }: { initial: AccessChange[] }) {
                           {(r.state === "no_confirmation" || r.state === "failed") && <button className="link-btn" onClick={() => retry(open, r)}>Retry</button>}
                           {r.state === "no_confirmation" && <button className="link-btn" onClick={() => escalate(open, r)}>Escalate</button>}
                           {!r.iamManaged && r.state !== "manual" && <button className="link-btn" onClick={() => confirmManual(open, r)}>Confirm manually</button>}
-                          <a href={iamLink(`${r.app} · ${open.subject}`, { label: open.id, href: "/access/changes" })} className="row-link" style={{ fontSize: 12 }}>Open in IAM <ExternalLink size={11} /></a>
+                          {canOpenIam && <a href={iamLink(`${r.app} · ${open.subject}`, { label: open.id, href: "/access/changes" })} className="row-link" style={{ fontSize: 12 }}>Open in IAM <ExternalLink size={11} /></a>}
                         </div>
                       </div>
                     </div>

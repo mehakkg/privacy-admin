@@ -3,6 +3,8 @@ import { Shell } from "@/components/Shell";
 import { getInventory, type InventoryParams } from "@/lib/engines/inventory";
 import { getReadinessStrip } from "@/lib/engines/datamap";
 import { InventoryView } from "@/components/inventory/InventoryView";
+import { getCurrentRole } from "@/lib/session";
+import { canOpenProduct } from "@/lib/products/people";
 
 export const dynamic = "force-dynamic";
 
@@ -23,11 +25,15 @@ export default async function InventoryPage({
     q: sp.q, system: sp.system, sensitivity: sp.sensitivity, status: sp.status,
     dataType: sp.dataType, dataCategory: sp.dataCategory, purpose: sp.purpose, subject: sp.subject, provenance: sp.provenance,
   };
-  const [view, categories, strip] = await Promise.all([
+  const [view, categories, strip, role] = await Promise.all([
     getInventory(params),
     db.dataCategory.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     getReadinessStrip(),
+    getCurrentRole(),
   ]);
+  // DLP contextual links render only if the acting-as person can open DLP
+  // (switcher-revision §3). Kavita (DPO) can't, so none of them appear for her.
+  const canOpenDlp = canOpenProduct(role, "dlp");
 
   return (
     <Shell active="/data-map/inventory" title="Data inventory">
@@ -38,6 +44,7 @@ export default async function InventoryPage({
         categories={categories.map((c) => ({ id: c.name, name: c.name }))}
         subjectTypes={["customer", "employee", "vendor", "minor"]}
         strip={strip}
+        canOpenDlp={canOpenDlp}
       />
     </Shell>
   );

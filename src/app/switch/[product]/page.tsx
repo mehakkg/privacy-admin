@@ -44,8 +44,8 @@ export default async function SwitchHolding({
           <p className="cell-sub" style={{ margin: 0 }}>{p.desc}</p>
         ) : null}
         <p className="cell-sub" style={{ marginTop: 8 }}>
-          This portal isn’t connected in this demo. In production, this opens {p.name}
-          {sp.object ? " on the exact object above" : ""} with the same session, with a return bar back to Privacy.
+          {p.name} opens here. In production this is the {p.name.replace("miniOrange ", "")} console
+          {sp.object ? ", on the exact object above," : ""} in the same session.
         </p>
         <div><Link href={backHref} className="btn primary">{backLabel}</Link></div>
       </div>
