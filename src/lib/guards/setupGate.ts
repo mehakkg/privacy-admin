@@ -1,8 +1,3 @@
-import { redirect } from "next/navigation";
-import { getCurrentRole } from "@/lib/session";
-import { getProfile, getPlanViewedRoles } from "@/lib/setup/state";
-import { profileComplete } from "@/lib/setup/plan";
-
 /**
  * Setup route guard (replaces the September onboarding dashboard lock). Principle:
  * explore freely, publish safely. The dashboard and every module are reachable —
@@ -13,14 +8,12 @@ import { profileComplete } from "@/lib/setup/plan";
  * After that, the user is never forced back to /setup; the dashboard strip links to it.
  * Server-side redirect, so a gated page is never painted.
  */
-export async function requireSetupGate(active: string): Promise<void> {
-  if (active.startsWith("/setup") || active.startsWith("/login") || active.startsWith("/invite") || active.startsWith("/account")) return;
-  const role = await getCurrentRole();
-  const profile = await getProfile();
-  if (!profileComplete(profile)) {
-    if (role === "admin" || role === "dpo") redirect("/setup/profile");
-    return;
-  }
-  const viewed = await getPlanViewedRoles();
-  if (!viewed.includes(role)) redirect("/setup/plan");
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function requireSetupGate(_active: string): Promise<void> {
+  // Explore freely (unified-nav §0): the dashboard and every module are reachable
+  // from the first login — nothing in the sidebar is gated. Onboarding is entered
+  // on purpose via the Setup leaf and the Home setup strip, not by a forced
+  // redirect, and only the three customer-facing capabilities are gated (at publish
+  // time, §6.3 pre-flight). So this guard no longer redirects.
+  return;
 }
