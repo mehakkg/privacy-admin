@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,9 @@ export default async function SwitchHolding({
 }) {
   const { product } = await params;
   const sp = await searchParams;
+  // TPRM has a working nav prototype in this repo — open it instead of the
+  // "not connected" holding page.
+  if (product === "tprm") redirect("/tprm-console");
   const p = PRODUCT[product] ?? { name: "this product", desc: "", accent: "#2563eb" };
   const backHref = sp.fromHref || "/home";
   const backLabel = sp.from ? `← Back to ${sp.from} in Privacy` : "← Back to miniOrange Privacy";

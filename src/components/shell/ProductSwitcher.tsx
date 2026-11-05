@@ -37,7 +37,13 @@ export function ProductSwitcher({ role }: { role: ActorRole }) {
   const current = PRODUCTS[0];
   const single = products.length === 1;
 
-  const go = (key: ProductKey) => { setOpen(false); if (key !== "privacy") router.push(`/switch/${key}`); };
+  // TPRM has a working nav prototype in this repo; the other portals aren't
+  // connected, so they open the holding page.
+  const go = (key: ProductKey) => {
+    setOpen(false);
+    if (key === "privacy") return;
+    router.push(key === "tprm" ? "/tprm-console" : `/switch/${key}`);
+  };
 
   return (
     <div ref={ref} style={{ position: "relative" }}>

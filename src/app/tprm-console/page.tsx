@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { TprmNavDemo } from "@/components/tprm-nav/TprmNavDemo";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +14,9 @@ export const dynamic = "force-dynamic";
 export default function TprmConsolePage() {
   return (
     <div className="tn-page">
+      <Link href="/home" className="row-link" style={{ display: "inline-flex", alignItems: "center", gap: 4, marginBottom: 12 }}>
+        <ArrowLeft size={14} /> Back to miniOrange Privacy
+      </Link>
       <header className="tn-page-head">
         <h1 className="inv-title">TPRM navigation</h1>
         <p className="cell-sub" style={{ margin: 0 }}>
