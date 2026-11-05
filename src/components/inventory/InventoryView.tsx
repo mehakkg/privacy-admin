@@ -17,9 +17,13 @@ import { plural, agree } from "@/lib/datamap/foundations";
 import { assignPurposeAction, removePurposeAction, setFieldAttributeAction, suggestPurposesAction, syncNowAction, getAssignActivityOptionsAction } from "@/app/actions/inventory";
 import type { InventoryParams } from "@/lib/engines/inventory";
 import type { ReadinessStripData } from "@/lib/engines/datamap";
+import { dlpLink, DLP_SIGNALS } from "@/lib/products/deeplink";
+import { ProductChip } from "@/components/shell/ProductChip";
 
 type Opt = { id: string; name: string };
-const DLP_URL = "#";
+// Deep link into DLP for the whole inventory ("Open in DLP" header), with a
+// return context back to the Data inventory (reach-products §2.3).
+const INV_FROM = { label: "Data inventory", href: "/data-map/inventory" };
 
 export function InventoryView({ view, params, moved, categories, subjectTypes, strip }: {
   view: View; params: InventoryParams; moved?: string; categories: Opt[]; subjectTypes: string[]; strip: ReadinessStripData;
@@ -171,12 +175,22 @@ export function InventoryView({ view, params, moved, categories, subjectTypes, s
           <SyncLine view={view} onSync={() => start(async () => { await syncNowAction(); router.refresh(); })} />
         </div>
         <div className="row inv-headlinks">
-          <a href={DLP_URL} className="row-link inv-nowrap" aria-label="Open in DLP (external)">Open in DLP <ExternalLink size={13} /></a>
+          <a href={dlpLink("Source list", INV_FROM)} className="row-link inv-nowrap" aria-label="Open source list in DLP">Open in DLP <ExternalLink size={13} /></a>
           <a href="/api/discovery/export" className="row-link inv-nowrap">Export <Download size={13} /></a>
         </div>
       </div>
 
       <ReadinessStrip data={strip} current="fields" />
+
+      {/* DLP findings strip (reach-products §4.1/§4.2) — policy violations and
+          user-directory findings are owned by DLP, counted here with a link. */}
+      {DLP_SIGNALS.policyViolations > 0 && (
+        <a href={dlpLink("Policy violations", INV_FROM)} className="inv-dlp-strip" aria-label={`${DLP_SIGNALS.policyViolations} policy violations in DLP`}>
+          <ProductChip product="dlp" />
+          <span><span className="tnum">{DLP_SIGNALS.policyViolations}</span> policy violations on these sources</span>
+          <span className="inv-dlp-strip-cta">View in DLP <ExternalLink size={12} /></span>
+        </a>
+      )}
 
       <MovedNote moved={moved} />
 
@@ -301,7 +315,12 @@ function GroupBlock({ g, grouping, open, onToggle, sel, setSel, onOpen, onAssign
       <div className="inv-group-head">
         <button className="icon-btn" aria-expanded={open} onClick={onToggle}>{open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}</button>
         <input type="checkbox" checked={allSel} aria-label={`Select all in ${g.name}`} onChange={(e) => setSel((s) => { const n = new Set(s); for (const r of g.rows) e.target.checked ? n.add(r.id) : n.delete(r.id); return n; })} />
-        <div className="inv-group-name"><strong>{g.name}</strong> <span className="cell-sub">{plural(g.fieldCount, "field")}{g.newCount > 0 ? <span className="sev-accent"> · {g.newCount} new</span> : ""}</span></div>
+        <div className="inv-group-name">
+          <strong>{g.name}</strong>
+          {grouping === "system" && <ProductChip product="dlp" />}
+          <span className="cell-sub">{plural(g.fieldCount, "field")}{g.newCount > 0 ? <span className="sev-accent"> · {g.newCount} new</span> : ""}</span>
+          {grouping === "system" && <a href={dlpLink(`Source · ${g.name}`, INV_FROM)} className="row-link inv-nowrap" style={{ fontSize: 12 }} onClick={(e) => e.stopPropagation()}>Open source in DLP <ExternalLink size={11} /></a>}
+        </div>
         <div className="inv-group-mid">
           <MixBar mix={g.mix} />
           <span className="cell-sub">{g.gaps.length === 0 ? <span className="sev-success">Ready</span> : g.gaps.map((gg, i) => <span key={gg.status}>{i > 0 ? " · " : ""}<span className="tnum">{gg.count}</span> {gg.status === "cls" ? "need classification" : gg.status === "pur" ? "need a purpose" : gg.status === "link" ? "not linked to consent" : "out of date"}</span>)}</span>
@@ -355,7 +374,7 @@ function Row({ r, grouping, selected, onToggle, onOpen, onAssign }: { r: Invento
       <td>{r.purposes.length === 0 ? <span className="cell-sub">—</span> : <span className="inv-purposes" title={r.purposes.map((p) => p.name).join(", ")}>{r.purposes[0].name}{r.purposes.length > 1 && <span className="cell-sub"> +{r.purposes.length - 1}</span>}</span>}</td>
       <td>
         <span className={`inv-status ${meta.cls}`}><span className="dot" style={{ background: meta.dot }} />{meta.label}</span>
-        {meta.action && <span className="inv-rowaction">{meta.kind === "assign" ? <button className="link-btn" onClick={onAssign}>{meta.action}</button> : meta.kind === "classify" ? <a href={DLP_URL} className="link-btn">{meta.action}</a> : <button className="link-btn" onClick={onOpen}>{meta.action}</button>}</span>}
+        {meta.action && <span className="inv-rowaction">{meta.kind === "assign" ? <button className="link-btn" onClick={onAssign}>{meta.action}</button> : meta.kind === "classify" ? <a href={dlpLink(`Classify · ${r.fieldPath}`, INV_FROM)} className="link-btn">{meta.action}</a> : <button className="link-btn" onClick={onOpen}>{meta.action}</button>}</span>}
       </td>
     </tr>
   );
@@ -458,12 +477,13 @@ function FieldDrawer({ row, categories, subjectTypes, onClose, onAssign, onRemov
         </div>
         <div className="mp-drawer-body stack" style={{ gap: 16 }}>
           <section>
-            <div className="inv-sec-h">Managed in DLP</div>
+            <div className="inv-sec-h" style={{ display: "flex", alignItems: "center", gap: 6 }}>Managed in DLP <ProductChip product="dlp" syncedAgo={row.lastScanned ?? undefined} /></div>
             <KV k="System" v={row.system} /><KV k="Data type" v={row.dataType} />
             <KV k="Sensitivity" v={`${row.sensitivity}, from DLP`} /><KV k="Last scanned" v={row.lastScanned ?? "—"} />
             {row.provenance !== "discovered" && <KV k="Provenance" v={row.provenance === "declared" ? "Declared, not discovered" : "Unknown to DLP"} />}
             {row.isChanged && row.changeSummary && <div className="inv-changed"><AlertTriangle size={12} /> Changed since your last visit: {row.changeSummary}</div>}
-            <a href={DLP_URL} className="row-link">Open in DLP</a>
+            <a href={dlpLink(`Field · ${row.fieldPath}`, INV_FROM)} className="row-link">Open in DLP <ExternalLink size={12} /></a>
+            {row.sensitivity === "Not classified" && <a href={dlpLink(`Classify · ${row.fieldPath}`, INV_FROM)} className="row-link">Classify in DLP <ExternalLink size={12} /></a>}
           </section>
           <section>
             <div className="inv-sec-h">Added in Privacy Admin</div>
@@ -487,7 +507,7 @@ function FieldDrawer({ row, categories, subjectTypes, onClose, onAssign, onRemov
           <section>
             <div className="inv-sec-h">Readiness</div>
             {row.status === "ready" ? <div className="inv-status sev-success"><Check size={13} /> Ready</div> : (
-              <ul className="inv-gaplist"><li>{meta.label}.{meta.action ? (meta.kind === "assign" ? <button className="link-btn" onClick={onAssign}> {meta.action}</button> : meta.kind === "classify" ? <a href={DLP_URL} className="link-btn"> {meta.action}</a> : <span> {meta.action}</span>) : ""}</li></ul>
+              <ul className="inv-gaplist"><li>{meta.label}.{meta.action ? (meta.kind === "assign" ? <button className="link-btn" onClick={onAssign}> {meta.action}</button> : meta.kind === "classify" ? <a href={dlpLink(`Classify · ${row.fieldPath}`, INV_FROM)} className="link-btn"> {meta.action}</a> : <span> {meta.action}</span>) : ""}</li></ul>
             )}
           </section>
           <Link href={`/audit?search=${row.id}`} className="row-link">View history</Link>

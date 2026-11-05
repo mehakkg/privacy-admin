@@ -556,7 +556,12 @@ textarea {
 .inv-groups { display: flex; flex-direction: column; }
 .inv-group { border-top: 1px solid var(--border-soft); }
 .inv-group-head { display: flex; align-items: center; gap: 10px; padding: 8px 4px; }
-.inv-group-name { min-width: 160px; }
+.inv-group-name { min-width: 160px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* DLP findings strip on Data inventory (reach-products §4.1/§4.2). */
+.inv-dlp-strip { display: flex; align-items: center; gap: 10px; padding: 8px 12px; margin: 10px 0; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--surface-sunken, #f8fafc); font-size: 13px; color: var(--text); text-decoration: none; }
+.inv-dlp-strip:hover { border-color: var(--border); }
+.inv-dlp-strip-cta { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; color: var(--accent, #2563eb); white-space: nowrap; }
 .inv-group-mid { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
 .inv-group-sug { display: flex; align-items: center; gap: 10px; margin-left: auto; white-space: nowrap; }
 .inv-mixbar { display: flex; gap: 1px; width: 84px; height: 6px; border-radius: 3px; overflow: hidden; flex: 0 0 auto; }

@@ -1,16 +1,13 @@
-import { Shell } from "@/components/Shell";
-import { Placeholder } from "@/components/Placeholder";
+import { redirect } from "next/navigation";
+import { dlpLink } from "@/lib/products/deeplink";
 
 export const dynamic = "force-dynamic";
 
-export default function Page() {
-  return (
-    <Shell active="/audit/violations" title={"Policy violation dashboard"}>
-      <Placeholder
-        title={"Policy violation dashboard"}
-        tip={"A proactive, system-detected violations feed — problems the system found on its own."}
-        what={"Broader than Cookie & Website Compliance Monitoring (which only catches undisclosed scripts), and distinct from Escalations (conflicts a person raised) and Analytics (which scores posture rather than listing specific violations). This is the missing “the system found a problem on its own” category."}
-      />
-    </Shell>
-  );
+/**
+ * Policy violations are owned by miniOrange DLP (reach-products §4.2) and are no
+ * longer a DPDP page. The old route redirects to the DLP portal (here, its
+ * holding page), which names the object.
+ */
+export default function PolicyViolationsMoved() {
+  redirect(dlpLink("Policy violations", { label: "Data inventory", href: "/data-map/inventory" }));
 }

@@ -8,19 +8,42 @@ const PRODUCT: Record<string, { name: string; desc: string; accent: string }> = 
   tprm: { name: "miniOrange TPRM", desc: "Vendor risk, assessments and monitoring", accent: "#ea580c" },
 };
 
-/** Holding page for a product whose portal URL isn't configured (reach-products
- *  §2.1) — it names the product rather than 404-ing. */
-export default async function SwitchHolding({ params }: { params: Promise<{ product: string }> }) {
+/**
+ * Holding page for a product whose portal URL isn't configured (reach-products
+ * §2.1 / §2.3). It names the product and, when a deep link carried an `object`
+ * and a `from` context, the exact object it would open and the place to return
+ * to — standing in for the real portal's object page + return bar. Never a 404.
+ */
+export default async function SwitchHolding({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ product: string }>;
+  searchParams: Promise<{ object?: string; from?: string; fromHref?: string }>;
+}) {
   const { product } = await params;
+  const sp = await searchParams;
   const p = PRODUCT[product] ?? { name: "this product", desc: "", accent: "#2563eb" };
+  const backHref = sp.fromHref || "/home";
+  const backLabel = sp.from ? `← Back to ${sp.from} in Privacy` : "← Back to miniOrange Privacy";
+
   return (
     <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "var(--surface-sunken,#f8fafc)", padding: 16 }}>
-      <div style={{ maxWidth: 420, textAlign: "center" }} className="stack">
+      <div style={{ maxWidth: 440, textAlign: "center" }} className="stack">
         <span style={{ width: 48, height: 48, borderRadius: 12, background: p.accent, display: "grid", placeItems: "center", margin: "0 auto 8px" }} />
         <h1 className="inv-title" style={{ margin: 0 }}>{p.name}</h1>
-        {p.desc && <p className="cell-sub" style={{ margin: 0 }}>{p.desc}</p>}
-        <p className="cell-sub" style={{ marginTop: 8 }}>This portal isn’t connected in this demo. In production, switching here opens {p.name} with the same session.</p>
-        <div><Link href="/home" className="btn primary">← Back to miniOrange Privacy</Link></div>
+        {sp.object ? (
+          <p className="cell-sub" style={{ margin: 0 }}>
+            Opening <strong>{sp.object}</strong>
+          </p>
+        ) : p.desc ? (
+          <p className="cell-sub" style={{ margin: 0 }}>{p.desc}</p>
+        ) : null}
+        <p className="cell-sub" style={{ marginTop: 8 }}>
+          This portal isn’t connected in this demo. In production, this opens {p.name}
+          {sp.object ? " on the exact object above" : ""} with the same session, with a return bar back to Privacy.
+        </p>
+        <div><Link href={backHref} className="btn primary">{backLabel}</Link></div>
       </div>
     </div>
   );
