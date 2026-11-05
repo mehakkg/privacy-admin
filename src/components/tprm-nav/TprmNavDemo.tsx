@@ -88,11 +88,14 @@ function ConsoleShell({ actor, perms, flags, collapsed, toggleSection, onHidden,
   return (
     <div className="tn-shell">
       <aside className="tn-side">
-        <div className="tn-brand">
-          <span className="tn-logo"><ShieldCheck size={16} /></span>
-          <strong>miniOrange TPRM</strong>
-          {actor.hasPrivacy && <span className="tn-switch" title="Product switcher — shown because this person has a Privacy role">▾</span>}
-        </div>
+        {actor.hasPrivacy
+          ? <TprmProductSwitcher />
+          : (
+            <div className="tn-brand">
+              <span className="tn-logo"><ShieldCheck size={16} /></span>
+              <strong>miniOrange TPRM</strong>
+            </div>
+          )}
         <nav className="tn-nav">
           {sections.map((s) => {
             const isActiveSection = s.label === activeSection;
@@ -145,6 +148,38 @@ function ConsoleShell({ actor, perms, flags, collapsed, toggleSection, onHidden,
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// --- Product switcher in the TPRM header (shown only for Privacy-mapped users) ---
+function TprmProductSwitcher() {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest(".tn-ps")) setOpen(false); };
+    document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h);
+  }, []);
+  return (
+    <div className="tn-ps">
+      <button className="tn-brand tn-brand-btn" onClick={() => setOpen((o) => !o)} aria-haspopup aria-expanded={open}>
+        <span className="tn-logo tn-logo-portal"><ShieldCheck size={16} /></span>
+        <strong>miniOrange TPRM</strong>
+        <ChevronDown size={14} style={{ opacity: 0.7, marginLeft: "auto" }} />
+      </button>
+      {open && (
+        <div className="tn-ps-menu" role="menu">
+          <div className="tn-ps-label">Switch product</div>
+          <a className="tn-ps-row" href="/home">
+            <span className="tn-ps-dot" style={{ background: "#2563eb" }}><ShieldCheck size={13} /></span>
+            <span className="stack" style={{ gap: 0 }}><strong>miniOrange Privacy</strong><span className="tn-ps-sub">Register, consent, rights and breaches</span></span>
+          </a>
+          <div className="tn-ps-row selected">
+            <span className="tn-ps-dot" style={{ background: "#ea580c" }}><ShieldCheck size={13} /></span>
+            <span className="stack" style={{ gap: 0 }}><strong>miniOrange TPRM</strong><span className="tn-ps-sub">Vendor risk, assessments and monitoring</span></span>
+            <span className="tn-ps-check">✓</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

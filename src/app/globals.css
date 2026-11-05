@@ -571,7 +571,17 @@ textarea {
 .tn-brand { display: flex; align-items: center; gap: 8px; padding: 4px 16px 14px; color: #fff; font-size: 14px; }
 .tn-logo { width: 26px; height: 26px; border-radius: 7px; background: #2563eb; display: grid; place-items: center; color: #fff; flex-shrink: 0; }
 .tn-logo-portal { background: #ea580c; }
-.tn-switch { margin-left: 2px; opacity: 0.7; cursor: default; }
+.tn-ps { position: relative; padding: 0 8px 8px; }
+.tn-brand-btn { width: 100%; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 9px; cursor: pointer; padding: 8px 10px; }
+.tn-brand-btn:hover { background: rgba(255,255,255,0.10); }
+.tn-ps-menu { position: absolute; top: calc(100% - 4px); left: 8px; right: 8px; z-index: 30; background: #fff; color: var(--text); border: 1px solid var(--border-soft); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.25); padding: 6px; }
+.tn-ps-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-3); padding: 6px 8px 4px; }
+.tn-ps-row { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 8px; text-decoration: none; color: var(--text); }
+a.tn-ps-row:hover { background: var(--surface-sunken, #f1f5f9); }
+.tn-ps-row.selected { background: var(--surface-sunken, #f8fafc); }
+.tn-ps-dot { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: #fff; flex-shrink: 0; }
+.tn-ps-sub { font-size: 11.5px; color: var(--text-3); }
+.tn-ps-check { margin-left: auto; color: var(--blue, #2563eb); font-weight: 700; }
 .tn-nav { display: flex; flex-direction: column; }
 .tn-group { padding: 6px 0; }
 .tn-group-head { display: flex; align-items: center; gap: 4px; width: 100%; padding: 4px 16px; background: none; border: 0; color: #7f8ba3; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; }
