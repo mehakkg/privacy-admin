@@ -9,6 +9,7 @@ import {
   formatDateTime,
 } from "@/components/ui";
 import { searchAuditLog, verifyChain } from "@/lib/engines/audit";
+import { CrossProductEventsPanel } from "@/components/shell/CrossProductEvents";
 import { decodeObject } from "@/lib/codec/json";
 import { db } from "@/lib/db";
 import { ROLE_LABEL, type ActorRole } from "@/lib/domain";
@@ -118,6 +119,13 @@ export default async function AuditPage({
         <Stat label="Total in chain" value={chain.entriesChecked} />
         <Stat label="Distinct actions" value={actions.length} />
       </div>
+
+      {/* Cross-product events (reach-products §7): each recorded once, both chips. */}
+      {!params.requestId && !params.field && (
+        <div style={{ marginBottom: 16 }}>
+          <CrossProductEventsPanel />
+        </div>
+      )}
 
       <Card title="Filter">
         <form className="row" method="get" action="/audit">

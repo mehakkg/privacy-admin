@@ -2,6 +2,7 @@ import { Shell } from "@/components/Shell";
 import { getCurrentRole } from "@/lib/session";
 import { getActivitiesScreen } from "@/lib/engines/activities";
 import { ActivitiesScreen } from "@/components/activities/ActivitiesScreen";
+import { CrossProductBanner } from "@/components/shell/CrossProductEvents";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,7 @@ export default async function ActivitiesPage({
   const screen = await getActivitiesScreen();
   return (
     <Shell active="/data-map/processing-activities" title="Activities">
+      <CrossProductBanner surface="activities" />
       <ActivitiesScreen screen={screen} role={role} tab={tab} initialActivity={sp.activity} />
     </Shell>
   );

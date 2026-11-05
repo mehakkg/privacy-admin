@@ -558,6 +558,21 @@ textarea {
 .inv-group-head { display: flex; align-items: center; gap: 10px; padding: 8px 4px; }
 .inv-group-name { min-width: 160px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
+/* Cross-product events (reach-products §7). */
+.xpe-panel { border: 1px solid var(--border-soft); border-radius: 10px; overflow: hidden; }
+.xpe-panel-head { display: flex; align-items: baseline; gap: 10px; padding: 10px 14px; background: var(--surface-sunken, #f8fafc); border-bottom: 1px solid var(--border-soft); flex-wrap: wrap; }
+.xpe-row { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--border-soft); text-decoration: none; color: var(--text); font-size: 13px; }
+.xpe-row:first-of-type { border-top: 0; }
+.xpe-row:hover { background: var(--surface-sunken, #f8fafc); }
+.xpe-row-text { flex: 1; min-width: 0; }
+.xpe-row-at { flex-shrink: 0; white-space: nowrap; }
+.xpe-row-arrow { color: var(--text-3); flex-shrink: 0; }
+.xpe-banner { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border-soft); border-left: 3px solid var(--blue, #2563eb); border-radius: 8px; background: var(--surface-sunken, #f8fafc); text-decoration: none; color: var(--text); font-size: 13px; }
+.xpe-banner:hover { border-color: var(--border); }
+.xpe-banner-text { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.xpe-banner-cta { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; color: var(--accent, #2563eb); white-space: nowrap; flex-shrink: 0; }
+.xpe-tag { display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: 9px; font-size: 11px; font-weight: 600; background: var(--yellow-100, #fef3c7); color: var(--yellow-700, #b45309); }
+
 /* Access changes — verified revocation loop (reach-products §5.3). */
 .ac-list { display: flex; flex-direction: column; gap: 8px; }
 .ac-card { display: flex; align-items: center; gap: 16px; width: 100%; text-align: left; padding: 12px 14px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--surface, #fff); cursor: pointer; }
