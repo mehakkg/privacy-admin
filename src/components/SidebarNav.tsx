@@ -25,6 +25,13 @@ import {
 // Icon for a top-level group's bare item (Dashboard, Approved Policy, …).
 const GROUP_ICON: Record<string, LucideIcon> = {
   dashboard: LayoutDashboard,
+  // Unified-nav leaves.
+  setup: Rocket,
+  home: LayoutDashboard,
+  "my-work": ClipboardCheck,
+  requests: Inbox,
+  breaches: ShieldAlert,
+  reports: BarChart3,
   "data-map": Map,
   consent: FileCheck2,
   rights: Inbox,

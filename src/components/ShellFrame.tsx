@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { Menu, ShieldCheck } from "lucide-react";
+import { Menu, ShieldCheck, Settings } from "lucide-react";
 import { SidebarNav, type NavEntry } from "@/components/SidebarNav";
 import { ProfileMenu } from "@/components/ProfileMenu";
 import type { ActorRole } from "@/lib/domain";
@@ -70,7 +70,8 @@ export function ShellFrame({
               <Menu strokeWidth={1.7} />
             </button>
           </div>
-          <div className="topbar-right">
+          <div className="topbar-right" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <a href="/settings/organization" className="icon-btn" aria-label="Settings" title="Settings"><Settings strokeWidth={1.7} /></a>
             <ProfileMenu initials={initials} name={name} email={email} currentRole={currentRole} unread={unread} />
           </div>
         </header>
