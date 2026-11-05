@@ -4,6 +4,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Menu, ShieldCheck, Settings } from "lucide-react";
 import { SidebarNav, type NavEntry } from "@/components/SidebarNav";
 import { ProfileMenu } from "@/components/ProfileMenu";
+import { ProductSwitcher } from "@/components/shell/ProductSwitcher";
+import { ActingAsSwitcher } from "@/components/shell/ActingAsSwitcher";
 import type { ActorRole } from "@/lib/domain";
 
 const COLLAPSE_KEY = "privacy-admin.sidebar.collapsed";
@@ -65,12 +67,14 @@ export function ShellFrame({
 
       <div className="main">
         <header className="topbar">
-          <div className="topbar-left">
+          <div className="topbar-left" style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button className="icon-btn" onClick={toggle} aria-label="Toggle sidebar">
               <Menu strokeWidth={1.7} />
             </button>
+            <ProductSwitcher role={currentRole} />
           </div>
-          <div className="topbar-right" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <div className="topbar-right" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <ActingAsSwitcher role={currentRole} />
             <a href="/settings/organization" className="icon-btn" aria-label="Settings" title="Settings"><Settings strokeWidth={1.7} /></a>
             <ProfileMenu initials={initials} name={name} email={email} currentRole={currentRole} unread={unread} />
           </div>
