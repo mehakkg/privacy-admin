@@ -10,7 +10,7 @@ export function DashboardSetupStrip({ requiredDone, requiredTotal, live, youreDo
   requiredDone: number; requiredTotal: number; live: number; youreDone: boolean; waiting: string; days: number; amber: boolean;
 }) {
   return (
-    <div className="inv-card" style={{ marginBottom: 16, borderLeft: `3px solid ${amber ? "var(--yellow-700,#b45309)" : "var(--accent,#2563eb)"}`, background: amber ? "var(--yellow-50,#fffbeb)" : undefined }}>
+    <div className="inv-card" style={{ marginBottom: 16, borderColor: amber ? "var(--yellow-border,#f2e0b0)" : "var(--accent)", background: amber ? "var(--yellow-50,#fffbeb)" : "color-mix(in srgb, var(--accent) 5%, var(--bg))" }}>
       <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <span className="cell-sub">
           <strong>Setup: {requiredDone} of {requiredTotal} required done</strong>

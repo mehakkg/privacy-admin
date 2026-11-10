@@ -302,11 +302,11 @@ export function Stat({
 }) {
   const color =
     tone === "red"
-      ? "var(--red)"
+      ? "var(--red-text)"
       : tone === "green"
-        ? "var(--green)"
+        ? "var(--green-text)"
         : tone === "yellow"
-          ? "var(--yellow)"
+          ? "var(--yellow-text)"
           : undefined;
   return (
     <div className="stat">

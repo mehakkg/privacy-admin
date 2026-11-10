@@ -13,10 +13,12 @@ export function ProductChip({ product, syncedAgo }: { product: ProductKey; synce
     <span
       title={title}
       style={{
-        display: "inline-flex", alignItems: "center", height: 16, padding: "0 6px",
-        borderRadius: 4, fontSize: 10.5, fontWeight: 700, letterSpacing: 0.3,
-        lineHeight: "16px", color: "#fff", background: m.accent, whiteSpace: "nowrap",
-        verticalAlign: "middle",
+        display: "inline-flex", alignItems: "center", height: 17, padding: "0 6px",
+        borderRadius: 4, fontSize: 11, fontWeight: 700, letterSpacing: 0.3,
+        // Darken the product accent so white text clears WCAG AA (the raw cyan /
+        // orange accents fail at this size).
+        lineHeight: "17px", color: "#fff", background: `color-mix(in srgb, ${m.accent} 76%, #000)`,
+        whiteSpace: "nowrap", verticalAlign: "middle",
       }}
     >
       {label}
