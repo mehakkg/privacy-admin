@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChevronDown, Check, ShieldCheck, Handshake, ScanSearch, Fingerprint } from "lucide-react";
 import type { ActorRole } from "@/lib/domain";
 import { productsFor } from "@/lib/products/people";
+import { routeFor } from "@/lib/products/switch";
 import type { ProductKey } from "@/lib/products/deeplink";
 
 /**
@@ -42,11 +43,11 @@ export function ProductSwitcher({ role }: { role: ActorRole }) {
   const current = META.privacy;
   const single = products.length <= 1;
 
-  // Privacy stays here; TPRM opens its in-repo prototype; DLP/IAM open holding pages.
+  // Privacy stays here; TPRM / DLP / IAM each open their in-repo console prototype.
   const go = (key: ProductKey) => {
     setOpen(false);
     if (key === "privacy") return;
-    router.push(key === "tprm" ? "/tprm-console" : `/switch/${key}`);
+    router.push(routeFor(key));
   };
 
   // Keyboard: Esc closes; Up/Down move between rows (switcher-revision §1.1).

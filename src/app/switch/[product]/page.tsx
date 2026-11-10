@@ -24,9 +24,17 @@ export default async function SwitchHolding({
 }) {
   const { product } = await params;
   const sp = await searchParams;
-  // TPRM has a working nav prototype in this repo — open it instead of the
-  // "not connected" holding page.
-  if (product === "tprm") redirect("/tprm-console");
+  // TPRM, DLP and IAM have working console prototypes in this repo — open the
+  // real console (carrying the deep-link context) instead of a holding page.
+  const CONSOLE_ROUTE: Record<string, string> = { tprm: "/tprm-console", dlp: "/dlp-console", iam: "/iam-console" };
+  if (CONSOLE_ROUTE[product]) {
+    const qs = new URLSearchParams();
+    if (sp.object) qs.set("object", sp.object);
+    if (sp.from) qs.set("from", sp.from);
+    if (sp.fromHref) qs.set("fromHref", sp.fromHref);
+    const q = qs.toString();
+    redirect(q ? `${CONSOLE_ROUTE[product]}?${q}` : CONSOLE_ROUTE[product]);
+  }
   const p = PRODUCT[product] ?? { name: "this product", desc: "", accent: "#2563eb" };
   const backHref = sp.fromHref || "/home";
   const backLabel = sp.from ? `← Back to ${sp.from} in Privacy` : "← Back to miniOrange Privacy";
