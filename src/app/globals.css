@@ -1322,9 +1322,9 @@ table.dtable {
   color: var(--text-3);
   font-size: 12px;
 }
-/* Lead/description paragraphs keep a comfortable reading measure; inline
-   .cell-sub spans are unaffected. */
-p.cell-sub { max-width: 72ch; }
+/* Lead/description paragraphs keep a comfortable reading measure and avoid a
+   lone trailing word; inline .cell-sub spans are unaffected. */
+p.cell-sub { max-width: 60ch; text-wrap: pretty; }
 .mono {
   font-family: var(--font-mono);
   font-size: 12.5px;
