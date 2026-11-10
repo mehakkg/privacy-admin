@@ -45,10 +45,19 @@ export interface WidgetDef {
 
 // --- Small, dependency-free visual primitives ------------------------------
 
+// Numbers render as text, so a fill hue passed as `tone` is remapped to its
+// WCAG-safe text token; sparkline/ring strokes keep the raw fill elsewhere.
+const TONE_TEXT: Record<string, string> = {
+  "var(--red)": "var(--red-text)",
+  "var(--green)": "var(--green-text)",
+  "var(--yellow)": "var(--yellow-text)",
+  "var(--blue)": "var(--blue-text)",
+};
 function Big({ value, label, tone }: { value: ReactNode; label: string; tone?: string }) {
+  const color = tone ? (TONE_TEXT[tone] ?? tone) : undefined;
   return (
     <div>
-      <div className="stat-value" style={{ fontSize: 30, color: tone }}>{value}</div>
+      <div className="stat-value" style={{ fontSize: 30, color }}>{value}</div>
       <div className="cell-sub">{label}</div>
     </div>
   );
