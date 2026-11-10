@@ -223,6 +223,34 @@ textarea {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+/* Firefox scrollbar parity with the webkit thumb above. */
+html { scrollbar-color: var(--scrollbar) transparent; scrollbar-width: thin; }
+
+/* ---- Browser surfaces (impeccable polish) --------------------------------
+   The parts the design didn't draw — selection, caret, keyboard focus — ship
+   with browser defaults that belong to no design system. Theme them from the
+   palette so the product reads as built, not assembled. */
+::selection { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+::-moz-selection { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+input, textarea, [contenteditable] { caret-color: var(--accent); }
+
+/* Consistent, visible keyboard-focus ring on interactive elements that don't
+   define their own (buttons, links, nav items, rows, tabs, menu items). Scoped
+   to :focus-visible so pointer clicks are unaffected; components with a stronger
+   focus style (e.g. .input's box-shadow) keep theirs via higher specificity. */
+a:focus-visible,
+button:focus-visible,
+select:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible,
+[role="button"]:focus-visible,
+[role="tab"]:focus-visible,
+[role="menuitem"]:focus-visible,
+[role="menuitemradio"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm, 6px);
+}
 
 /* ------------------------------------------------------------------ shell
    Privacy Console app shell (app-shell-ui-spec). Single light theme: navy
@@ -429,6 +457,9 @@ textarea {
 .inv-noresult, .inv-empty { padding: 32px; text-align: center; color: var(--text-3); }
 .inv-empty h2 { margin: 0 0 6px; color: var(--text); }
 
+/* Data tables use tabular figures so counts, dates and ids align column-wise
+   (impeccable polish — numerals are a browser default worth theming). */
+.inv-table, .or-table, .dtable { font-variant-numeric: tabular-nums; }
 .inv-table { width: 100%; border-collapse: collapse; }
 .inv-table thead th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-3); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--border-strong); position: sticky; top: 0; background: var(--bg, #fff); z-index: 2; }
 .inv-check { width: 34px; }
