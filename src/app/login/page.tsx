@@ -93,7 +93,7 @@ export default function LoginPage() {
 
           <button type="submit" className="lg-submit">Sign in securely <ArrowRight size={17} /></button>
 
-          <p className="lg-switch">New to miniOrange? <Link href="/setup" className="lg-link">Create your privacy workspace</Link></p>
+          <p className="lg-switch">New to miniOrange? <Link href="/setup/wizard" className="lg-link">Create your privacy workspace</Link></p>
           <p className="lg-terms">By continuing, you agree to the Terms of Use and Privacy Policy.</p>
         </form>
       </main>

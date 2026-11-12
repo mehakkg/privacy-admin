@@ -386,7 +386,7 @@ function FirstTime() {
           <p className="ov-kicker" style={{ marginTop: 18 }}>Welcome to miniOrange Data Privacy</p>
           <h2 className="ov-welcome-title">Build a trusted privacy foundation</h2>
           <p className="ov-welcome-sub">Start with the essentials. We’ll unlock operations and compliance insights as your systems, governance, and team become ready.</p>
-          <Link href="/setup" className="ov-btn-primary" style={{ marginTop: 18 }}>Continue setup <ArrowRight size={16} /></Link>
+          <Link href="/setup/wizard" className="ov-btn-primary" style={{ marginTop: 18 }}>Continue setup <ArrowRight size={16} /></Link>
         </div>
         <div className="ov-welcome-ring">
           <div className="ov-ring"><span className="ov-ring-num">50<small>%</small></span></div>
@@ -403,7 +403,7 @@ function FirstTime() {
           <span className="cell-sub">Required for the correct governance and reporting controls under Section 10.</span>
         </div>
         <span className="ov-next-time">~2 min</span>
-        <Link href="/setup" className="ov-btn-ghost">Confirm status <ArrowRight size={15} /></Link>
+        <Link href="/setup/wizard" className="ov-btn-ghost">Confirm status <ArrowRight size={15} /></Link>
       </div>
 
       <div className="ov-stats three">
