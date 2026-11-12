@@ -115,10 +115,10 @@ export function ProfileMenu({
           </Link>
 
           <div className="popover-divider" />
-          <button type="button" className="popover-row logout" role="menuitem">
+          <Link href="/login" className="popover-row logout" role="menuitem" onClick={() => setOpen(false)}>
             <LogOut size={16} />
             <span className="pr-label">Logout</span>
-          </button>
+          </Link>
         </div>
       )}
     </div>
