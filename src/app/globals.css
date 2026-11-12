@@ -4640,3 +4640,68 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 .dm-strip-link { color: var(--text-2, #4b5563); text-decoration: none; }
 .dm-strip-link:hover { text-decoration: underline; }
 .dm-strip-link.on { font-weight: 700; color: var(--text-1, #0f172a); }
+
+/* ============================================================ sign-in (comp)
+   Split brand hero + sign-in form. Self-contained surface (no app shell). */
+.lg { display: grid; grid-template-columns: 1fr 1fr; min-height: 100vh; background: #fff; }
+.lg-hero {
+  position: relative; overflow: hidden; display: flex; flex-direction: column;
+  padding: 48px 56px; color: #fff;
+  background: linear-gradient(150deg, #0a1733 0%, #122a66 58%, #17398a 100%);
+}
+/* Faint concentric arcs, bottom-left — a specific brand motif, not decoration. */
+.lg-hero-rings { position: absolute; left: -220px; bottom: -260px; width: 760px; height: 760px; border-radius: 50%;
+  background: radial-gradient(circle at center, transparent 0 38%, rgba(255,255,255,0.05) 38% 39%, transparent 39% 54%, rgba(255,255,255,0.045) 54% 55%, transparent 55% 72%, rgba(255,255,255,0.04) 72% 73%, transparent 73%);
+  pointer-events: none; }
+.lg-brand { display: flex; align-items: center; gap: 12px; position: relative; z-index: 1; }
+.lg-logo { width: 42px; height: 42px; border-radius: 11px; background: linear-gradient(160deg, #f6873b, #ea580c); color: #fff; font-weight: 800; font-size: 17px; display: grid; place-items: center; letter-spacing: -0.02em; box-shadow: 0 6px 16px rgba(234,88,12,0.35); }
+.lg-brand-txt { display: flex; flex-direction: column; line-height: 1.15; }
+.lg-brand-txt strong { font-size: 18px; font-weight: 700; }
+.lg-brand-txt span { font-size: 11px; letter-spacing: 0.14em; color: rgba(255,255,255,0.6); font-weight: 600; }
+.lg-hero-body { position: relative; z-index: 1; margin-top: auto; margin-bottom: auto; max-width: 440px; }
+.lg-badge { display: inline-flex; align-items: center; gap: 7px; padding: 7px 13px; border-radius: 999px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.16); font-size: 13px; font-weight: 500; color: #e8eefc; }
+.lg-hero-title { margin: 22px 0 0; font-size: clamp(34px, 4.2vw, 56px); line-height: 1.04; font-weight: 700; letter-spacing: -0.03em; }
+.lg-hero-sub { margin: 18px 0 0; font-size: 16px; line-height: 1.55; color: #b9c6e6; max-width: 30rem; }
+.lg-feats { list-style: none; margin: 34px 0 0; padding: 0; display: flex; flex-direction: column; gap: 18px; }
+.lg-feats li { display: flex; align-items: center; gap: 13px; }
+.lg-feat-ic { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,0.12); color: #fff; flex-shrink: 0; }
+.lg-feats strong { font-size: 14.5px; font-weight: 600; }
+.lg-feats span span, .lg-feats li > span.stack > span { font-size: 13px; color: #a9b8db; }
+.lg-hero-foot { position: relative; z-index: 1; margin: 0; font-size: 12.5px; color: rgba(255,255,255,0.5); }
+
+.lg-panel { display: grid; place-items: center; padding: 48px 40px; background: #fff; }
+.lg-form { width: 100%; max-width: 400px; }
+.lg-kicker { margin: 0; font-size: 12.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent, #2563eb); }
+.lg-title { margin: 12px 0 0; font-size: 30px; font-weight: 700; letter-spacing: -0.02em; color: var(--text, #0f172a); }
+.lg-lead { margin: 10px 0 26px; font-size: 15px; color: var(--text-2, #4b5563); }
+.lg-sso { width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 10px; height: 50px; border-radius: 11px; border: 1px solid var(--border-strong, #e2e5ea); background: #fff; font-size: 14.5px; font-weight: 600; color: var(--text, #0f172a); cursor: pointer; transition: background .12s, border-color .12s; }
+.lg-sso:hover { background: #f8fafc; border-color: #cfd4dc; }
+.lg-sso-ic { width: 24px; height: 24px; border-radius: 6px; background: linear-gradient(160deg, #f6873b, #ea580c); color: #fff; font-weight: 800; font-size: 14px; display: grid; place-items: center; }
+.lg-divider { display: flex; align-items: center; gap: 14px; margin: 22px 0; color: var(--text-3, #6b7280); font-size: 12.5px; }
+.lg-divider::before, .lg-divider::after { content: ""; flex: 1; height: 1px; background: var(--border, #e5e7eb); }
+.lg-field { display: block; margin-bottom: 16px; }
+.lg-label { display: block; font-size: 13px; font-weight: 600; color: var(--text, #0f172a); margin-bottom: 7px; }
+.lg-input { display: flex; align-items: center; gap: 9px; height: 50px; padding: 0 14px; border: 1px solid var(--border-strong, #e2e5ea); border-radius: 11px; background: #fff; transition: border-color .12s, box-shadow .12s; }
+.lg-input:focus-within { border-color: var(--accent, #2563eb); box-shadow: 0 0 0 3px var(--accent-100, #dbeafe); }
+.lg-input-ic { color: var(--text-3, #9aa3b2); flex-shrink: 0; }
+.lg-input input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; font: inherit; font-size: 14.5px; color: var(--text); }
+.lg-show { background: none; border: 0; padding: 0; font: inherit; font-size: 13px; font-weight: 600; color: var(--text-2, #4b5563); cursor: pointer; }
+.lg-show:hover { color: var(--accent); }
+.lg-row { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 22px; }
+.lg-remember { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--text-2, #4b5563); cursor: pointer; }
+.lg-remember input { width: 16px; height: 16px; }
+.lg-link { color: var(--accent, #2563eb); font-weight: 600; text-decoration: none; }
+.lg-link:hover { text-decoration: underline; }
+.lg-submit { width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 9px; height: 52px; border: 0; border-radius: 11px; background: #1d4ed8; color: #fff; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; box-shadow: 0 8px 20px rgba(29,78,216,0.28); transition: background .12s, box-shadow .12s; }
+.lg-submit:hover { background: #1b45be; box-shadow: 0 10px 24px rgba(29,78,216,0.34); }
+.lg-switch { margin: 24px 0 0; text-align: center; font-size: 13.5px; color: var(--text-2, #4b5563); }
+.lg-terms { margin: 28px 0 0; text-align: center; font-size: 12px; color: var(--text-3, #9aa3b2); }
+
+@media (max-width: 920px) {
+  .lg { grid-template-columns: 1fr; }
+  .lg-hero { padding: 32px; min-height: auto; }
+  .lg-hero-body { margin: 28px 0; }
+  .lg-hero-title { font-size: 34px; }
+  .lg-feats { gap: 14px; }
+  .lg-panel { padding: 36px 24px 56px; }
+}
