@@ -15,6 +15,9 @@
   --accent-600: #1d4ed8;
   --accent-50: #eff6ff;
   --accent-100: #dbeafe;
+  /* Overview/redesign primary blue — global so shared .ov-* classes (buttons,
+     links) also render correctly outside the .ov shell (e.g. the setup wizard). */
+  --ov-blue: #1d4ed8;
 
   /* A genuine orange, kept ONLY for the `orange` pill tone (drift, erasure).
      It is a status hue, not the brand: folding it into the accent would make
