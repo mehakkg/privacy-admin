@@ -17,7 +17,7 @@
   --accent-100: #dbeafe;
   /* Overview/redesign primary blue — global so shared .ov-* classes (buttons,
      links) also render correctly outside the .ov shell (e.g. the setup wizard). */
-  --ov-blue: #1d4ed8;
+  --ov-blue: #2563eb;
 
   /* A genuine orange, kept ONLY for the `orange` pill tone (drift, erasure).
      It is a status hue, not the brand: folding it into the accent would make
@@ -4650,7 +4650,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 .lg-hero {
   position: relative; overflow: hidden; display: flex; flex-direction: column;
   padding: 48px 56px; color: #fff;
-  background: linear-gradient(150deg, #0a1733 0%, #122a66 58%, #17398a 100%);
+  background: linear-gradient(155deg, #0f1a2e 0%, #14264d 56%, #1b3566 100%);
 }
 /* Faint concentric arcs, bottom-left — a specific brand motif, not decoration. */
 .lg-hero-rings { position: absolute; left: -220px; bottom: -260px; width: 760px; height: 760px; border-radius: 50%;
@@ -4695,8 +4695,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 .lg-remember input { width: 16px; height: 16px; }
 .lg-link { color: var(--accent, #2563eb); font-weight: 600; text-decoration: none; }
 .lg-link:hover { text-decoration: underline; }
-.lg-submit { width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 9px; height: 52px; border: 0; border-radius: 11px; background: #1d4ed8; color: #fff; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; box-shadow: 0 8px 20px rgba(29,78,216,0.28); transition: background .12s, box-shadow .12s; }
-.lg-submit:hover { background: #1b45be; box-shadow: 0 10px 24px rgba(29,78,216,0.34); }
+.lg-submit { width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 9px; height: 52px; border: 0; border-radius: 11px; background: var(--accent); color: #fff; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; box-shadow: 0 8px 20px rgba(37,99,235,0.26); transition: background .12s, box-shadow .12s; }
+.lg-submit:hover { background: var(--accent-600); box-shadow: 0 10px 24px rgba(37,99,235,0.32); }
 .lg-switch { margin: 24px 0 0; text-align: center; font-size: 13.5px; color: var(--text-2, #4b5563); }
 .lg-terms { margin: 28px 0 0; text-align: center; font-size: 12px; color: var(--text-3, #9aa3b2); }
 
@@ -4711,7 +4711,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 
 /* ============================================================ Overview (comp)
    New white-sidebar shell + command-center dashboard. Scoped to /home. */
-.ov { --ov-blue: #1d4ed8; --ov-bg: #f5f7fa; --ov-line: #eceef2; display: grid; grid-template-columns: 264px 1fr; min-height: 100vh; background: var(--ov-bg); color: #0f172a; }
+.ov { --ov-blue: #2563eb; --ov-bg: #f5f7fa; --ov-line: #eceef2; display: grid; grid-template-columns: 264px 1fr; min-height: 100vh; background: var(--ov-bg); color: #0f172a; }
 
 /* --- sidebar --- */
 .ov-side { background: #fff; border-right: 1px solid var(--ov-line); display: flex; flex-direction: column; padding: 20px 16px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
@@ -4767,8 +4767,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 .ov-kicker.light { color: #93b4ff; }
 .ov-h1 { margin: 8px 0 0; font-size: 34px; font-weight: 700; letter-spacing: -0.025em; }
 .ov-lead { margin: 8px 0 0; font-size: 15.5px; color: #5b657a; max-width: 60ch; }
-.ov-btn-primary { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px; border: 0; border-radius: 10px; background: var(--ov-blue); color: #fff; font: inherit; font-size: 14.5px; font-weight: 600; cursor: pointer; white-space: nowrap; box-shadow: 0 6px 16px rgba(29,78,216,0.22); text-decoration: none; }
-.ov-btn-primary:hover { background: #1b45be; }
+.ov-btn-primary { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px; border: 0; border-radius: 10px; background: var(--ov-blue); color: #fff; font: inherit; font-size: 14.5px; font-weight: 600; cursor: pointer; white-space: nowrap; box-shadow: 0 6px 16px rgba(37,99,235,0.2); text-decoration: none; }
+.ov-btn-primary:hover { background: var(--accent-600); }
 .ov-btn-primary.sm { height: 40px; padding: 0 15px; font-size: 14px; }
 .ov-btn-ghost { display: inline-flex; align-items: center; gap: 7px; height: 40px; padding: 0 15px; border: 1px solid var(--ov-line); border-radius: 9px; background: #fff; color: #1f2937; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; text-decoration: none; }
 .ov-btn-ghost:hover { background: #f8fafc; }
@@ -4934,7 +4934,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 }
 
 /* ============================================================ setup wizard (comp) */
-.wz { --wz-blue: #1d4ed8; min-height: 100vh; background: #f5f7fa; color: #0f172a; }
+.wz { --wz-blue: #2563eb; min-height: 100vh; background: #f5f7fa; color: #0f172a; }
 .wz-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 28px; background: #fff; border-bottom: 1px solid #eceef2; }
 .wz-top-left { display: flex; align-items: center; gap: 13px; }
 .wz-top-brand { display: flex; flex-direction: column; line-height: 1.12; }
