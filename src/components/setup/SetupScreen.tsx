@@ -50,10 +50,11 @@ export function SetupScreen({ state, role, facts, days }: { state: SetupState; r
     <div className="pa-list">
       <div className="pa-head" style={{ alignItems: "flex-start" }}>
         <div className="stack" style={{ gap: 4 }}>
-          <h1 className="inv-title">Setup</h1>
-          <p className="cell-sub" style={{ margin: 0 }}>Everything Meridian needs before going live. Each task goes to the person who owns it.</p>
+          <p className="dh-kicker">Getting started</p>
+          <h1 className="inv-title">Prepare Meridian Financial Services for go-live</h1>
+          <p className="cell-sub" style={{ margin: 0 }}>Every task is assigned to the person accountable for it.</p>
         </div>
-        <span className="chip" title="DPDP Rules 3 and 5–16 apply from this date." style={{ color: chipTone, borderColor: chipTone, display: "inline-flex", gap: 5, alignItems: "center", fontWeight: 600 }}>{days} days to 13 May 2027 <Info size={12} /></span>
+        <span className="chip" title="DPDP Rules 3 and 5–16 apply from this date (13 May 2027)." style={{ color: chipTone, borderColor: chipTone, display: "inline-flex", gap: 5, alignItems: "center", fontWeight: 600 }}>{days} days to target go-live <Info size={12} /></span>
       </div>
 
       {/* Progress band */}
