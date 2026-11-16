@@ -57,33 +57,55 @@ export function DataFlowView({ view }: { view: View }) {
   );
 }
 
+const STATS: { key: "channels" | "activities" | "systems" | "recipients"; label: string }[] = [
+  { key: "channels", label: "Channels" },
+  { key: "activities", label: "Activities" },
+  { key: "systems", label: "Systems" },
+  { key: "recipients", label: "Recipients" },
+];
+
 function Container({ view, mode, setMode, router, children }: { view: View; mode: string; setMode: (m: "diagram" | "table") => void; router: ReturnType<typeof useRouter>; children: React.ReactNode }) {
   const pushScope = (id: string) => router.push(`${DATAFLOW}${id ? `?entity=${id}` : ""}`);
+  const attn = view.summary.attention;
   return (
-    <div className="stack" style={{ gap: 14 }}>
-      <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
-        <div className="stack" style={{ gap: 8 }}>
+    <div className="stack" style={{ gap: 18 }}>
+      <div className="df-head">
+        <div className="stack" style={{ gap: 3 }}>
           <h1 className="inv-title">Data flow</h1>
-          <label className="row" style={{ gap: 8, alignItems: "center" }}>
-            <span className="cell-sub">Fiduciary</span>
-            <select className="input sm" value={view.entityId ?? ""} onChange={(e) => pushScope(e.target.value)}>
-              <option value="">All fiduciaries ({view.entities.length})</option>
-              {view.entities.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-            </select>
-          </label>
+          <p className="cell-sub" style={{ margin: 0 }}>How personal data moves through your organisation — derived from the register and read-only.</p>
         </div>
-        <a href="/api/discovery/export" className="btn sec inv-nowrap" style={{ whiteSpace: "nowrap" }}>Export report <Download size={13} /></a>
+        <div className="row" style={{ gap: 10, alignItems: "center", flexShrink: 0 }}>
+          <select className="input sm df-scope" value={view.entityId ?? ""} onChange={(e) => pushScope(e.target.value)} aria-label="Fiduciary">
+            <option value="">All fiduciaries ({view.entities.length})</option>
+            {view.entities.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+          </select>
+          <a href="/api/discovery/export" className="btn sec inv-nowrap" style={{ whiteSpace: "nowrap" }}>Export <Download size={13} /></a>
+        </div>
       </div>
 
-      <p className="inv-sentence">
-        Personal data enters through <strong>{plural(view.summary.channels, "channel")}</strong>, is used in <strong>{plural(view.summary.activities, "activity", "activities")}</strong>, stored in <strong>{plural(view.summary.systems, "system")}</strong> and shared with <strong>{plural(view.summary.recipients, "recipient")}</strong>. <strong className={view.summary.attention ? "sev-warning" : ""}>{view.summary.attention} {view.summary.attention === 1 ? "thing needs" : "things need"} attention.</strong>
-      </p>
+      {/* Summary — quiet inline metrics */}
+      <div className="df-stats">
+        {STATS.map((s) => (
+          <div key={s.key} className="df-stat">
+            <span className="df-stat-num tnum">{view.summary[s.key]}</span>
+            <span className="df-stat-label">{s.label}</span>
+          </div>
+        ))}
+        <span className={`df-attn${attn ? "" : " clear"}`}>
+          <i className="df-attn-dot" />
+          {attn ? `${attn} need${attn === 1 ? "s" : ""} attention` : "Nothing needs attention"}
+        </span>
+      </div>
 
-      {view.stale && <div className="notice warn" style={{ margin: 0 }}><AlertTriangle size={12} /> Last DLP sync {view.staleLabel}. New systems may be missing. <Link href="/integrations/dlp" className="link-btn">Sync in Data Discovery →</Link></div>}
+      {view.stale && (
+        <p className="df-note">
+          <AlertTriangle size={13} /> Last DLP sync {view.staleLabel} — new systems may be missing. <Link href="/integrations/dlp" className="row-link" style={{ display: "inline-flex" }}>Sync in Data Discovery</Link>
+        </p>
+      )}
 
       <FindingsStrip view={view} />
 
-      <div className="row" style={{ justifyContent: "flex-end" }}>
+      <div className="df-toolbar">
         <div className="mp-segment">
           <button className={mode === "diagram" ? "on" : ""} onClick={() => setMode("diagram")}>Diagram</button>
           <button className={mode === "table" ? "on" : ""} onClick={() => setMode("table")}>Table</button>
@@ -95,12 +117,15 @@ function Container({ view, mode, setMode, router, children }: { view: View; mode
 }
 
 function FindingsStrip({ view }: { view: View }) {
-  if (view.findings.length === 0) return <div className="notice info" style={{ margin: 0 }}>No findings. Every flow has a notice, a declared channel and a valid contract.</div>;
+  if (view.findings.length === 0) return null;
+  const tone = (f: View["findings"][number]) => (f.level === "blocking" ? "blocking" : f.key === "duplicate" ? "warn" : "info");
   return (
-    <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+    <div className="df-findings">
       {view.findings.map((f) => (
-        <span key={f.key} className={`rchip ${f.level === "blocking" ? "amber-fill" : f.key === "duplicate" ? "amber-outline" : "info"}`} title={f.anchor}>
-          {f.label} <span className="tnum">{f.count}</span>
+        <span key={f.key} className={`df-finding ${tone(f)}`} title={f.anchor}>
+          <i className="dot" />
+          {f.label}
+          <span className="count tnum">{f.count}</span>
         </span>
       ))}
     </div>
@@ -174,7 +199,7 @@ function Diagram({ view, activeFlows, onSelect, selected }: { view: View; active
                   {ci < nCols - 1 && <span className="df-port out" aria-hidden />}
                   <div style={{ fontWeight: 600, fontSize: 13, lineHeight: 1.3 }}>{n.label}</div>
                   {n.sub && <div className="cell-sub" style={{ fontSize: 11.5, marginTop: 3 }}>{n.sub}{n.crossBorder ? " · outside India" : ""}</div>}
-                  {n.finding && <span className="rchip amber-fill" style={{ marginTop: 8, fontSize: 10.5, padding: "2px 8px" }}>{n.finding}</span>}
+                  {n.finding && <span className="df-node-finding">{n.finding}</span>}
                 </button>
               ))}
             </div>

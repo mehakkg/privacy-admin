@@ -350,15 +350,15 @@ summary:focus-visible,
 
 /* Data flow canvas — node-graph aesthetic (dotted grid + card ports). */
 .df-canvas-grid {
-  background-color: var(--surface-sunken, #f8fafc);
-  background-image: radial-gradient(circle, rgba(100,116,139,0.22) 1px, transparent 1px);
-  background-size: 20px 20px;
-  border: 1px solid var(--border, #e2e8f0);
+  background-color: #fafbfc;
+  background-image: radial-gradient(circle, rgba(100,116,139,0.07) 1px, transparent 1px);
+  background-size: 22px 22px;
+  border: 1px solid var(--border-soft, #eceef2);
   border-radius: 14px;
-  padding: 22px 24px;
+  padding: 24px 24px;
 }
-.df-card { position: relative; transition: box-shadow .15s ease, border-color .15s ease; }
-.df-card:hover { box-shadow: 0 4px 14px rgba(16,24,40,0.10); }
+.df-card { position: relative; transition: box-shadow .15s ease, border-color .15s ease, transform .15s ease; }
+.df-card:hover { box-shadow: 0 4px 12px rgba(16,24,40,0.08); border-color: var(--border-strong, #cbd5e1) !important; }
 .df-port {
   position: absolute; width: 9px; height: 9px; border-radius: 50%;
   background: var(--surface, #fff); border: 2px solid var(--border-strong, #94a3b8);
@@ -5104,3 +5104,27 @@ input[type="checkbox"], input[type="radio"] { accent-color: #111827; }
 .gl-toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 70; background: var(--text, #0f172a); color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,0.25); }
 
 @media (max-width: 960px) { .gl-grid { grid-template-columns: 1fr; } }
+
+/* ---- Data flow: clean minimal refinement ---- */
+.df-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.df-scope { max-width: 220px; }
+.df-stats { display: flex; align-items: center; gap: 0; flex-wrap: wrap; padding: 14px 18px; border: 1px solid var(--border, #e5e7eb); border-radius: 12px; background: var(--surface, #fff); }
+.df-stat { display: flex; align-items: baseline; gap: 7px; padding: 0 18px; border-right: 1px solid var(--border-soft, #eceef2); }
+.df-stat:first-child { padding-left: 0; }
+.df-stat-num { font-size: 19px; font-weight: 700; letter-spacing: -0.01em; color: var(--text, #0f172a); }
+.df-stat-label { font-size: 13px; color: var(--text-3, #6b7280); }
+.df-attn { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--yellow-text, #b45309); padding-left: 18px; }
+.df-attn-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--yellow, #f59e0b); flex-shrink: 0; }
+.df-attn.clear { color: var(--green-text, #047857); } .df-attn.clear .df-attn-dot { background: var(--green, #10b981); }
+.df-note { display: inline-flex; align-items: center; gap: 8px; margin: -4px 0 0; font-size: 12.5px; color: var(--text-3, #6b7280); }
+.df-note svg { color: var(--yellow-text, #b45309); flex-shrink: 0; }
+.df-findings { display: flex; gap: 8px; flex-wrap: wrap; }
+.df-finding { display: inline-flex; align-items: center; gap: 8px; padding: 5px 11px 5px 10px; border: 1px solid var(--border, #e5e7eb); border-radius: 8px; background: var(--surface, #fff); font-size: 12.5px; color: var(--text-2, #4b5563); white-space: nowrap; }
+.df-finding .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.df-finding.blocking .dot { background: var(--red, #ef4444); }
+.df-finding.warn .dot { background: var(--yellow, #f59e0b); }
+.df-finding.info .dot { background: var(--text-4, #94a3b8); }
+.df-finding .count { font-weight: 700; color: var(--text, #0f172a); font-variant-numeric: tabular-nums; }
+.df-toolbar { display: flex; justify-content: flex-end; }
+.df-node-finding { display: inline-flex; align-items: center; margin-top: 8px; padding: 2px 8px; border-radius: 6px; font-size: 10.5px; font-weight: 600; background: var(--yellow-bg, #fef3e0); color: var(--yellow-text, #b45309); }
+@media (max-width: 720px) { .df-head { flex-direction: column; } .df-stats { gap: 6px 0; } }
