@@ -88,6 +88,7 @@ function navGroups(counts: NavCounts, role: ActorRole, showSetup: boolean): NavE
 
     // ---- GOVERN & REVIEW ----
     { section: "Govern & review" },
+    { key: "workflows", label: "Workflows", href: "/workflows", ready: true },
     { key: "escalations", label: "Escalations", href: "/escalations", ready: true, badge: counts.escalationsOpen || undefined, badgeLabel: `${counts.escalationsOpen} open escalations` },
     { key: "audit", label: "Audit log", href: "/audit", ready: true },
     { key: "reports", label: "Reports", href: "/reports", ready: true },
