@@ -55,6 +55,7 @@ function navGroups(counts: NavCounts, role: ActorRole, showSetup: boolean): NavE
     // ---- OPERATE ----
     { section: "Operate" },
     { key: "requests", label: "Requests", href: "/requests", ready: true, badge: counts.openRequests || undefined, badgeLabel: `${counts.openRequests} open requests` },
+    { key: "cases", label: "Cases", href: "/cases", ready: true },
     { key: "breaches", label: "Breaches", href: "/breaches", ready: true },
     { key: "access", label: "Access changes", href: "/access/changes", ready: true },
 
@@ -85,10 +86,11 @@ function navGroups(counts: NavCounts, role: ActorRole, showSetup: boolean): NavE
         { href: "/consent/records", label: "Consent records", ready: true },
       ],
     },
+    { key: "workflows", label: "Workflows", href: "/workflows", ready: true },
 
     // ---- GOVERN & REVIEW ----
     { section: "Govern & review" },
-    { key: "workflows", label: "Workflows", href: "/workflows", ready: true },
+    { key: "approvals", label: "Approvals", href: "/approvals", ready: true },
     { key: "escalations", label: "Escalations", href: "/escalations", ready: true, badge: counts.escalationsOpen || undefined, badgeLabel: `${counts.escalationsOpen} open escalations` },
     { key: "audit", label: "Audit log", href: "/audit", ready: true },
     { key: "reports", label: "Reports", href: "/reports", ready: true },

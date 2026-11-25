@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronRight, ChevronDown, Search, AlertTriangle, ArrowRight } from "lucide-react";
+import Link from "next/link";
+import { ChevronRight, ChevronDown, Search, AlertTriangle, ArrowRight, Pencil } from "lucide-react";
 import { Pill, type PillTone } from "@/components/ui";
 import type { Plan, PlanWF, PlanStep, Norm } from "@/lib/workflows/derive";
 
@@ -119,6 +120,10 @@ function WorkflowCard({ w, open, onToggle }: { w: PlanWF; open: boolean; onToggl
 
       {open && (
         <div className="wf-body">
+          <div className="wf-body-actions">
+            <Link href="/workflows/editor" className="btn sec cm-mini"><Pencil size={13} /> Open in Journey Editor</Link>
+            <span className="cell-sub">Edit step owners, deadlines &amp; approvals</span>
+          </div>
           {w.gap && <div className="wf-blocking"><AlertTriangle size={13} /> <span><strong>Blocking gap:</strong> {w.gap}</span></div>}
           <div className="wf-rollup">
             <Roll label="Built" n={w.Built} tone="green" /><Roll label="Partial" n={w.Partial} tone="amber" />
