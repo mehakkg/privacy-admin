@@ -46,17 +46,18 @@ const ALL_ROLES = ["Data Principal", "Admin", "DPO", "CISO", "Legal", "Data Proc
 
 export function NewWorkflow() {
   const router = useRouter();
+  const seed = TEMPLATES[0]; // start on "Use a template" with the first template applied
   const [start, setStart] = useState<Start>("template");
-  const [templateId, setTemplateId] = useState<string>(TEMPLATES[0].id);
+  const [templateId, setTemplateId] = useState<string>(seed.id);
   const [cloneId, setCloneId] = useState<string>(CLONABLE[0].id);
 
-  const [name, setName] = useState("");
-  const [domain, setDomain] = useState(DOMAINS[0].label);
+  const [name, setName] = useState(seed.name);
+  const [domain, setDomain] = useState(seed.domain);
   const [entity, setEntity] = useState("Meridian Financial Services");
-  const [trigger, setTrigger] = useState("");
-  const [legalBasis, setLegalBasis] = useState(LEGAL_BASES[0]);
-  const [deadline, setDeadline] = useState<number | "">(30);
-  const [roles, setRoles] = useState<string[]>(["Data Principal", "Admin"]);
+  const [trigger, setTrigger] = useState(seed.trigger);
+  const [legalBasis, setLegalBasis] = useState(seed.legalBasis);
+  const [deadline, setDeadline] = useState<number | "">(seed.deadline);
+  const [roles, setRoles] = useState<string[]>(seed.roles);
 
   // apply a template / clone's defaults into the form
   function applyTemplate(id: string) {
